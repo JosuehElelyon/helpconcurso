@@ -45,8 +45,7 @@ Revisão de 02/11/2026 da cascata gratuita (`AI_FREE_CASCADE`), feita sobre o c�
 
 ## Reanálise após o benchmark (02/11/2026)
 
-Feito também: OpenRouter como 3º grátis, `scripts/benchmark-ia.js` e `docs/BENCHMARK-IA.md` (8 modelos com nota 100;
-Groq e Gemini Flash-Lite ~1,8 s; OpenRouter 40–80 s; Claude é a reserva paga e o único com OCR).
+Feito também: OpenRouter como 3º grátis, `scripts/benchmark-ia.js`, `docs/BENCHMARK-IA.md`, D2 (fallback imediato em 429), S6 (recusa de prova >=90%) e D5 (`scripts/benchmark-dificil.js` com Sonnet juiz em `docs/BENCHMARK-DIFICIL.md`). 52/52 testes passando.
 
 | Item | O que o código mostrou | Nova prioridade |
 |---|---|---|
