@@ -87,6 +87,7 @@ export function validarUrlOficial(banca, rawUrl) {
   if (!rawUrl || typeof rawUrl !== 'string') {
     return { valida: false, oficial: false, dominio: null, motivo: 'URL não informada.' };
   }
+  if (rawUrl.trim().length > 500) return { valida: false, oficial: false, dominio: null, motivo: 'Link muito longo (máximo de 500 caracteres).' };
   let parsed;
   try {
     const trimmed = rawUrl.trim();
@@ -118,7 +119,10 @@ export function validarUrlOficial(banca, rawUrl) {
   // 2. Checa se pertence à banca declarada
   const bancaKey = String(banca || '').trim().toLowerCase();
   const domsBanca = DOMINIOS_OFICIAIS[bancaKey] || [];
-  const matchBanca = domsBanca.some((d) => host === d || host.endsWith('.' + d));
+  // Sem banca informada (ex.: edital enviado sem banca), o site de qualquer banca do catálogo vale
+  const matchBanca = bancaKey
+    ? domsBanca.some((d) => host === d || host.endsWith('.' + d))
+    : Object.values(DOMINIOS_OFICIAIS).flat().some((d) => host === d || host.endsWith('.' + d));
 
   if (matchBanca) {
     return {
@@ -166,6 +170,20 @@ export function validarUrlOficial(banca, rawUrl) {
     tipo: 'desconhecido',
     motivo: `O domínio "${host}" não consta no catálogo de domínios oficiais das bancas examinadoras nem na rede de diários oficiais governamentais.`,
   };
+}
+
+/**
+ * Link oficial informado pelo usuário no envio de prova/edital. Nunca bloqueia o envio: link inválido, de cursinho,
+ * de outra banca ou fora do catálogo é ignorado com aviso (a prova continua útil — provas são públicas).
+ * Link aceito fica como fonte DECLARADA (oficialConfirmado=false): só vira confirmada quando o arquivo for baixado
+ * da própria fonte (importação pelo link — V3 em docs/PLANO-ACAO.md).
+ */
+export function linkOficialDeclarado(banca, raw) {
+  const vazio = { officialUrl: null, oficialConfirmado: false, officialUrlTipo: null };
+  if (!raw || !String(raw).trim()) return { campos: vazio, aviso: null };
+  const v = validarUrlOficial(banca, String(raw));
+  if (!v.valida) return { campos: vazio, aviso: `${v.motivo} O link foi ignorado; o envio seguiu normalmente.` };
+  return { campos: { officialUrl: v.urlNormalizada, oficialConfirmado: false, officialUrlTipo: v.tipo }, aviso: null };
 }
 
 const KEYWORDS = {

@@ -185,3 +185,15 @@ Com a técnica de elaboração no prompt, o Haiku alcançou o Sonnet também no 
 2. **Sprint 2:** V3 (importar por link, com proteção SSRF), V5 (front), F5 (reprocessar grátis), Q1 se Q2 confirmar.
 3. **Sprint 3:** F1 (questões reais por tópico), F2 (revisão espaçada), Q3 (Fase 2: pacote de contexto).
 4. **Sprint 4:** F7, F6, F3, F4, Q4.
+
+## Sprint 1 — concluída (02/11/2026)
+- **V1** link digitado = fonte **declarada** (`oficial_confirmado=false`); não vai mais para o edital canônico. Confirmação real fica para V3.
+- **V2** edital sem banca aceita site de qualquer banca do catálogo. **V4** link ruim não bloqueia: vira aviso (`avisos` / `warnings`).
+- **V6** link com no máximo 500 caracteres. **V7** `tc.br` e `def.br` existem como zonas do registro.br (mantidos).
+- **O2** CI já existe (`.github/workflows/ci.yml`); falta só o `git push`.
+- **Achado novo — raciocínio do Claude 5.5:** Haiku/Sonnet 5.5 pensam por padrão; o raciocínio conta no `max_tokens` e é cobrado
+  como saída. Respostas estavam sendo cortadas (ex.: `edital_parse` bateu 6.000/6.000; no eval, 5.400 tokens para ~1.300 de texto).
+  Agora é por tarefa (`AI_ESFORCO_<TAREFA>`): `medium` + reserva de tokens em generate, generate_dificil, review, report_check e
+  prova_analysis; desligado no resto (Haiku `disabled`, Sonnet `between_tools`). Testado contra a API real.
+- **Q2** eval ampliado (`scripts/eval-amplo.js`, 3 matérias × 3 bancas, nível Difícil, configuração da produção): Haiku 65 × Sonnet 70.
+  **Q1 não confirmado** — Difícil continua no Sonnet. Ponto fraco comum: dupla resposta defensável → prompt v4 com autoconferência.

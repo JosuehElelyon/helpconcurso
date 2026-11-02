@@ -41,11 +41,17 @@ export const AI_TASKS = {
   // json_repair herda a classificação da tarefa que gerou o JSON (runJSON passa "dados")
   json_repair:    { label: 'Corrigir JSON malformado',                  dados: 'aluno',   tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: null },
 };
+// Raciocínio do Claude (cobrado como saída): só onde melhora o acerto. As demais tarefas (classificar, extrair,
+// cruzar, consertar JSON, OCR) rodam sem raciocínio — mais baratas e sem risco de cortar a resposta.
+// Troca por tarefa no .env: AI_ESFORCO_<TAREFA>=low|medium|high|off
+const RACIOCINIO = { generate: 'medium', generate_dificil: 'medium', review: 'medium', report_check: 'medium', prova_analysis: 'medium' };
 const taskEnv = (t) => t.toUpperCase();
 for (const [t, v] of Object.entries(AI_TASKS)) {
   const customPrimary = env(`AI_MODEL_${taskEnv(t)}`);
   v.explicitPrimary = customPrimary !== undefined;
   if (customPrimary !== undefined) v.primary = customPrimary;
+  const esf = env(`AI_ESFORCO_${taskEnv(t)}`, RACIOCINIO[t] || 'off');
+  v.esforco = ['low', 'medium', 'high'].includes(esf) ? esf : null;
   const fb = env(`AI_FALLBACK_${taskEnv(t)}`);
   if (fb !== undefined) v.fallback = fb === 'none' ? null : fb;
 }

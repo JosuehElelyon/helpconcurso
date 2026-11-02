@@ -107,3 +107,21 @@ test('validarUrlOficial: trata URLs malformadas, protocolos inválidos e domíni
   assert.equal(desc.valida, false);
   assert.equal(desc.tipo, 'desconhecido');
 });
+
+
+test('V2/V4/V6: sem banca aceita site de banca do catálogo; link ruim vira aviso; link longo é recusado', async () => {
+  const { linkOficialDeclarado } = await import('../src/lib/bancas.js');
+  assert.equal(validarUrlOficial('', 'https://www.cebraspe.org.br/concursos/x').tipo, 'banca');
+  assert.equal(validarUrlOficial(undefined, 'https://conhecimento.fgv.br/x').valida, true);
+  assert.equal(validarUrlOficial('fgv', 'https://fgv.br/' + 'a'.repeat(600)).valida, false);
+
+  const ok = linkOficialDeclarado('fgv', 'https://conhecimento.fgv.br/concursos/x');
+  assert.equal(ok.aviso, null);
+  assert.equal(ok.campos.oficialConfirmado, false, 'link digitado é só declarado');
+  assert.equal(ok.campos.officialUrlTipo, 'banca');
+
+  const ruim = linkOficialDeclarado('fgv', 'https://www.qconcursos.com/questoes');
+  assert.equal(ruim.campos.officialUrl, null);
+  assert.match(ruim.aviso, /ignorado/);
+  assert.deepEqual(linkOficialDeclarado('fgv', '   ').campos.officialUrl, null);
+});

@@ -160,7 +160,7 @@ export async function runText(task, req) {
       if (req.signal?.aborted) throw new AiAbortError();
       const t0 = Date.now();
       try {
-        const out = await provider.generate({ task, model, system, messages: [{ role: 'user', content }], maxTokens: req.maxTokens || 4096, temperature: req.temperature, onText: req.onText, signal: req.signal, cacheSystem: req.cacheSystem });
+        const out = await provider.generate({ task, model, system, messages: [{ role: 'user', content }], maxTokens: req.maxTokens || 4096, temperature: req.temperature, onText: req.onText, signal: req.signal, cacheSystem: req.cacheSystem, esforco: config.ai.tasks[task]?.esforco });
         const ms = Date.now() - t0;
         succeed(key);
         const isFallback = r > 0 || !!req.preferFallback;
@@ -260,7 +260,7 @@ export async function submitBatch(task, items) {
   const { provider: pName, model } = routeFor(task)[0];
   const p = getProvider(pName);
   const system = (s) => [SECURITY_RULES, s].filter(Boolean).join('\n\n');
-  const id = await p.batch.submit(items.map((it) => ({ id: it.id, task, model, system: system(it.system), maxTokens: it.maxTokens || 4096,
+  const id = await p.batch.submit(items.map((it) => ({ id: it.id, task, model, system: system(it.system), maxTokens: it.maxTokens || 4096, esforco: config.ai.tasks[task]?.esforco,
     messages: [{ role: 'user', content: [{ type: 'text', text: it.prompt + '\n\nResponda APENAS com JSON válido, sem markdown e sem texto fora do JSON.' }] }] })));
   return `${pName}|${model}|${id}`;
 }

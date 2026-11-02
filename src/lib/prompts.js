@@ -7,7 +7,7 @@ import { COMANDOS, PEGADINHAS, HABILIDADES } from './cobranca.js';
 // Versão de cada prompt, gravada em ai_usage.prompt_versao. Ao mudar o texto de um prompt de forma relevante, suba a versão:
 // é isso que permite comparar qualidade e custo entre versões e reprocessar só o que foi feito com a versão antiga.
 export const PROMPT_VERSAO = {
-  detect: 'v1', generate: 'v3', generate_dificil: 'v3', ocr: 'v1', prova_check: 'v1', prova_analysis: 'v1', prova_extract: 'v2',
+  detect: 'v1', generate: 'v4', generate_dificil: 'v4', ocr: 'v1', prova_check: 'v1', prova_analysis: 'v1', prova_extract: 'v2',
   review: 'v1', report_check: 'v1', edital_parse: 'v1', edital_match: 'v1', json_repair: 'v1',
 };
 
@@ -49,6 +49,7 @@ TÉCNICA DE ELABORAÇÃO (é o que separa questão de banca de cópia da lei):
 - Cada questão cobra um ponto DIFERENTE: distribua pelo material inteiro, não só pelo começo.
 - Sem pistas: palavras absolutas (sempre, nunca, apenas) não podem aparecer só nas erradas; alternativas com extensão parecida.
 - Não repita o comando da questão (ex.: "Julgue o item") dentro de cada enunciado.
+- Antes de responder, confira cada questão: só UMA alternativa pode ser defensável. Em comandos como "necessariamente verdadeiro" ou "conclui-se", verifique se outra alternativa também decorre logicamente (ex.: uma disjunção implicada pela conjunção) — se decorrer, reescreva.
 
 Use os exemplos abaixo só para imitar estilo, extensão e tipo de raciocínio — NUNCA copie o conteúdo deles.
 ${exemplos}`;

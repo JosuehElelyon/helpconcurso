@@ -5,7 +5,7 @@ import { ah, HttpError, checkId } from '../lib/http.js';
 import { requireAuth } from '../lib/auth.js';
 import { uploader, fileOf } from '../lib/upload.js';
 import { deleteFile } from '../lib/storage.js';
-import { validarUrlOficial } from '../lib/bancas.js';
+import { linkOficialDeclarado } from '../lib/bancas.js';
 import { assertCanUpload } from '../services/quota.js';
 import { createEditalForUser, buildEditalDashboard } from '../services/edital.js';
 
@@ -63,14 +63,7 @@ r.post('/', perUser, uploader([{ name: 'file', maxCount: 1 }]), ah(async (req, r
   const f = fileOf(req, 'file');
   const ctrl = new AbortController();
   res.on('close', () => { if (!res.writableFinished) ctrl.abort(); });
-  const rawOfficialUrl = req.body?.officialUrl || req.body?.official_url;
-  let officialValidation = null;
-  if (rawOfficialUrl) {
-    officialValidation = validarUrlOficial(req.body?.banca, rawOfficialUrl);
-    if (!officialValidation.valida) {
-      throw new HttpError(422, officialValidation.motivo || 'URL informada não é aceita como fonte oficial.');
-    }
-  }
+  const link = linkOficialDeclarado(req.body?.banca, req.body?.officialUrl);
   const { editalRow, warnings, reaproveitado } = await createEditalForUser({
     user: req.user,
     file: f,
@@ -80,12 +73,11 @@ r.post('/', perUser, uploader([{ name: 'file', maxCount: 1 }]), ah(async (req, r
     cargo: req.body?.cargo,
     ano: req.body?.ano,
     provaId: req.body?.provaId,
-    officialUrl: officialValidation?.urlNormalizada || null,
-    oficialConfirmado: !!officialValidation?.valida,
-    officialUrlTipo: officialValidation?.tipo || null,
+    ...link.campos,
     ip: req.ip,
     signal: ctrl.signal,
   });
+  if (link.aviso) warnings.push(link.aviso);
   res.status(201).json({ edital: await buildEditalDashboard(editalRow, req.user.id), warnings, reaproveitado });
 }));
 

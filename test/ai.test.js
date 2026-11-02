@@ -162,3 +162,21 @@ test('gerador por nível: Fácil/Médio no Haiku, Difícil/Misto no Sonnet — r
   assert.equal(dificil[0].model, 'claude-sonnet-5-5');
   assert.ok(dificil.every((r) => r.provider === 'anthropic'), 'material do aluno só no Claude');
 });
+
+test('raciocínio do Claude 5.x: ligado com reserva só nas tarefas de acerto; desligado no resto', async () => {
+  const { paramsClaude } = await import('../src/ai/providers/anthropic.js');
+  const msg = [{ role: 'user', content: [{ type: 'text', text: 'oi' }] }];
+  const comEsforco = paramsClaude({ model: 'claude-sonnet-5-5', messages: msg, maxTokens: 3400, esforco: 'medium' });
+  assert.deepEqual(comEsforco.output_config, { effort: 'medium' });
+  assert.equal(comEsforco.max_tokens, 9400, 'reserva para o raciocínio não cortar o JSON');
+  assert.equal(comEsforco.thinking, undefined);
+  assert.deepEqual(paramsClaude({ model: 'claude-haiku-5-5', messages: msg, maxTokens: 1200 }).thinking, { type: 'disabled' });
+  assert.deepEqual(paramsClaude({ model: 'claude-sonnet-5-5', messages: msg, maxTokens: 1200 }).thinking, { type: 'between_tools' }); // disabled dá 400 no Sonnet 5.5
+  assert.deepEqual(paramsClaude({ model: 'claude-opus-5-5', messages: msg, maxTokens: 1200 }).output_config, { effort: 'low' }); // Opus 5.5 não desliga
+  assert.equal(paramsClaude({ model: 'claude-haiku-4-5', messages: msg, maxTokens: 1200 }, { raciocinio: false }).thinking, undefined); // proxy fcc
+  // Configuração por tarefa
+  assert.equal(config.ai.tasks.review.esforco, 'medium');
+  assert.equal(config.ai.tasks.generate.esforco, 'medium');
+  assert.equal(config.ai.tasks.prova_extract.esforco, null);
+  assert.equal(config.ai.tasks.json_repair.esforco, null);
+});

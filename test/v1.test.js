@@ -3,6 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import * as fx from './fixtures.js';
+import { one, pool } from '../src/db.js';
 
 const PORT = 3900 + Math.floor(Math.random() * 900), URL = `http://localhost:${PORT}`;
 const RUN = Date.now().toString(36);
@@ -52,6 +53,7 @@ before(async () => {
   await signup(user, emails.user, 'Usuário Teste');
 });
 after(() => srv?.kill());
+after(() => pool.end());
 
 test('cadastro restrito a convidados', async () => {
   const r = await client()('/api/auth/register', { method: 'POST', body: { name: 'Intruso', email: `x${RUN}@fora.com`, password: 'senha-forte-1' } });
@@ -368,40 +370,41 @@ test('edital canônico: o mesmo edital enviado por outro aluno é reaproveitado 
   assert.notEqual(b.data.edital.id, a.data.edital.id);
 });
 
-test('P1/P2: validação de fonte primária oficial em provas e editais', async () => {
+test('P1/P2: link oficial é só declarado, nunca bloqueia o envio e não vai para o edital canônico', async () => {
   const pTxt = 'CONCURSO PÚBLICO — FGV\nQUESTÃO 1: No processo licitatório conforme Lei 14.133/2021, a modalidade diálogo competitivo é cabível para contratações complexas.\nA) Certo\nB) Errado\nGabarito: A\n';
-  const pBuf = await fx.pdfClean(pTxt);
 
-  // 1. Prova com URL de cursinho preparatório é recusada
+  // 1. Link de cursinho: a prova é aceita, o link é ignorado e o aluno recebe aviso
   const rCursinho = await user('/api/provas', {
     method: 'POST',
     fields: { banca: 'fgv', officialUrl: 'https://www.estrategiaconcursos.com.br/blog/edital-receita/' },
-    files: { prova: [pBuf, 'prova-cursinho.pdf'] },
+    files: { prova: [await fx.pdfClean(pTxt + `\nCURSINHO ${RUN}`), 'prova-cursinho.pdf'] },
   });
-  assert.equal(rCursinho.status, 422);
-  assert.match(rCursinho.data.error, /cursinho preparatório/i);
+  assert.equal(rCursinho.status, 202, JSON.stringify(rCursinho.data));
+  assert.equal(rCursinho.data.prova.officialUrl, null);
+  assert.match(rCursinho.data.avisos.join(' '), /cursinho preparatório.*ignorado/i);
 
-  // 2. Prova com divergência de banca (declarou FGV, enviou link Cebraspe) é recusada
+  // 2. Link de outra banca (declarou FGV, link do Cebraspe): aceita, link ignorado, aviso de divergência
   const rDivergente = await user('/api/provas', {
     method: 'POST',
     fields: { banca: 'fgv', officialUrl: 'https://www.cebraspe.org.br/concursos/inss_2024' },
-    files: { prova: [pBuf, 'prova-divergente.pdf'] },
+    files: { prova: [await fx.pdfClean(pTxt + `\nDIVERGENTE ${RUN}`), 'prova-divergente.pdf'] },
   });
-  assert.equal(rDivergente.status, 422);
-  assert.match(rDivergente.data.error, /CEBRASPE/);
+  assert.equal(rDivergente.status, 202, JSON.stringify(rDivergente.data));
+  assert.match(rDivergente.data.avisos.join(' '), /CEBRASPE/);
 
-  // 3. Prova com URL oficial da FGV é aceita e confirmada
+  // 3. Link oficial da FGV: guardado como fonte DECLARADA (não confirmada — ninguém baixou o arquivo de lá)
   const rOficial = await user('/api/provas', {
     method: 'POST',
     fields: { banca: 'fgv', officialUrl: 'https://conhecimento.fgv.br/concursos/receita-federal' },
     files: { prova: [await fx.pdfClean(pTxt + `\nIDENTIFICADOR UNICO ${RUN}`), 'prova-oficial.pdf'] },
   });
   assert.equal(rOficial.status, 202);
-  assert.equal(rOficial.data.prova.oficialConfirmado, true);
+  assert.equal(rOficial.data.prova.oficialConfirmado, false);
   assert.equal(rOficial.data.prova.officialUrl, 'https://conhecimento.fgv.br/concursos/receita-federal');
   assert.equal(rOficial.data.prova.officialUrlTipo, 'banca');
+  assert.deepEqual(rOficial.data.avisos, []);
 
-  // 4. Edital com URL de cursinho é recusado
+  // 4. Edital com link de cursinho: criado normalmente, com aviso
   const edTxt = `EDITAL OFICIAL CONCURSO PÚBLICO NACIONAL — CEBRASPE ${RUN}
   CONTEÚDO PROGRAMÁTICO COMPLETO:
   NOÇÕES DE DIREITO ADMINISTRATIVO: 1. Regime jurídico dos servidores públicos civis da União. 2. Atos administrativos: conceito, requisitos, atributos, anulação e revogação. 3. Licitações e contratos administrativos conforme a Lei nº 14.133/2021.
@@ -410,16 +413,27 @@ test('P1/P2: validação de fonte primária oficial em provas e editais', async 
     method: 'POST',
     body: { text: edTxt, banca: 'cebraspe', officialUrl: 'https://grancursosonline.com.br/concurso/inss' },
   });
-  assert.equal(edCursinho.status, 422);
-  assert.match(edCursinho.data.error, /cursinho preparatório/i);
+  assert.equal(edCursinho.status, 201, JSON.stringify(edCursinho.data));
+  assert.equal(edCursinho.data.edital.officialUrl, null);
+  assert.ok(edCursinho.data.warnings.some((w) => /cursinho preparatório/i.test(w)));
 
-  // 5. Edital com URL oficial do DOU (in.gov.br) é aceito e marcado como oficial_confirmado
+  // 5. Edital com link do DOU: declarado no edital do aluno, mas NÃO gravado no edital canônico (vale para todos)
   const edDou = await user('/api/editais', {
     method: 'POST',
     body: { text: edTxt, banca: 'cebraspe', officialUrl: 'https://www.in.gov.br/web/dou/-/edital-1-2024' },
   });
   assert.equal(edDou.status, 201, JSON.stringify(edDou.data));
-  assert.equal(edDou.data.edital.oficialConfirmado, true);
+  assert.equal(edDou.data.edital.oficialConfirmado, false);
   assert.equal(edDou.data.edital.officialUrl, 'https://www.in.gov.br/web/dou/-/edital-1-2024');
   assert.equal(edDou.data.edital.officialUrlTipo, 'diario_oficial');
+  const can = await one('SELECT c.official_url FROM editais e JOIN editais_canonicos c ON c.id = e.canonico_id WHERE e.id=$1', [edDou.data.edital.id]);
+  assert.equal(can.official_url, null);
+
+  // 6. Edital sem banca + site de uma banca do catálogo: aceito (antes dava "divergindo da banca ''")
+  const edSemBanca = await user('/api/editais', {
+    method: 'POST',
+    body: { text: edTxt + ' SEM BANCA', officialUrl: 'https://www.cebraspe.org.br/concursos/inss_2024' },
+  });
+  assert.equal(edSemBanca.status, 201, JSON.stringify(edSemBanca.data));
+  assert.equal(edSemBanca.data.edital.officialUrlTipo, 'banca');
 });

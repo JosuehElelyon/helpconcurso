@@ -69,6 +69,8 @@ Novo na v1.3/v1.4 (migração `006_cadernos.sql`):
   `AI_PROVEDORES_PRIVADOS`); provas/editais (públicos) na cascata grátis. Fácil/Médio: Haiku gera (`generate`); Difícil/Misto: Sonnet gera (`generate_dificil`); o outro modelo revisa (revisor ≠ gerador por modelo,
   `avoid`); análise de estilo com Sonnet primeiro (`pagoPrimeiro`). Teto diário bloqueia só modelos pagos. Benchmarks: `npm run benchmark` (velocidade/formato) e `npm run eval` (qualidade, Sonnet como juiz; `EVAL_NIVEL=Médio`).
   Riscos e próximos passos em `docs/PLANO-ACAO.md` (privacidade da cota grátis, modo lote, qualidade por modelo).
+- **Raciocínio do Claude 5.5** é cobrado como saída e conta no `max_tokens`: ligado (esforço `medium` + reserva) só em geração,
+  revisão, análise de estilo e erro reportado; desligado no resto (`paramsClaude` em `src/ai/providers/anthropic.js`, `AI_ESFORCO_<TAREFA>`).
 - Uso real: tabela `ai_usage` (ou painel admin → IA; o provedor `mock` fica de fora). Para testar sem gastar: `AI_MOCK=true`.
 
 ## Como roda na máquina (Windows + Docker Desktop)

@@ -120,8 +120,10 @@ async function checkProva({ provaId }) {
   const notes = [];
 
   if (p.oficial_confirmado) {
-    findings.push({ code: 'fonte_oficial_confirmada', severity: 'low', where: 'veracidade', message: `Fonte primária oficial validada (${p.official_url_tipo}): ${p.official_url}` });
-    notes.push(`Fonte primária oficial confirmada (${p.official_url}).`);
+    findings.push({ code: 'fonte_oficial_confirmada', severity: 'low', where: 'veracidade', message: `Arquivo baixado da fonte oficial (${p.official_url_tipo}): ${p.official_url}` });
+    notes.push(`Fonte oficial confirmada (${p.official_url}).`);
+  } else if (p.official_url) {
+    notes.push(`Link oficial informado pelo usuário (${p.official_url_tipo}), ainda não verificado: ${p.official_url}`);
   }
 
   // S6: só recusa automaticamente com 90% ou mais de certeza; abaixo disso, vai para revisão humana (IN_REVIEW)

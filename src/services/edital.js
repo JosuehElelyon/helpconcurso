@@ -428,7 +428,7 @@ async function parseEditalCanonico(text, fileName, userId, signal, meta) {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      ON CONFLICT (chave) DO UPDATE SET usos = editais_canonicos.usos + 1, updated_at = now() RETURNING id`,
     [chave, parsed.titulo, parsed.orgao, parsed.cargo, parsed.banca, parsed.ano, JSON.stringify(parsed.verticalizado), PROMPT_VERSAO.edital_parse,
-     meta.officialUrl || null, !!meta.oficialConfirmado, meta.officialUrlTipo || null]
+     ...(meta.oficialConfirmado ? [meta.officialUrl, true, meta.officialUrlTipo] : [null, false, null])]
   );
   return { parsed, canonicoId: row.id, reaproveitado: false };
 }
