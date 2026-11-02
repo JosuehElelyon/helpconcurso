@@ -6,6 +6,7 @@
 //   Saídas: DUPLICATE, REJECTED, FAILED (pode reprocessar)
 // =====================================================================
 import { one, many, query } from '../db.js';
+import { materiaId, topicoId } from './taxonomia.js';
 import { config } from '../config.js';
 import { BANCA } from '../lib/bancas.js';
 import { HttpError } from '../lib/http.js';
@@ -283,8 +284,14 @@ async function finalize(p, analysis, questions) {
     const key = enun.slice(0, 120); if (seen.has(key)) continue; seen.add(key);
     const isBad = SEV[scanText([enun, ...q.alternativas].join('\n')).severity] >= SEV.medium;
     if (isBad) flagged++;
-    await query('INSERT INTO prova_questoes(prova_id,banca,materia,numero,enunciado,alternativas,gabarito,flagged) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-      [p.id, p.banca, q.materia || null, q.numero, enun, JSON.stringify(q.alternativas), q.gabarito || null, isBad]);
+    // Rótulos de "como a banca cobra" + vínculo com a taxonomia própria (Fase 1 da base de conhecimento)
+    const topico = clean([q.topico || ''])[0] || null;
+    const matId = await materiaId(q.materia);
+    const topId = topico && !isBad ? await topicoId(matId, topico) : null;
+    await query(`INSERT INTO prova_questoes(prova_id,banca,materia,numero,enunciado,alternativas,gabarito,flagged,topico,materia_id,topico_id,comando,pegadinha_tipo,habilidade,dispositivos)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+      [p.id, p.banca, q.materia || null, q.numero, enun, JSON.stringify(q.alternativas), q.gabarito || null, isBad,
+        topico, matId, topId, q.comando || null, q.pegadinha || null, q.habilidade || null, JSON.stringify(clean(q.dispositivos || []))]);
     saved++;
   }
   if (saved - flagged === 0) throw Object.assign(new Error('Nenhuma questão válida foi extraída da prova.'), { permanent: true });

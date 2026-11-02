@@ -67,21 +67,26 @@ Novo na v1.3/v1.4 (migração `006_cadernos.sql`):
 
 ## Como roda na máquina (Windows + Docker Desktop)
 - Pasta: `C:\helpconcursos\helpconcurso` (fora do OneDrive). Repositório git local já criado (branch `main`).
-- Hoje o build da imagem do app falha (`npm ci` dentro do container leva ECONNRESET no registry). Por isso:
-  serviços no Docker: `docker compose up -d db minio mailpit`; app no host: `npm start` (ou `npm run dev`).
-- App: http://localhost:3000 · Mailpit: http://localhost:8025 · MinIO: http://localhost:9001
+- Tudo sobe com `docker compose up -d --build` (a imagem reaproveita o `node_modules` do host — sem dependências nativas).
+  Alternativa: serviços no Docker (`docker compose up -d db minio mailpit`) e app no host com `npm start`.
+- App: http://localhost:3000 · Mailpit: http://localhost:8025 · S3 local (SeaweedFS no serviço `minio`): http://localhost:9000
+- A imagem `minio/minio` saiu do Docker Hub; o compose usa `chrislusf/seaweedfs`. Arquivos antigos do MinIO ficaram em `data/minio`.
+- Se o Docker Desktop fechar com "com.docker.build: exit status 1": encerre o processo órfão `com.docker.build`
+  (Gerenciador de Tarefas), rode `wsl --shutdown` e abra o Docker de novo. Não use "Reset to factory defaults".
 - `.env` já tem `JWT_SECRET`, SMTP do Brevo e `ANTHROPIC_API_KEY` (`AI_MOCK=false`). Remetente: `SMTP_FROM`.
 - Acesso público: `docker run --rm cloudflare/cloudflared:latest tunnel --url http://host.docker.internal:3000`
   e colocar a URL em `APP_URL` no `.env`.
 
 ## Pendências
 1. `git push -u origin main` (remote `JosuehElelyon/helpconcurso` já configurado).
-2. Arquitetura de conhecimento (`docs/ARQUITETURA-CONHECIMENTO.md`): começar pela Fase 1 — taxonomia própria,
-   editais canônicos (ler cada edital uma vez), extração rotulada de provas, `prompt_versao`.
+2. Arquitetura de conhecimento (`docs/ARQUITETURA-CONHECIMENTO.md`). **Fase 1 pronta** (migração 007): taxonomia própria
+   (`src/services/taxonomia.js`, semente na subida), vocabulário fechado de cobrança (`src/lib/cobranca.js`), `prova_extract` v2
+   rotula cada questão real (tópico, comando, pegadinha, habilidade, leis), `editais_canonicos` (edital lido uma vez; chave =
+   sha256 do texto normalizado + cargo), `ai_usage.prompt_versao` (`PROMPT_VERSAO` em `src/lib/prompts.js`).
+   Provas antigas ficam sem rótulo até reprocessar. Próximo: Fase 2 (perfil_banca consolidado + pacote de contexto).
 3. Teste real com a IA: provas por banca, editais, cadernos; avaliar qualidade e ajustar `src/lib/prompts.js`.
-4. Resolver o build Docker do app (rede do container → registry npm).
-5. Atualizar `docs/ROADMAP.md` e `docs/IA.md` com editais e cadernos.
-6. V2: ver `docs/ROADMAP.md`.
+4. Atualizar `docs/ROADMAP.md` e `docs/IA.md` com editais e cadernos.
+5. V2: ver `docs/ROADMAP.md`.
 
 ## Regras
 - Nunca coloque chaves/senhas em código, commits ou mensagens; só no `.env` (que está no `.gitignore`).

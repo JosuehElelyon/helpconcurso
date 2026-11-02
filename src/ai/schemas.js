@@ -1,5 +1,6 @@
 // Contratos das respostas da IA: tudo é convertido, cortado no tamanho máximo e validado.
 import { z } from 'zod';
+import { COMANDOS, PEGADINHAS, HABILIDADES, toCode } from '../lib/cobranca.js';
 const str = (max, def = '') => z.preprocess((v) => (v == null ? def : String(v).slice(0, max)), z.string());
 const num01 = z.preprocess((v) => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0; }, z.number());
 const bool = z.preprocess((v) => v === true || v === 'true' || v === 1 || v === 'sim', z.boolean());
@@ -28,8 +29,16 @@ export const provaAnalysisSchema = z.object({
   alertas: strArr(5, 300).optional().default([]),
 });
 
+// Rótulos de "como a banca cobra" são opcionais: respostas antigas (ou de modelos que não os preencham) continuam válidas
 export const provaExtractSchema = z.object({
-  questoes: z.array(z.object({ numero: intOrNull, materia: str(120), enunciado: str(5000), alternativas: strArr(5, 1200), gabarito: str(3) })).max(40),
+  questoes: z.array(z.object({
+    numero: intOrNull, materia: str(120), enunciado: str(5000), alternativas: strArr(5, 1200), gabarito: str(3),
+    topico: str(160).optional().default(''),
+    comando: z.preprocess(toCode(COMANDOS, 'outro'), z.string()),
+    pegadinha: z.preprocess(toCode(PEGADINHAS, 'nenhuma'), z.string()),
+    habilidade: z.preprocess(toCode(HABILIDADES, 'compreensao'), z.string()),
+    dispositivos: strArr(5, 120).optional().default([]),
+  })).max(40),
   alertas: strArr(5, 300).optional().default([]),
 });
 

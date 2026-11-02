@@ -42,18 +42,17 @@ services:
       interval: 5s
       retries: 10
 
+  # Armazenamento S3 local. A imagem minio/minio saiu do Docker Hub (nov/2026); no lugar dela, SeaweedFS com API S3.
+  # O nome do serviço continua "minio" para não mudar S3_ENDPOINT. Sem identidades configuradas o S3 aceita qualquer
+  # chave — por isso a porta só abre em 127.0.0.1 (uso local). Arquivos antigos do MinIO ficam em ./data/minio (formato MinIO).
   minio:
-    image: minio/minio:latest
+    image: chrislusf/seaweedfs:latest
     restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+    command: server -dir=/data -s3 -s3.port=9000 -ip.bind=0.0.0.0
     volumes:
-      - ./data/minio:/data
+      - ./data/seaweedfs:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
 
   mailpit:
     image: axllent/mailpit:latest

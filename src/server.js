@@ -13,6 +13,7 @@ import { verifyMailer } from './lib/mailer.js';
 import { AiError, userMessage } from './ai/errors.js';
 import { UploadBlockedError } from './security/index.js';
 import { startWorker, stopWorker } from './jobs/queue.js';
+import { ensureTaxonomiaSeed } from './services/taxonomia.js';
 import './services/provas.js'; // registra as tarefas da fila
 import authRoutes from './routes/auth.js';
 import materialRoutes from './routes/materials.js';
@@ -96,6 +97,7 @@ app.use((err, req, res, _next) => {
 
 // Inicialização resiliente: o app sobe mesmo se S3/SMTP estiverem fora (com aviso)
 await migrate();
+await ensureTaxonomiaSeed();
 await ensureBucket().catch((e) => console.warn('[s3]', e.message));
 await verifyMailer();
 await startWorker();

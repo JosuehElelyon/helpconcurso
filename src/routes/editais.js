@@ -59,7 +59,7 @@ r.post('/', perUser, uploader([{ name: 'file', maxCount: 1 }]), ah(async (req, r
   const f = fileOf(req, 'file');
   const ctrl = new AbortController();
   res.on('close', () => { if (!res.writableFinished) ctrl.abort(); });
-  const { editalRow, warnings } = await createEditalForUser({
+  const { editalRow, warnings, reaproveitado } = await createEditalForUser({
     user: req.user,
     file: f,
     text: req.body?.text,
@@ -71,7 +71,7 @@ r.post('/', perUser, uploader([{ name: 'file', maxCount: 1 }]), ah(async (req, r
     ip: req.ip,
     signal: ctrl.signal,
   });
-  res.status(201).json({ edital: await buildEditalDashboard(editalRow, req.user.id), warnings });
+  res.status(201).json({ edital: await buildEditalDashboard(editalRow, req.user.id), warnings, reaproveitado });
 }));
 
 r.post('/:id/ativar', ah(async (req, res) => {

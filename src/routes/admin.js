@@ -46,7 +46,7 @@ r.post('/provas/:id/recusar', ah(async (req, res) => {
 }));
 r.post('/provas/:id/reprocessar', ah(async (req, res) => res.json({ prova: view(await reprocessProva(req.params.id)) })));
 r.get('/provas/:id/questoes', ah(async (req, res) => {
-  const rows = await many('SELECT numero, materia, enunciado, alternativas, gabarito, flagged FROM prova_questoes WHERE prova_id=$1 ORDER BY numero NULLS LAST, created_at', [req.params.id]);
+  const rows = await many('SELECT numero, materia, materia_id, topico, topico_id, comando, pegadinha_tipo, habilidade, dispositivos, enunciado, alternativas, gabarito, flagged FROM prova_questoes WHERE prova_id=$1 ORDER BY numero NULLS LAST, created_at', [req.params.id]);
   res.json({ questoes: rows });
 }));
 r.get('/provas/:id/arquivo', ah(async (req, res) => {

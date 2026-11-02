@@ -13,6 +13,7 @@ import { createOpenAICompat } from './providers/openai-compat.js';
 import { createMock } from './providers/mock.js';
 import { SECURITY_RULES } from './guard.js';
 import { costUsd, spentTodayUsd } from './pricing.js';
+import { PROMPT_VERSAO } from '../lib/prompts.js';
 
 const providers = new Map();
 function getProvider(name) {
@@ -70,9 +71,9 @@ async function logUsage(row) {
     budget.usd += costUsd(row.model, row.usage.input, row.usage.output, row.usage.cacheRead, row.batch);
   }
   try {
-    await query(`INSERT INTO ai_usage(task,provider,model,input_tokens,output_tokens,cache_read_tokens,duration_ms,ok,fallback,batch,error,user_id)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [row.task, row.provider, row.model, row.usage?.input ?? null, row.usage?.output ?? null, row.usage?.cacheRead ?? null, row.ms ?? null, row.ok, !!row.fallback, !!row.batch, row.error ? String(row.error).slice(0, 300) : null, row.userId || null]);
+    await query(`INSERT INTO ai_usage(task,provider,model,input_tokens,output_tokens,cache_read_tokens,duration_ms,ok,fallback,batch,error,user_id,prompt_versao)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [row.task, row.provider, row.model, row.usage?.input ?? null, row.usage?.output ?? null, row.usage?.cacheRead ?? null, row.ms ?? null, row.ok, !!row.fallback, !!row.batch, row.error ? String(row.error).slice(0, 300) : null, row.userId || null, PROMPT_VERSAO[row.task] || null]);
   } catch (e) { console.warn('[ai] falha ao registrar uso:', e.message); }
 }
 
