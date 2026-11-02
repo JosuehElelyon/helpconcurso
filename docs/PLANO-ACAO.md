@@ -337,3 +337,31 @@ chamadas/429 por provedor; cache de prompt medido. Decisões de modelo e prompt 
    (cargos, tipos de prova, CEBRASPE C/E, anulações, texto corrido) e do consenso sem provedor grátis.
 2. **Sprint 4.2:** G5, G6, G7.
 3. Depois: Sprint 5 (retenção: "Hoje" na tela inicial, simulado de prova real, "por que errei?") e Sprint 6 (medir qualidade e cache).
+
+## Sprint 4.1/4.2 — concluídas (02/11/2026)
+- **G1** parser de gabarito reescrito (`analisarGabarito`): letra solta só maiúscula e em linha com cara de gabarito; cabeçalho de
+  cargo/tipo abre bloco; mesmo número em blocos diferentes = conflito (422 pedindo o bloco certo); letra validada pelo formato da
+  questão; cobertura mínima de 60%; **prévia antes de gravar** (`confirmar`); "alterada pela banca" só quando o texto diz — diferença em
+  relação à extração da IA vira "corrigida".
+- **G2** 2ª extração do consenso só com modelo grátis (`somenteGratis`); sem grátis → consenso "não verificado" (null), nunca Claude.
+- **G3** filtro único `questaoValida()` (`src/lib/questoes-validas.js`) em toda consulta que alimenta aluno ou prompt.
+- **G4** lote valida na hora e enfileira `prova.importar` (máx. 50 links); download/treino em segundo plano.
+- **G5** admin: `GET /api/admin/divergencias` + `POST /api/admin/questoes/:qid/gabarito` e botão "Divergências".
+- **G6** `aplicarSituacaoOficial`: cópias em simulados/cadernos refletem anulação e gabarito definitivo; anulada não conta nem entra
+  na revisão; selo no caderno.
+- **G7** gancho de teste removido do mock.
+- **G8 (novo)** fila com prioridade (migração 011): rotular provas antigas e importar em lote têm prioridade −10 e não atrasam as tarefas
+  do aluno. Rotulagem só de provas com texto, sem duplicar tarefa pendente, e opcionalmente de uma prova só.
+- **Bug do front** corrigido: envio do gabarito por arquivo usava `body` em vez de `form` (o arquivo nunca chegava).
+- Testes: 92.
+
+## Atividades para amanhã (03/11/2026)
+1. **Josueh:** `git push -u origin main` (CI roda os testes no GitHub).
+2. **Josueh:** trocar a chave do OpenRouter que foi colada no chat.
+3. **Josueh/Amanda:** abrir o app no navegador e conferir as telas novas (admin: lote, gabarito definitivo com prévia, divergências;
+   aluno: selo "Anulada" no caderno, botão "Reais" do edital, revisão espaçada).
+4. **Admin:** clicar "Rotular provas antigas" (agora não atrasa os alunos).
+5. Testar o gabarito definitivo com **gabaritos reais** (FGV/FCC com vários cargos e tipos de prova; CEBRASPE C/E) — usar a prévia.
+6. Pendências pequenas: selo "Anulada" também na tela do simulado (hoje só no caderno); resumo da lista de cadernos ainda conta
+   questão anulada no acerto (o detalhe já não conta).
+7. Sprint 6 (medir): conferir `cache_read_tokens` no `ai_usage` depois de alguns simulados para ver se o cache do prompt pegou.

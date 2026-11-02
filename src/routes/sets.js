@@ -15,6 +15,7 @@ import { scanText, SEV, logSecurityEvent } from '../security/index.js';
 import { reviewQuestions } from '../services/review.js';
 import { rate, report, listFeedback } from '../services/feedback.js';
 import { registrarRespostasNaRevisao } from '../services/revisao.js';
+import { aplicarSituacaoOficial } from '../services/situacao-oficial.js';
 import { config } from '../config.js';
 
 const r = Router();
@@ -175,6 +176,7 @@ r.get('/', ah(async (req, res) => {
 r.get('/:id', ah(async (req, res) => {
   const s = await one('SELECT * FROM question_sets WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
   if (!s) throw new HttpError(404, 'Simulado não encontrado.');
+  s.questoes = await aplicarSituacaoOficial(s.questoes);
   res.json({ set: view(s) });
 }));
 

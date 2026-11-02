@@ -911,6 +911,7 @@ function viewCadernoQ(q, idx) {
         <span class="badge">${esc(q.materia)}</span>
         ${q.assunto ? `<span class="badge">${esc(q.assunto)}</span>` : ''}
         ${q.topico_edital ? `<span class="badge edital-tag">${ic('target', 'sm')} Edital: ${esc(q.topico_edital)}</span>` : ''}
+        ${q.anulada ? '<span class="badge sev high" title="A banca anulou esta questão no gabarito definitivo">Anulada pela banca — não conta</span>' : q.gabaritoAtualizado ? '<span class="badge accent" title="Gabarito conferido com o definitivo oficial">Gabarito atualizado (definitivo)</span>' : ''}
         ${q.revisao ? `<span class="badge ${q.revisao.dominada ? 'brand' : q.revisao.paraRevisarHoje ? 'accent' : ''}" title="Repetição Espaçada: ${q.revisao.rotulo}${q.revisao.paraRevisarHoje ? ' · Pendente para revisão hoje!' : ''}">${q.revisao.dominada ? '✔ Dominada' : q.revisao.paraRevisarHoje ? '🔔 Revisar hoje (' + q.revisao.rotulo + ')' : '⏳ ' + q.revisao.rotulo}</span>` : ''}
       </div>
       <div class="row no-print" style="gap:6px">
@@ -1143,7 +1144,7 @@ function viewProvas() {
       ${m.sec.blockedUsers.length ? `<div class="banner warn">${ic('alert', 'sm')}<div>Envios pausados: ${m.sec.blockedUsers.map((u) => esc(u.name) + ' (' + esc(u.email) + ')').join(', ')}</div></div>` : ''}
       ${m.sec.events.length ? `<table class="tbl"><thead><tr><th>Quando</th><th>Tipo</th><th>Nível</th><th>Usuário</th><th>Arquivo</th><th>Motivos</th></tr></thead><tbody>${m.sec.events.slice(0, 80).map((e) => `<tr><td>${new Date(e.created_at).toLocaleString('pt-BR')}</td><td>${esc(e.kind)}</td><td><span class="sev ${e.severity}">${SEV_LABEL[e.severity] || esc(e.severity)}</span></td><td>${esc(e.name || '—')}</td><td>${esc(e.file_name || '—')}</td><td class="hint">${esc(((e.details?.findings || []).filter((f) => !['info', 'low'].includes(f.severity)).map((f) => f.message).concat(e.details?.reasons || [], e.details?.alertas || [])).slice(0, 3).join(' · '))}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Nenhum evento.</p>'}</div>`;
   }
-  return `<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h1 class="page-title">Base de provas</h1><p class="page-sub">Revise as provas enviadas, acompanhe o treino da IA e monitore segurança e custos.</p></div><div class="row" style="gap:8px"><button class="btn btn-ghost" id="admLote" title="Importa várias provas de links oficiais de uma vez">${ic('download', 'sm')} Importar em lote</button><button class="btn btn-ghost" id="admRotular" title="Completa tópico, comando e pegadinha das questões de provas antigas usando as IAs grátis (provas são públicas)">${ic('brain', 'sm')} Rotular provas antigas</button><button class="btn btn-primary" data-go="contribuir">${ic('upload', 'sm')} Enviar provas</button></div></div>
+  return `<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h1 class="page-title">Base de provas</h1><p class="page-sub">Revise as provas enviadas, acompanhe o treino da IA e monitore segurança e custos.</p></div><div class="row" style="gap:8px"><button class="btn btn-ghost" id="admDiverg" title="Questões em que os dois modelos discordaram do gabarito">${ic('alert', 'sm')} Divergências</button><button class="btn btn-ghost" id="admLote" title="Importa várias provas de links oficiais de uma vez">${ic('download', 'sm')} Importar em lote</button><button class="btn btn-ghost" id="admRotular" title="Completa tópico, comando e pegadinha das questões de provas antigas usando as IAs grátis (provas são públicas)">${ic('brain', 'sm')} Rotular provas antigas</button><button class="btn btn-primary" data-go="contribuir">${ic('upload', 'sm')} Enviar provas</button></div></div>
   <div class="tabs" style="max-width:520px">${tabs.map(([k, l]) => `<button type="button" class="${tab === k ? 'on' : ''}" data-atab="${k}">${l}</button>`).join('')}</div>${body}`;
 }
 
@@ -2015,6 +2016,33 @@ function bindApp() {
     schedulePoll();
   }
   if (S.view === 'provas' && isAdmin()) {
+    const abrirDivergencias = async () => {
+      try {
+        const { divergencias } = await api('/admin/divergencias');
+        S.modal = {
+          title: `Gabaritos em disputa (${divergencias.length})`,
+          html: divergencias.length ? `<p class="hint" style="margin-top:0">Os dois modelos leram respostas diferentes. Essas questões ficam fora do alcance dos alunos até você escolher (ou aplicar o gabarito definitivo da prova).</p>
+            <div style="max-height:420px;overflow-y:auto">${divergencias.map((d) => {
+              const g = d.divergencia_gabarito || {};
+              const opcoes = [...new Set([g.modelo1?.gabarito, g.modelo2?.gabarito].filter(Boolean))];
+              return `<div class="card card-pad" style="margin-bottom:10px">
+                <div class="hint">${esc(d.prova_titulo || '')} · questão ${d.numero ?? '—'} · ${esc(d.materia || '')}</div>
+                <div style="margin:6px 0">${esc(d.enunciado)}</div>
+                ${(d.alternativas || []).length ? `<ol type="A" style="margin:0 0 8px 18px">${d.alternativas.map((a) => `<li>${esc(a)}</li>`).join('')}</ol>` : ''}
+                <div class="row" style="gap:8px;flex-wrap:wrap">${opcoes.map((l) => `<button class="btn btn-ghost" data-resolver="${d.id}:${l}">Usar ${l}</button>`).join('')}
+                  <span class="hint">(${esc(g.modelo1?.model || '?')}: ${esc(g.modelo1?.gabarito || '?')} · ${esc(g.modelo2?.model || '?')}: ${esc(g.modelo2?.gabarito || '?')})</span></div>
+              </div>`;
+            }).join('')}</div>` : '<p class="hint">Nenhuma divergência pendente.</p>',
+        };
+        render();
+      } catch (err) { toast(err.message); }
+    };
+    on('#admDiverg', 'click', abrirDivergencias);
+    on('[data-resolver]', 'click', async (e) => {
+      const [qid, letra] = e.currentTarget.dataset.resolver.split(':');
+      try { await api(`/admin/questoes/${qid}/gabarito`, { method: 'POST', body: { gabarito: letra } }); toast(`Gabarito ${letra} confirmado.`); await abrirDivergencias(); }
+      catch (err) { toast(err.message); }
+    });
     on('#admRotular', 'click', async () => { try { const r = await api('/admin/provas/rotular', { method: 'POST' }); toast(r.provas ? `${r.provas} prova(s) na fila para rotular (IAs grátis). Acompanhe em Monitor → Fila de tarefas.` : 'Todas as provas já estão rotuladas.'); } catch (e) { toast(e.message); } });
     on('[data-atab]', 'click', async (e) => { S.adminTab = e.currentTarget.dataset.atab; render(); if (S.adminTab === 'monitor') { try { await loadAdmin(true); } catch (err) { toast(err.message); } render(); } });
     on('[data-pb]', 'click', (e) => { S.provaBanca = e.currentTarget.dataset.pb; render(); });
@@ -2084,17 +2112,17 @@ function bindApp() {
       const texto = ($('#loteTexto')?.value || '').trim();
       if (!texto) return toast('Cole ao menos um link oficial.');
       const resEl = $('#loteRes');
-      if (resEl) resEl.innerHTML = '<div class="row"><span class="spinner sm"></span> <span>Baixando arquivos oficiais e enfileirando treino...</span></div>';
+      if (resEl) resEl.innerHTML = '<div class="row"><span class="spinner sm"></span> <span>Validando os links…</span></div>';
       try {
         const r = await api('/admin/provas/lote', { method: 'POST', body: { banca, texto } });
-        toast(`Importação concluída: ${r.importadas} importada(s), ${r.duplicatas} duplicada(s), ${r.erros} erro(s).`);
+        toast(`${r.enfileiradas} link(s) na fila de importação${r.erros ? `, ${r.erros} recusado(s)` : ''}. As provas aparecem na lista conforme forem baixadas.`);
         await loadAdmin(false);
         S.modal = {
           title: 'Resultado da importação em lote',
           html: `
-            <div class="banner ${r.erros ? 'warn' : 'info'}">${ic(r.erros ? 'alert' : 'check', 'sm')}<div><b>${r.importadas} prova(s) importada(s) e enviadas para treino</b> · ${r.duplicatas} já na base · ${r.erros} erro(s).</div></div>
+            <div class="banner ${r.erros ? 'warn' : 'info'}">${ic(r.erros ? 'alert' : 'check', 'sm')}<div><b>${r.enfileiradas} link(s) na fila</b> · ${r.erros} recusado(s) na validação. O download e o treino acontecem em segundo plano; acompanhe na lista de provas.</div></div>
             <div style="max-height:300px;overflow-y:auto;margin-top:12px">
-              <table class="tbl"><thead><tr><th>Item</th><th>Status</th><th>Detalhes</th></tr></thead><tbody>${r.resultados.map((x) => `<tr><td>${x.item}</td><td><span class="badge ${x.status === 'importada' ? 'brand' : x.status === 'duplicata' ? '' : 'sev high'}">${esc(x.status)}</span></td><td class="hint">${esc(x.titulo || x.erro || x.mensagem || x.url)}</td></tr>`).join('')}</tbody></table>
+              <table class="tbl"><thead><tr><th>Item</th><th>Status</th><th>Detalhes</th></tr></thead><tbody>${r.resultados.map((x) => `<tr><td>${x.item}</td><td><span class="badge ${x.status === 'na_fila' ? 'brand' : 'sev high'}">${esc(x.status)}</span></td><td class="hint">${esc(x.titulo || x.erro || x.mensagem || x.url)}</td></tr>`).join('')}</tbody></table>
             </div>
             <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn btn-primary" onclick="S.modal=null;render()">Fechar</button></div>
           `,
@@ -2130,38 +2158,61 @@ function bindApp() {
       };
       render();
     });
+    // Gabarito definitivo em 2 passos: prévia (nada é gravado) → o admin confere → confirma e grava
+    const enviarGabarito = async ({ pid, url, text, file }, confirmar) => {
+      if (file) {
+        const fd = new FormData();
+        fd.append('gabarito', file);
+        if (url) fd.append('url', url);
+        if (text) fd.append('text', text);
+        fd.append('confirmar', confirmar ? 'true' : 'false');
+        return api(`/admin/provas/${pid}/gabarito-definitivo`, { method: 'POST', form: fd });
+      }
+      return api(`/admin/provas/${pid}/gabarito-definitivo`, { method: 'POST', body: { url, text, confirmar } });
+    };
+    const STATUS_GAB = { anulada: ['sev high', 'Anulada'], alterada: ['brand', 'Alterada pela banca'], corrigida: ['accent', 'Extração corrigida'], confirmada: ['', 'Confirmada'] };
     on('#btnAplicarGab', 'click', async (e) => {
       const pid = e.currentTarget.dataset.pid;
       const url = ($('#gdUrl')?.value || '').trim();
       const text = ($('#gdTexto')?.value || '').trim();
-      const fileInput = $('#gdArquivo');
-      const file = fileInput?.files?.[0];
+      const file = $('#gdArquivo')?.files?.[0];
       if (!url && !text && !file) return toast('Informe o link oficial, cole o texto ou selecione um arquivo.');
       const stEl = $('#gdStatus');
-      if (stEl) stEl.innerHTML = '<div class="row"><span class="spinner sm"></span> <span>Processando gabarito definitivo e atualizando questões...</span></div>';
+      if (stEl) stEl.innerHTML = '<div class="row"><span class="spinner sm"></span> <span>Lendo o gabarito e montando a prévia…</span></div>';
       try {
-        let r;
-        if (file) {
-          const fd = new FormData();
-          fd.append('gabarito', file);
-          if (url) fd.append('url', url);
-          if (text) fd.append('text', text);
-          r = await api(`/admin/provas/${pid}/gabarito-definitivo`, { method: 'POST', body: fd });
-        } else {
-          r = await api(`/admin/provas/${pid}/gabarito-definitivo`, { method: 'POST', body: { url, text } });
-        }
-        toast(`Gabarito definitivo aplicado: ${r.resumo.atualizadas} atualizada(s), ${r.resumo.anuladas} anulada(s), ${r.resumo.alteradas} alterada(s).`);
-        await loadAdmin(false);
+        const r = await enviarGabarito({ pid, url, text, file }, false);
+        S.gdPendente = { pid, url, text, file };
+        const mudancas = (r.resumo.detalhes || []).filter((d) => d.status !== 'confirmada');
         S.modal = {
-          title: 'Gabarito definitivo aplicado com sucesso',
+          title: 'Prévia do gabarito definitivo — confira antes de gravar',
           html: `
-            <div class="banner info">${ic('check', 'sm')}<div><b>${r.resumo.atualizadas} questão(ões) atualizada(s)</b> · ${r.resumo.anuladas} anulada(s) · ${r.resumo.alteradas} alterada(s) de ${r.resumo.totalQuestoesProva} questões na prova.</div></div>
-            <div style="max-height:260px;overflow-y:auto;margin-top:12px">
-              ${(r.resumo.detalhes || []).filter((d) => d.status !== 'confirmada').map((d) => `<div class="trait" style="display:block"><span class="badge ${d.status === 'anulada' ? 'sev high' : 'brand'}">Questão ${d.numero}: ${esc(d.status)}</span> <span class="hint">${esc(d.motivo || '')}</span></div>`).join('') || '<p class="hint">Nenhuma anulação ou alteração necessária (todas as respostas confirmadas).</p>'}
+            <div class="banner ${mudancas.length ? 'warn' : 'info'}">${ic(mudancas.length ? 'alert' : 'check', 'sm')}<div>
+              <b>${r.resumo.atualizadas} de ${r.resumo.totalQuestoesProva} questões encontradas</b> · ${r.resumo.anuladas} anulada(s) · ${r.resumo.alteradas} alterada(s) pela banca · ${r.resumo.corrigidas || 0} correção(ões) da extração${r.resumo.semCorrespondencia ? ` · ${r.resumo.semCorrespondencia} número(s) sem questão correspondente` : ''}${r.resumo.fonteOficial ? ' · <b>✔ baixado da fonte oficial</b>' : ''}
+            </div></div>
+            <div style="max-height:280px;overflow-y:auto;margin-top:12px">
+              ${mudancas.length ? `<table class="tbl"><thead><tr><th>Questão</th><th>O que muda</th><th>Antes</th><th>Depois</th></tr></thead><tbody>${mudancas.map((d) => `<tr><td>${d.numero}</td><td><span class="badge ${STATUS_GAB[d.status]?.[0] || ''}">${STATUS_GAB[d.status]?.[1] || esc(d.status)}</span></td><td>${esc(d.antes || '—')}</td><td>${d.status === 'anulada' ? 'anulada' : esc(d.gabarito || '—')}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Todas as respostas conferem com o que já está na base.</p>'}
             </div>
-            <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn btn-primary" onclick="S.modal=null;render()">Fechar</button></div>
-          `,
+            <div class="row" style="margin-top:14px;justify-content:flex-end;gap:8px">
+              <button class="btn btn-quiet" onclick="S.modal=null;S.gdPendente=null;render()">Cancelar</button>
+              <button class="btn btn-primary" id="btnConfirmarGab">${ic('check', 'sm')} Confirmar e gravar</button>
+            </div>
+            <div id="gdStatus" style="margin-top:12px"></div>`,
         };
+        render();
+      } catch (err) {
+        if (stEl) stEl.innerHTML = `<div class="hint" style="color:var(--bad)">${esc(err.message)}</div>`;
+      }
+    });
+    on('#btnConfirmarGab', 'click', async () => {
+      const pend = S.gdPendente;
+      if (!pend) return;
+      const stEl = $('#gdStatus');
+      if (stEl) stEl.innerHTML = '<div class="row"><span class="spinner sm"></span> <span>Gravando…</span></div>';
+      try {
+        const r = await enviarGabarito(pend, true);
+        S.gdPendente = null; S.modal = null;
+        toast(`Gabarito definitivo gravado: ${r.resumo.anuladas} anulada(s), ${r.resumo.alteradas} alterada(s), ${r.resumo.corrigidas || 0} corrigida(s).`);
+        await loadAdmin(false);
         render();
       } catch (err) {
         if (stEl) stEl.innerHTML = `<div class="hint" style="color:var(--bad)">${esc(err.message)}</div>`;

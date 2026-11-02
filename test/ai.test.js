@@ -180,3 +180,7 @@ test('raciocínio do Claude 5.x: ligado com reserva só nas tarefas de acerto; d
   assert.equal(config.ai.tasks.prova_extract.esforco, null);
   assert.equal(config.ai.tasks.json_repair.esforco, null);
 });
+
+test('G2: somenteGratis nunca cai em modelo pago (sem grátis → erro, não chamada paga)', async () => {
+  await assert.rejects(runText('review', { prompt: 'x', somenteGratis: true }), (e) => e.code === 'not_configured');
+});

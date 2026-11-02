@@ -130,6 +130,11 @@ async function logUsage(row) {
  */
 export async function runText(task, req) {
   let routes = routeFor(task, { dados: req.dados });
+  // somenteGratis: tarefas extras (ex.: 2ª extração do consenso) nunca podem cair num modelo pago
+  if (req.somenteGratis) {
+    routes = routes.filter((r) => isFreeModel(r.model, r.provider));
+    if (!routes.length) throw new AiError('Nenhum modelo grátis disponível para esta tarefa.', { code: 'not_configured', fallback: false });
+  }
   if (req.avoid?.provider) {
     const peso = (r) => (r.provider !== req.avoid.provider ? 0 : r.model === req.avoid.model ? 2 : 1);
     routes = [...routes].sort((a, b) => peso(a) - peso(b));

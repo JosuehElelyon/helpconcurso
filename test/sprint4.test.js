@@ -105,10 +105,16 @@ GABARITO DEFINITIVO
 4 - D
 `;
 
+  // Prévia: nada é gravado
+  const previa = await aplicarGabaritoDefinitivo({ provaId: p.id, user: { id: p.uploaded_by || null, role: 'ADMIN' }, text: textoGabDef });
+  assert.equal(previa.resumo.previa, true);
+  assert.equal((await one('SELECT gabarito_definitivo FROM provas WHERE id=$1', [p.id])).gabarito_definitivo, false);
+
   const out = await aplicarGabaritoDefinitivo({
     provaId: p.id,
     user: { id: p.uploaded_by || null, role: 'ADMIN' },
     text: textoGabDef,
+    confirmar: true,
   });
 
   assert.equal(out.resumo.totalLidas, 4);
@@ -219,3 +225,68 @@ test('F6: consenso de gabarito detecta divergências entre modelos de IA e marca
   assert.equal(rows[1].divergencia_gabarito.modelo2.gabarito, 'C');
 });
 
+
+test('G1: texto corrido não vira gabarito; cargos/tipos de prova viram conflito', async () => {
+  const { analisarGabarito } = await import('../src/services/provas.js');
+  assert.deepEqual(analisarGabarito('Gabarito definitivo das questões 1 e 2 do caderno. Página 1 de 3.').itens, []);
+  assert.deepEqual(analisarGabarito('Edital nº 3, de 12 de março de 2024. Questões 10 a 20.').itens, []);
+  assert.deepEqual(analisarGabarito('QUESTÕES 1 E 2 DO CADERNO DE PROVA').itens, []);
+  const cargos = analisarGabarito('CARGO 101 - ANALISTA\n1 A 2 B 3 C\nCARGO 102 - TÉCNICO\n1 D 2 E 3 A');
+  assert.deepEqual(cargos.conflitos, [1, 2, 3]);
+  assert.equal(cargos.blocos.length, 2);
+  assert.deepEqual(analisarGabarito('TIPO 1 - BRANCA: 1-A 2-B\nTIPO 2 - AMARELA: 1-C 2-D').conflitos, [1, 2]);
+  assert.deepEqual(analisarGabarito('Questão 1: A\nQuestão 2: B\nItem 3 - Certo').itens.map((i) => i.gabarito), ['A', 'B', 'C']);
+});
+
+test('G1: aplicar recusa conflito, letra fora do formato e cobertura baixa', async () => {
+  const p = await one(`INSERT INTO provas(banca, banca_informada, file_name, file_key, status, titulo, text)
+                       VALUES ('cebraspe','cebraspe','g1.pdf','g1/x','READY','Prova G1','texto') RETURNING *`);
+  for (let n = 1; n <= 5; n++) {
+    await query(`INSERT INTO prova_questoes(prova_id, banca, materia, numero, enunciado, alternativas, gabarito)
+                 VALUES ($1,'cebraspe','Direito Constitucional',$2,$3,'[]'::jsonb,'C')`, [p.id, n, `Item ${n} da prova G1`]);
+  }
+  const admin = { id: null, role: 'ADMIN' };
+  await assert.rejects(aplicarGabaritoDefinitivo({ provaId: p.id, user: admin, text: 'CARGO 1 - A\n1 C 2 E 3 C 4 E 5 C\nCARGO 2 - B\n1 E 2 E 3 C 4 E 5 C', confirmar: true }), /mais de um bloco/);
+  await assert.rejects(aplicarGabaritoDefinitivo({ provaId: p.id, user: admin, text: '1 C 2 B 3 C 4 E 5 C', confirmar: true }), /formato/); // "B" num item Certo/Errado
+  await assert.rejects(aplicarGabaritoDefinitivo({ provaId: p.id, user: admin, text: '1 C 2 E', confirmar: true }), /mínimo 60%/);
+  const ok = await aplicarGabaritoDefinitivo({ provaId: p.id, user: admin, text: '1 C 2 E 3 C 4 ANULADO 5 C', confirmar: true });
+  assert.equal(ok.resumo.anuladas, 1);
+  assert.equal(ok.resumo.corrigidas, 1, 'item 2: extraído C, definitivo E, sem "alterada" → correção da extração');
+  assert.equal(ok.resumo.alteradas, 0);
+});
+
+test('G4: lote só valida e enfileira (sem baixar na requisição); limite de 50 links', async () => {
+  const adminUser = await one("SELECT * FROM users WHERE role='ADMIN' LIMIT 1") || { id: null, role: 'ADMIN' };
+  const r = await importarProvasEmLote({ user: adminUser, defaultBanca: 'fgv', texto: 'https://g4-teste.invalido.gov.br/g4-teste.pdf\nhttps://www.qconcursos.com/x.pdf' });
+  assert.equal(r.enfileiradas, 1);
+  assert.equal(r.erros, 1);
+  assert.equal(r.resultados[0].status, 'na_fila');
+  const job = await one("SELECT id FROM jobs WHERE type='prova.importar' AND payload->>'provaUrl' LIKE '%g4-teste.pdf' ORDER BY id DESC LIMIT 1");
+  assert.ok(job, 'deve criar a tarefa na fila');
+  await query("DELETE FROM jobs WHERE type='prova.importar' AND payload->>'provaUrl' LIKE '%g4-teste.pdf'"); // não tentar baixar de verdade
+  const muitos = Array.from({ length: 51 }, (_, i) => `https://conhecimento.fgv.br/p${i}.pdf`).join('\n');
+  await assert.rejects(importarProvasEmLote({ user: adminUser, defaultBanca: 'fgv', texto: muitos }), /no máximo 50/);
+});
+
+test('G6: questão anulada depois é marcada na cópia do simulado/caderno; gabarito definitivo atualiza a cópia', async () => {
+  const { aplicarSituacaoOficial } = await import('../src/services/situacao-oficial.js');
+  const p = await one(`INSERT INTO provas(banca, banca_informada, file_name, file_key, status, titulo, text)
+                       VALUES ('fgv','fgv','g6.pdf','g6/x','READY','Prova G6','texto') RETURNING id`);
+  const a = await one(`INSERT INTO prova_questoes(prova_id, banca, enunciado, alternativas, gabarito, anulada) VALUES ($1,'fgv','Q anulada G6','["a","b"]','A',true) RETURNING id`, [p.id]);
+  const b = await one(`INSERT INTO prova_questoes(prova_id, banca, enunciado, alternativas, gabarito, gabarito_definitivo) VALUES ($1,'fgv','Q definitiva G6','["a","b"]','B',true) RETURNING id`, [p.id]);
+  const out = await aplicarSituacaoOficial([{ id: a.id, gabarito: 'A' }, { id: b.id, gabarito: 'A' }, { enunciado: 'questão da IA', gabarito: 'C' }]);
+  assert.equal(out[0].anulada, true);
+  assert.equal(out[1].gabarito, 'B');
+  assert.equal(out[1].gabaritoAtualizado, true);
+  assert.equal(out[2].gabarito, 'C');
+});
+
+test('G8: tarefas de fundo (rotular, importar) entram com prioridade baixa e não atrasam as do aluno', async () => {
+  const { enqueue } = await import('../src/jobs/queue.js');
+  const fundo = await enqueue('prova.relabel', { provaId: '00000000-0000-0000-0000-000000000000' }, { delaySec: 3600 });
+  const aluno = await enqueue('prova.check', { provaId: '00000000-0000-0000-0000-000000000000' }, { delaySec: 3600 });
+  const rows = await many('SELECT id, prioridade FROM jobs WHERE id = ANY($1::bigint[]) ORDER BY prioridade DESC, id', [[fundo.id, aluno.id]]);
+  assert.equal(rows[0].id, aluno.id, 'a tarefa do aluno sai primeiro mesmo tendo entrado depois');
+  assert.equal(rows.find((r) => r.id === fundo.id).prioridade, -10);
+  await query('DELETE FROM jobs WHERE id = ANY($1::bigint[])', [[fundo.id, aluno.id]]);
+});

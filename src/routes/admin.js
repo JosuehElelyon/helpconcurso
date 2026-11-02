@@ -1,7 +1,7 @@
 // Painel do administrador: revisão de provas, base, segurança e uso de IA
 import { Router } from 'express';
 import { z } from 'zod';
-import { one, many } from '../db.js';
+import { one, many, query } from '../db.js';
 import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
 import { requireAdmin } from '../lib/auth.js';
 import { BANCA } from '../lib/bancas.js';
@@ -50,7 +50,31 @@ r.post('/provas/:id/recusar', ah(async (req, res) => {
 }));
 r.post('/provas/:id/reprocessar', ah(async (req, res) => res.json({ prova: view(await reprocessProva(req.params.id)) })));
 // F5: rotula questões de provas antigas (cascata grátis — provas são documentos públicos)
-r.post('/provas/rotular', ah(async (_req, res) => res.json({ provas: await enqueueRelabel() })));
+r.post('/provas/rotular', ah(async (req, res) => {
+  const provaId = /^[0-9a-f-]{36}$/i.test(String(req.body?.provaId || '')) ? req.body.provaId : null; // vazio = todas
+  res.json({ provas: await enqueueRelabel({ provaId }) });
+}));
+
+// G5: questões com gabarito em disputa entre os modelos do consenso — o admin escolhe/confirma
+r.get('/divergencias', ah(async (_req, res) => {
+  const rows = await many(`SELECT q.id, q.numero, q.materia, left(q.enunciado, 400) AS enunciado, q.alternativas, q.gabarito, q.divergencia_gabarito,
+                                  p.id AS prova_id, coalesce(p.titulo, p.file_name) AS prova_titulo, p.banca
+                           FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
+                           WHERE q.consenso_gabarito = false AND NOT q.anulada
+                           ORDER BY p.created_at DESC, q.numero NULLS LAST LIMIT 200`);
+  res.json({ divergencias: rows });
+}));
+r.post('/questoes/:qid/gabarito', ah(async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.qid)) throw new HttpError(404, 'Questão não encontrada.');
+  const b = parseBody(z.object({ gabarito: z.string().trim().toUpperCase().regex(/^[A-E]$/, 'Gabarito inválido.') }), req.body);
+  const q = await one('SELECT id, alternativas FROM prova_questoes WHERE id=$1', [req.params.qid]);
+  if (!q) throw new HttpError(404, 'Questão não encontrada.');
+  const alts = Array.isArray(q.alternativas) ? q.alternativas : [];
+  const ok = alts.length ? 'ABCDE'.indexOf(b.gabarito) < alts.length : /^[CE]$/.test(b.gabarito);
+  if (!ok) throw new HttpError(422, alts.length ? 'Letra fora das alternativas desta questão.' : 'Questão Certo/Errado: use C ou E.');
+  await query('UPDATE prova_questoes SET gabarito=$2, consenso_gabarito=true WHERE id=$1', [q.id, b.gabarito]);
+  res.json({ ok: true });
+}));
 
 // B1: Importação de provas em lote a partir de links oficiais
 r.post('/provas/lote', ah(async (req, res) => {
@@ -81,6 +105,8 @@ r.post('/provas/:id/gabarito-definitivo', uploader([{ name: 'gabarito', maxCount
   const b = parseBody(z.object({
     url: z.string().trim().max(500).optional().default(''),
     text: z.string().trim().max(500000).optional().default(''),
+    // Sem confirmar → só a prévia (nada é gravado)
+    confirmar: z.union([z.boolean(), z.enum(['true', 'false'])]).optional().default(false),
   }), req.body || {});
 
   const file = fileOf(req, 'gabarito');
@@ -90,6 +116,7 @@ r.post('/provas/:id/gabarito-definitivo', uploader([{ name: 'gabarito', maxCount
     url: b.url || null,
     file: file || null,
     text: b.text || null,
+    confirmar: b.confirmar === true || b.confirmar === 'true',
   });
   res.json({ prova: view(out.prova), resumo: out.resumo });
 }));

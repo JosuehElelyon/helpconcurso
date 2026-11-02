@@ -21,3 +21,14 @@ try {
   await admin.end();
 }
 process.env.DATABASE_URL = url.toString();
+
+// Tarefas pendentes de rodadas anteriores (o banco de teste é mantido) não podem atrasar a fila desta rodada
+const limpa = new pg.Client({ connectionString: process.env.DATABASE_URL });
+await limpa.connect();
+try {
+  await limpa.query("UPDATE jobs SET status='dead', updated_at=now() WHERE status IN ('queued','running') AND created_at < now() - interval '2 minutes'");
+} catch (e) {
+  if (e.code !== '42P01') throw e; // tabela jobs ainda não existe (banco novo)
+} finally {
+  await limpa.end();
+}

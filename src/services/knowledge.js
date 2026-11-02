@@ -2,6 +2,7 @@
 // Só entram provas READY e questões que passaram na varredura de segurança (flagged = false).
 import crypto from 'node:crypto';
 import { many } from '../db.js';
+import { questaoValida } from '../lib/questoes-validas.js';
 import { COMANDOS, PEGADINHAS } from '../lib/cobranca.js';
 
 // Ordem dos exemplos: varia por dia, mas é a mesma para todos os alunos no dia (system estável → cache do provedor)
@@ -32,7 +33,7 @@ export async function getKnowledge(banca, materia, nExemplos = 6, editalId = nul
     const base = `SELECT q.id, q.materia, q.enunciado, q.alternativas, q.gabarito,
                          (p.edital_id = $3) AS from_edital, (p.id = ANY($4::uuid[])) AS from_caderno
                   FROM prova_questoes q JOIN provas p ON p.id=q.prova_id
-                  WHERE q.banca=$1 AND p.status='READY' AND NOT q.flagged AND NOT q.anulada`;
+                  WHERE q.banca=$1 AND p.status='READY' AND ${questaoValida('q')}`;
     let pool = [];
     if (materia) {
       pool = await many(`${base} AND q.materia ILIKE $2 ORDER BY (p.id = ANY($4::uuid[])) DESC, (p.edital_id = $3) DESC NULLS LAST, md5(q.id::text || $5) LIMIT 40`, [banca, `%${materia}%`, editalId || null, pIds, dia]);
@@ -66,15 +67,15 @@ export async function getKnowledge(banca, materia, nExemplos = 6, editalId = nul
     const fmt = (rows, vocab) => rows.map((r) => `${vocab ? vocab[r.k] || r.k : r.k} (${r.n} questões)`);
     const [pegs, cmds, disps] = await Promise.all([
       many(`SELECT q.pegadinha_tipo AS k, count(*)::int AS n FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
-            WHERE q.banca=$1 AND p.status='READY' AND NOT q.flagged AND q.pegadinha_tipo IS NOT NULL AND q.pegadinha_tipo <> 'nenhuma'
+            WHERE q.banca=$1 AND p.status='READY' AND ${questaoValida('q')} AND q.pegadinha_tipo IS NOT NULL AND q.pegadinha_tipo <> 'nenhuma'
               AND ($2::text IS NULL OR q.materia ILIKE $2)
             GROUP BY 1 ORDER BY n DESC, k LIMIT 6`, [banca, filtroMateria]),
       many(`SELECT q.comando AS k, count(*)::int AS n FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
-            WHERE q.banca=$1 AND p.status='READY' AND NOT q.flagged AND q.comando IS NOT NULL AND q.comando <> 'outro'
+            WHERE q.banca=$1 AND p.status='READY' AND ${questaoValida('q')} AND q.comando IS NOT NULL AND q.comando <> 'outro'
             GROUP BY 1 ORDER BY n DESC, k LIMIT 5`, [banca]),
       many(`SELECT d AS k, count(*)::int AS n FROM prova_questoes q JOIN provas p ON p.id = q.prova_id,
                    jsonb_array_elements_text(coalesce(q.dispositivos, '[]'::jsonb)) AS d
-            WHERE q.banca=$1 AND p.status='READY' AND NOT q.flagged AND ($2::text IS NULL OR q.materia ILIKE $2)
+            WHERE q.banca=$1 AND p.status='READY' AND ${questaoValida('q')} AND ($2::text IS NULL OR q.materia ILIKE $2)
             GROUP BY 1 HAVING count(*) >= 2 ORDER BY n DESC, k LIMIT 6`, [banca, filtroMateria]),
     ]);
     pegadinhasRotuladas = fmt(pegs, PEGADINHAS);

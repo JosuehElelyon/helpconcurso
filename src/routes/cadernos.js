@@ -15,6 +15,8 @@ import { BANCA } from '../lib/bancas.js';
 import { submitProva, publicStatus } from '../services/provas.js';
 import { assertCanUpload } from '../services/quota.js';
 import { scanText, SEV } from '../security/index.js';
+import { questaoValida } from '../lib/questoes-validas.js';
+import { aplicarSituacaoOficial } from '../services/situacao-oficial.js';
 import { calcularRevisao, paraRevisarHoje, rotuloFase, resumoRevisao, estadoEfetivo } from '../lib/revisao-espacada.js';
 
 const r = Router();
@@ -78,7 +80,7 @@ async function syncProvasExtras(c) {
     const qRows = await many(
       `SELECT id, numero, materia, enunciado, alternativas, gabarito
        FROM prova_questoes
-       WHERE prova_id = $1 AND NOT flagged AND gabarito IS NOT NULL AND length(trim(gabarito)) > 0
+       WHERE prova_id = $1 AND ${questaoValida('')} AND gabarito IS NOT NULL AND length(trim(gabarito)) > 0
        ORDER BY numero ASC NULLS LAST LIMIT 80`,
       [p.id]
     );
@@ -204,7 +206,8 @@ async function buildCadernoDetail(rawCaderno, userId) {
   const notes = c.anotacoes && typeof c.anotacoes === 'object' ? c.anotacoes : {};
   const respExtras = c.respostas_extras && typeof c.respostas_extras === 'object' ? c.respostas_extras : {};
   const revisaoMap = c.revisao_espacada && typeof c.revisao_espacada === 'object' ? c.revisao_espacada : {};
-  const extras = Array.isArray(c.questoes_extras) ? c.questoes_extras : [];
+  const extras = await aplicarSituacaoOficial(Array.isArray(c.questoes_extras) ? c.questoes_extras : []);
+  for (const s of sets) s.questoes = await aplicarSituacaoOficial(s.questoes);
 
   const questoes = [];
   const byMateria = new Map();
@@ -227,8 +230,8 @@ async function buildCadernoDetail(rawCaderno, userId) {
       const ans = r[idx] ?? null;
       const isOk = ans != null && ans === q.gabarito;
       const mat = s.materia || 'Geral';
-      const rev = estadoEfetivo(revisaoMap[key], ans, q.gabarito);
-      bumpMat(mat, ans != null, isOk);
+      const rev = q.anulada ? null : estadoEfetivo(revisaoMap[key], ans, q.gabarito);
+      bumpMat(mat, ans != null && !q.anulada, isOk && !q.anulada);
       questoes.push({
         key,
         origem: 'ia',
@@ -254,6 +257,8 @@ async function buildCadernoDetail(rawCaderno, userId) {
         ans,
         favorita: Boolean(favs[key]),
         anotacao: String(notes[key] || ''),
+        anulada: Boolean(q.anulada),
+        gabaritoAtualizado: Boolean(q.gabaritoAtualizado),
         revisao: rev ? {
           fase: rev.fase,
           intervaloDias: rev.intervaloDias,
@@ -273,8 +278,8 @@ async function buildCadernoDetail(rawCaderno, userId) {
     const ans = respExtras[q.id] ?? null;
     const isOk = ans != null && ans === q.gabarito;
     const mat = q.materia || 'Conhecimentos Gerais';
-    const rev = estadoEfetivo(revisaoMap[key], ans, q.gabarito);
-    bumpMat(mat, ans != null, isOk);
+    const rev = q.anulada ? null : estadoEfetivo(revisaoMap[key], ans, q.gabarito);
+    bumpMat(mat, ans != null && !q.anulada, isOk && !q.anulada);
     questoes.push({
       key,
       extraId: q.id,
@@ -299,6 +304,8 @@ async function buildCadernoDetail(rawCaderno, userId) {
       ans,
       favorita: Boolean(favs[key]),
       anotacao: String(notes[key] || ''),
+      anulada: Boolean(q.anulada),
+      gabaritoAtualizado: Boolean(q.gabaritoAtualizado),
       revisao: rev ? {
         fase: rev.fase,
         intervaloDias: rev.intervaloDias,
@@ -543,7 +550,7 @@ r.post('/:id/alimentar-prova', perUser, uploader([{ name: 'prova', maxCount: 1 }
     const qRows = await many(
       `SELECT id, numero, materia, enunciado, alternativas, gabarito
        FROM prova_questoes
-       WHERE prova_id = $1 AND NOT flagged AND gabarito IS NOT NULL AND length(trim(gabarito)) > 0
+       WHERE prova_id = $1 AND ${questaoValida('')} AND gabarito IS NOT NULL AND length(trim(gabarito)) > 0
        ORDER BY numero ASC NULLS LAST LIMIT 80`,
       [prova.id]
     );

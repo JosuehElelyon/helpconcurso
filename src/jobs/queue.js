@@ -6,17 +6,19 @@ const handlers = new Map();
 let timer = null, running = 0, stopping = false;
 const CONCURRENCY = 2, POLL_MS = 1500, STALE_MIN = 20;
 
-export function registerJob(type, handler) { handlers.set(type, handler); } // handler: { run(payload, job), onDead?(payload, err), maxAttempts? }
+// handler: { run(payload, job), onDead?(payload, err), maxAttempts?, prioridade? } — prioridade maior sai primeiro (padrão 0;
+// tarefas de fundo usam negativa para nunca atrasar as do aluno)
+export function registerJob(type, handler) { handlers.set(type, handler); }
 
-export async function enqueue(type, payload, { delaySec = 0, maxAttempts } = {}) {
+export async function enqueue(type, payload, { delaySec = 0, maxAttempts, prioridade } = {}) {
   const h = handlers.get(type);
-  return one(`INSERT INTO jobs(type,payload,run_after,max_attempts) VALUES ($1,$2, now() + ($3 || ' seconds')::interval, $4) RETURNING id`,
-    [type, JSON.stringify(payload), String(delaySec), maxAttempts || h?.maxAttempts || 4]);
+  return one(`INSERT INTO jobs(type,payload,run_after,max_attempts,prioridade) VALUES ($1,$2, now() + ($3 || ' seconds')::interval, $4, $5) RETURNING id`,
+    [type, JSON.stringify(payload), String(delaySec), maxAttempts || h?.maxAttempts || 4, prioridade ?? h?.prioridade ?? 0]);
 }
 
 async function pick() {
   return one(`UPDATE jobs SET status='running', locked_at=now(), attempts=attempts+1, updated_at=now()
-              WHERE id = (SELECT id FROM jobs WHERE status='queued' AND run_after <= now() ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1)
+              WHERE id = (SELECT id FROM jobs WHERE status='queued' AND run_after <= now() ORDER BY prioridade DESC, id FOR UPDATE SKIP LOCKED LIMIT 1)
               RETURNING *`);
 }
 

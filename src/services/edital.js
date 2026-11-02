@@ -14,6 +14,7 @@ import { sanitizeText } from '../security/text-scan.js';
 import { decide } from '../security/policy.js';
 import { putFile, makeKey, deleteFile } from '../lib/storage.js';
 import { HttpError } from '../lib/http.js';
+import { questaoValida } from '../lib/questoes-validas.js';
 import { publicStatus } from './provas.js';
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -199,7 +200,7 @@ export async function buildEditalDashboard(edital, userId) {
   const realQuestions = (linkedProvaIds.length || edital.banca)
     ? await many(
       `SELECT q.materia, q.enunciado FROM prova_questoes q JOIN provas p ON p.id=q.prova_id
-       WHERE NOT q.flagged AND NOT q.anulada AND (q.consenso_gabarito IS NOT FALSE) AND p.status='READY' AND (p.id = ANY($1::uuid[]) OR ($2::text IS NOT NULL AND q.banca=$2))
+       WHERE ${questaoValida('q')} AND p.status='READY' AND (p.id = ANY($1::uuid[]) OR ($2::text IS NOT NULL AND q.banca=$2))
        LIMIT 400`,
       [linkedProvaIds, edital.banca || null]
     )
@@ -536,7 +537,7 @@ export async function getQuestoesReaisDoTopico(edital, topicoIdOrCode, limite = 
             (p.edital_id = $1 OR p.id = $2) AS vinculada
      FROM prova_questoes q
      JOIN provas p ON p.id = q.prova_id
-     WHERE p.status = 'READY' AND NOT q.flagged AND NOT q.anulada AND (q.consenso_gabarito IS NOT FALSE)
+     WHERE p.status = 'READY' AND ${questaoValida('q')}
        AND q.gabarito IS NOT NULL AND length(trim(q.gabarito)) > 0
        AND (($3::text IS NOT NULL AND q.banca = $3) OR p.edital_id = $1 OR p.id = $2)
        AND (($4::text IS NOT NULL AND q.topico_id = $4) OR q.topico ILIKE $5 OR q.materia ILIKE $6)

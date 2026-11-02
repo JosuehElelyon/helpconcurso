@@ -541,7 +541,9 @@ test('F5: rotular provas antigas completa tópico/comando/pegadinha sem mexer no
   // Simula prova antiga (antes do prova_extract v2): sem rótulos
   await pool.query('UPDATE prova_questoes SET topico=NULL, topico_id=NULL, comando=NULL, pegadinha_tipo=NULL, habilidade=NULL WHERE prova_id=$1', [alvo.prova_id]);
   assert.equal((await user('/api/admin/provas/rotular', { method: 'POST' })).status, 403);
-  const r = await admin('/api/admin/provas/rotular', { method: 'POST' });
+  const r = await admin('/api/admin/provas/rotular', { method: 'POST', body: { provaId: alvo.prova_id } });
+  // Clique duplo não duplica a tarefa
+  assert.equal((await admin('/api/admin/provas/rotular', { method: 'POST', body: { provaId: alvo.prova_id } })).data.provas, 0);
   assert.equal(r.status, 200);
   assert.ok(r.data.provas >= 1);
   let depois;
@@ -569,9 +571,13 @@ test('Sprint 4: endpoints admin de lote e gabarito definitivo', async () => {
   assert.equal((await user(`/api/admin/provas/${p.id}/gabarito-definitivo`, { method: 'POST', body: { text: '1 - A' } })).status, 403);
 
   // 2. Admin aplica gabarito definitivo via API
+  // Sem confirmar: só a prévia (nada gravado)
+  const previa = await admin(`/api/admin/provas/${p.id}/gabarito-definitivo`, { method: 'POST', body: { text: '1 - ALTERADA PARA B\n2 - ANULADA' } });
+  assert.equal(previa.status, 200, JSON.stringify(previa.data));
+  assert.equal(previa.data.resumo.previa, true);
   const gdRes = await admin(`/api/admin/provas/${p.id}/gabarito-definitivo`, {
     method: 'POST',
-    body: { text: '1 - ALTERADA PARA B\n2 - ANULADA' },
+    body: { text: '1 - ALTERADA PARA B\n2 - ANULADA', confirmar: true },
   });
   assert.equal(gdRes.status, 200, JSON.stringify(gdRes.data));
   assert.equal(gdRes.data.resumo.atualizadas, 2);

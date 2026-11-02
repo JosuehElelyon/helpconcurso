@@ -268,10 +268,13 @@ async function trainProva({ provaId }) {
     try {
       const { data: ext1, meta: meta1 } = await runJSON('prova_extract', { ...r, userId: p.uploaded_by }, provaExtractSchema);
       let ext2 = null, meta2 = null;
-      // F6: Dupla extração com consenso de gabarito entre modelos gratuitos
+      // F6: Dupla extração com consenso de gabarito — SÓ com modelo grátis (G2): sem grátis disponível, o consenso fica
+      // "não verificado" (null) em vez de pagar uma 2ª extração inteira no Claude
+      let consensoVerificado = false;
       if (config.ai.consensoGabarito !== false) {
         try {
-          const res2 = await runJSON('prova_extract', { ...r, userId: p.uploaded_by, avoid: { provider: meta1?.provider, model: meta1?.model } }, provaExtractSchema);
+          const res2 = await runJSON('prova_extract', { ...r, userId: p.uploaded_by, avoid: { provider: meta1?.provider, model: meta1?.model }, somenteGratis: true }, provaExtractSchema);
+          consensoVerificado = !(res2.meta?.provider === meta1?.provider && res2.meta?.model === meta1?.model); // mesmo modelo não é consenso
           ext2 = res2.data;
           meta2 = res2.meta;
         } catch (e2) {
@@ -289,10 +292,10 @@ async function trainProva({ provaId }) {
 
       for (const q1 of ext1.questoes) {
         const q2 = q2Map.get(q1.numero != null ? q1.numero : chaveQuestao(q1.enunciado));
-        let consenso = true;
+        let consenso = consensoVerificado ? true : null;
         let divergencia = null;
 
-        if (q2 && q1.gabarito && q2.gabarito && q1.gabarito.trim() && q2.gabarito.trim()) {
+        if (consensoVerificado && q2 && q1.gabarito && q2.gabarito && q1.gabarito.trim() && q2.gabarito.trim()) {
           const g1 = q1.gabarito.trim().toUpperCase();
           const g2 = q2.gabarito.trim().toUpperCase();
           if (g1 !== g2) {
@@ -358,7 +361,7 @@ async function finalize(p, analysis, questions) {
                  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [p.id, p.banca, q.materia || null, q.numero, enun, JSON.stringify(q.alternativas), q.gabarito || null, isBad,
         topico, matId, topId, q.comando || null, q.pegadinha || null, q.habilidade || null, JSON.stringify(clean(q.dispositivos || [])),
-        q.consenso_gabarito !== false, q.divergencia_gabarito ? JSON.stringify(q.divergencia_gabarito) : null]);
+        q.consenso_gabarito === undefined ? null : q.consenso_gabarito, q.divergencia_gabarito ? JSON.stringify(q.divergencia_gabarito) : null]);
     saved++;
   }
   if (saved - flagged === 0) throw Object.assign(new Error('Nenhuma questão válida foi extraída da prova.'), { permanent: true });
@@ -430,12 +433,16 @@ async function relabelProva({ provaId }) {
   }
   console.log(`[rotular] prova ${p.id}: ${rotuladas}/${pendentes.length} questões rotuladas`);
 }
-registerJob('prova.relabel', { run: relabelProva, maxAttempts: 3 });
+registerJob('prova.relabel', { run: relabelProva, maxAttempts: 3, prioridade: -10 }); // fundo: não atrasa o aluno
 
 /** Enfileira a rotulagem de todas as provas prontas que ainda têm questões sem rótulo. Devolve quantas provas entraram na fila. */
-export async function enqueueRelabel() {
+export async function enqueueRelabel({ provaId = null } = {}) {
+  // Só provas com texto suficiente (mesma regra do treino) e sem rotulagem já pendente (clique duplo não duplica)
   const rows = await many(`SELECT DISTINCT q.prova_id AS id FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
-                           WHERE p.status='READY' AND q.comando IS NULL AND NOT q.flagged`);
+                           WHERE p.status='READY' AND q.comando IS NULL AND NOT q.flagged AND length(coalesce(p.text, '')) >= 200
+                             AND ($1::uuid IS NULL OR p.id = $1)
+                             AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.type='prova.relabel' AND j.status IN ('queued','running')
+                                             AND j.payload->>'provaId' = p.id::text)`, [provaId]);
   for (const r of rows) await enqueue('prova.relabel', { provaId: r.id });
   return rows.length;
 }
@@ -453,72 +460,93 @@ export async function reprocessProva(id) {
 }
 
 // ---------------------------------------------------------------------
-// F7) Gabarito definitivo oficial: parsing determinístico e anulações
+// F7) Gabarito definitivo oficial: leitura determinística (custo zero de IA), com travas contra leitura errada (G1):
+// - letra solta só vale MAIÚSCULA e numa linha com "cara de gabarito" (pares número→resposta, não texto corrido):
+//   "questões 1 e 2", "Questões 10 a 20", "Página 1 de 3" não viram resposta;
+// - cabeçalho de cargo / tipo de prova / caderno abre um bloco novo; o mesmo número em mais de um bloco (ou com respostas
+//   diferentes) é CONFLITO — quem aplica precisa colar só o bloco da prova;
+// - na aplicação: letra precisa servir ao formato da questão (C/E ou A–E dentro das alternativas), cobertura mínima de 60%,
+//   e prévia antes de gravar.
 // ---------------------------------------------------------------------
-export function parseGabaritoTexto(rawText) {
-  if (!rawText || typeof rawText !== 'string') return [];
-  const regex = /(?:quest[aã]o|item)?\s*(\d{1,3})\s*[-:.)]?\s*(?:gabarito\s*[:=]?\s*)?(?:alterad[ao]\s*(?:de\s*([a-e]|certo|errado|[ce])\s*)?para\s*([a-e]|certo|errado|[ce])|([a-e]|certo|errado|[ce])\s*\((?:alterad[ao]|retificad[ao])\)|(anulad[ao]s?|nul[ao]s?|cancelad[ao]s?|revogad[ao]|sem\s+resposta|[x#])|([a-e]|certo|errado|[ce]))(?:\b|[^\w]|$)/gi;
+const CABECALHO_BLOCO = /^\s*((?:CARGO|TIPO|PROVA|CADERNO|COR|VERS[AÃ]O|TURNO|N[IÍ]VEL|[AÁ]REA|ESPECIALIDADE|GABARITO\s+(?:DO\s+|DA\s+)?(?:TIPO|CARGO|CADERNO|PROVA))\b[^:\n]*?)(?::|$)/i;
+const PALAVRAS_DE_GABARITO = /\b(QUEST[AÃ]O|QUEST[OÕ]ES|ITENS|ITEM|GABARITO|OFICIAL|DEFINITIVO|PRELIMINAR|RESPOSTAS?|N[ºO°]\.?)\b/g;
+const PAR = new RegExp(String.raw`(?<![\w,./º°-])(?<num>\d{1,3})(?!\d)\s*(?:[-–—:.)]\s*)?`
+  + String.raw`(?:(?<anul>ANULAD[AO]S?|NUL[AO]S?|CANCELAD[AO]S?|REVOGAD[AO]S?|SEM\s+RESPOSTA)`
+  + String.raw`|(?<marca>[X#])`
+  + String.raw`|ALTERAD[AO]\s+(?:DE\s+(?<de>[A-E]|CERTO|ERRADO)\s+)?PARA\s+(?<para>[A-E]|CERTO|ERRADO)`
+  + String.raw`|(?<ret>[A-E]|CERTO|ERRADO)\s*\(\s*(?:ALTERAD[AO]|RETIFICAD[AO])\s*\)`
+  + String.raw`|(?<ce>CERTO|ERRADO)`
+  + String.raw`|(?<letra>[A-E]))(?![A-Za-zÀ-ú0-9])`, 'g');
+const letraDe = (s) => (!s ? null : s === 'CERTO' ? 'C' : s === 'ERRADO' ? 'E' : s[0]);
+// Palavras viram maiúsculas; letra isolada fica como veio ("e", "a" minúsculos são conectivos, não respostas)
+const normalizarLinha = (l) => l.replace(/[A-Za-zÀ-ú]{2,}/g, (w) => w.toUpperCase());
 
-  const map = new Map();
-  let m;
-  while ((m = regex.exec(rawText)) !== null) {
-    const numero = Number(m[1]);
-    if (numero < 1 || numero > 300) continue;
-    const normLetra = (s) => {
-      if (!s) return null;
-      const u = s.trim().toUpperCase();
-      if (u === 'CERTO') return 'C';
-      if (u === 'ERRADO') return 'E';
-      return u[0];
-    };
-    const altOrig = normLetra(m[2]);
-    const altNova = normLetra(m[3] || m[4]);
-    const isAnulada = !!m[5];
-    const simples = normLetra(m[6]);
-
-    const gabarito = isAnulada ? null : (altNova || simples || null);
-    const alterado = !!altNova || !!altOrig;
-    const motivo = isAnulada
-      ? 'Questão anulada no gabarito oficial.'
-      : alterado
-        ? (altOrig ? `Gabarito alterado de ${altOrig} para ${altNova}.` : `Gabarito alterado para ${altNova}.`)
-        : null;
-
-    const entry = {
-      numero,
-      gabarito,
-      anulada: isAnulada,
-      alterado,
-      original: altOrig,
-      motivo,
-    };
-
-    const prev = map.get(numero);
-    if (!prev) {
-      map.set(numero, entry);
-    } else {
-      if (entry.anulada || entry.alterado || !prev.gabarito) {
-        map.set(numero, {
-          ...entry,
-          original: entry.original || prev.gabarito || null,
-        });
-      } else if (!prev.anulada && !prev.alterado) {
-        map.set(numero, entry);
-      }
+/** Lê o gabarito. Devolve { itens, blocos, conflitos } — conflitos = números com respostas diferentes ou em mais de um bloco. */
+export function analisarGabarito(rawText) {
+  const vazio = { itens: [], blocos: [], conflitos: [] };
+  if (!rawText || typeof rawText !== 'string') return vazio;
+  const porNumero = new Map(); // numero -> [{ entry, bloco }]
+  const blocos = [];
+  let bloco = null;
+  for (const bruta of rawText.split(/\r?\n/)) {
+    let linha = normalizarLinha(bruta);
+    const cab = linha.match(CABECALHO_BLOCO);
+    if (cab) { bloco = cab[1].trim().replace(/\s+/g, ' ').slice(0, 80); blocos.push(bloco); linha = linha.slice(cab[0].length); }
+    const achados = [...linha.matchAll(PAR)];
+    if (!achados.length) continue;
+    // "Cara de gabarito": o que sobra da linha (tirando pares e palavras como QUESTÃO/GABARITO) é pouco
+    const total = linha.replace(/\s/g, '').length;
+    const sobra = achados.reduce((s, m) => s.replace(m[0], ' '), linha).replace(PALAVRAS_DE_GABARITO, ' ').replace(/[\s|;,.:\-–—()]/g, '').length;
+    const soLetras = achados.every((m) => m.groups.letra);
+    if (soLetras && sobra > total * 0.4) continue; // texto corrido com número e letra solta → ignora a linha
+    for (const m of achados) {
+      const g = m.groups;
+      const numero = Number(g.num);
+      if (numero < 1 || numero > 300) continue;
+      const anulada = !!(g.anul || g.marca);
+      const de = letraDe(g.de);
+      const para = letraDe(g.para || g.ret);
+      const gabarito = anulada ? null : (para || letraDe(g.ce) || g.letra || null);
+      const alterado = !!para;
+      const entry = {
+        numero, gabarito, anulada, alterado, original: de,
+        motivo: anulada ? 'Questão anulada no gabarito oficial.' : alterado ? (de ? `Gabarito alterado pela banca de ${de} para ${para}.` : `Gabarito alterado pela banca para ${para}.`) : null,
+      };
+      if (!porNumero.has(numero)) porNumero.set(numero, []);
+      porNumero.get(numero).push({ entry, bloco });
     }
   }
-
-  return Array.from(map.values()).sort((a, b) => a.numero - b.numero);
+  const itens = [], conflitos = [];
+  for (const [numero, lista] of porNumero) {
+    const respostas = new Set(lista.map((x) => (x.entry.anulada ? 'X' : x.entry.gabarito)));
+    const blocosDoNumero = new Set(lista.map((x) => x.bloco));
+    if (respostas.size > 1 || blocosDoNumero.size > 1) conflitos.push(numero);
+    // Dentro da mesma resposta, a marcação mais informativa (alterada/anulada) prevalece
+    itens.push(lista.map((x) => x.entry).sort((a, b) => Number(b.alterado || b.anulada) - Number(a.alterado || a.anulada))[0]);
+  }
+  itens.sort((a, b) => a.numero - b.numero);
+  return { itens, blocos: [...new Set(blocos)], conflitos: conflitos.sort((a, b) => a - b) };
 }
 
-export async function aplicarGabaritoDefinitivo({ provaId, user, url, file, text }) {
+/** Compatível com o uso anterior: só os itens. */
+export function parseGabaritoTexto(rawText) {
+  return analisarGabarito(rawText).itens;
+}
+
+const formatoDaQuestaoProva = (q) => (Array.isArray(q.alternativas) && q.alternativas.length ? 'me' : 'ce');
+const letraValida = (q, letra) => (formatoDaQuestaoProva(q) === 'ce' ? /^[CE]$/.test(letra) : /^[A-E]$/.test(letra) && 'ABCDE'.indexOf(letra) < q.alternativas.length);
+
+/**
+ * Aplica o gabarito definitivo. confirmar=false → só a PRÉVIA (nada é gravado); confirmar=true → grava.
+ * Recusa (422): conflito entre blocos/cargos, letra que não serve ao formato da questão, cobertura < 60%.
+ */
+export async function aplicarGabaritoDefinitivo({ provaId, user, url, file, text, confirmar = false }) {
   const p = await one('SELECT * FROM provas WHERE id=$1', [provaId]);
   if (!p) throw new HttpError(404, 'Prova não encontrada.');
 
   let rawText = text || '';
   let oficialConfirmado = false;
   let officialUrl = p.gabarito_definitivo_url || null;
-
   if (url) {
     const d = await baixarDaFonteOficial(p.banca, url);
     const sec = await secureUpload(d.buffer, d.name, 'gabarito', { ocr: 'full', userId: user.id });
@@ -529,86 +557,71 @@ export async function aplicarGabaritoDefinitivo({ provaId, user, url, file, text
     const sec = await secureUpload(file.buffer, file.name, 'gabarito', { ocr: 'full', userId: user.id });
     rawText = sec.text || '';
   }
-
   if (!rawText.trim()) throw new HttpError(400, 'Não foi possível extrair o texto do gabarito definitivo.');
 
-  const itens = parseGabaritoTexto(rawText);
+  const { itens, blocos, conflitos } = analisarGabarito(rawText);
   if (!itens.length) throw new HttpError(422, 'Nenhuma questão ou gabarito foi identificado no texto fornecido.');
-
-  const questoes = await many('SELECT id, numero, gabarito, anulada, gabarito_alterado FROM prova_questoes WHERE prova_id=$1', [provaId]);
-  const porNumero = new Map(questoes.filter((q) => q.numero != null).map((q) => [q.numero, q]));
-
-  let atualizadas = 0, anuladasCount = 0, alteradasCount = 0;
-  const relatorio = [];
-
-  for (const item of itens) {
-    const alvo = porNumero.get(item.numero);
-    if (!alvo) continue;
-
-    let alterado = item.alterado;
-    let original = item.original || alvo.gabarito;
-    let motivo = item.motivo;
-
-    if (!item.anulada && item.gabarito && alvo.gabarito && item.gabarito !== alvo.gabarito && !alterado) {
-      alterado = true;
-      motivo = `Gabarito alterado de ${alvo.gabarito} para ${item.gabarito}.`;
-    }
-
-    if (item.anulada) {
-      await query(
-        `UPDATE prova_questoes
-         SET anulada = true, motivo_anulacao = $2, gabarito_definitivo = true
-         WHERE id = $1`,
-        [alvo.id, motivo || 'Anulada no gabarito oficial definitivo.']
-      );
-      anuladasCount++;
-      atualizadas++;
-      relatorio.push({ numero: item.numero, status: 'anulada', motivo });
-    } else {
-      await query(
-        `UPDATE prova_questoes
-         SET gabarito = $2,
-             gabarito_alterado = $3,
-             gabarito_original = CASE WHEN $3 THEN coalesce(gabarito_original, $4) ELSE gabarito_original END,
-             motivo_anulacao = $5,
-             gabarito_definitivo = true
-         WHERE id = $1`,
-        [alvo.id, item.gabarito, alterado, original, motivo]
-      );
-      if (alterado) alteradasCount++;
-      atualizadas++;
-      relatorio.push({ numero: item.numero, status: alterado ? 'alterada' : 'confirmada', gabarito: item.gabarito, motivo });
-    }
+  if (conflitos.length) {
+    throw new HttpError(422, blocos.length > 1
+      ? `O gabarito tem mais de um bloco (${blocos.slice(0, 4).join('; ')}${blocos.length > 4 ? '…' : ''}). Cole só o bloco do cargo/tipo desta prova.`
+      : `As questões ${conflitos.slice(0, 10).join(', ')} aparecem com respostas diferentes. Cole só o bloco do cargo/tipo desta prova.`);
   }
 
-  await query(
-    `UPDATE provas
-     SET gabarito_definitivo = true,
-         gabarito_definitivo_url = $2,
-         gabarito_definitivo_confirmado = $3,
-         gabarito_text = coalesce($4, gabarito_text),
-         updated_at = now()
-     WHERE id = $1`,
-    [provaId, officialUrl, oficialConfirmado, rawText]
-  );
+  const questoes = await many('SELECT id, numero, gabarito, alternativas, anulada FROM prova_questoes WHERE prova_id=$1', [provaId]);
+  const porNumero = new Map(questoes.filter((q) => q.numero != null).map((q) => [q.numero, q]));
+  const casados = itens.filter((it) => porNumero.has(it.numero));
+  const invalidas = casados.filter((it) => !it.anulada && !letraValida(porNumero.get(it.numero), it.gabarito));
+  if (invalidas.length) {
+    throw new HttpError(422, `Respostas que não servem ao formato das questões: ${invalidas.slice(0, 8).map((it) => `${it.numero}=${it.gabarito}`).join(', ')}. Confira se é o gabarito desta prova (cargo/tipo).`);
+  }
+  const comNumero = porNumero.size;
+  if (!comNumero || casados.length / comNumero < 0.6) {
+    throw new HttpError(422, `O gabarito cobre só ${casados.length} de ${comNumero} questões desta prova (mínimo 60%). Confira se é o gabarito certo.`);
+  }
 
-  const updatedProva = await one('SELECT * FROM provas WHERE id=$1', [provaId]);
-  return {
-    prova: updatedProva,
-    resumo: {
-      totalLidas: itens.length,
-      totalQuestoesProva: questoes.length,
-      atualizadas,
-      anuladas: anuladasCount,
-      alteradas: alteradasCount,
-      detalhes: relatorio,
-    },
+  const detalhes = casados.map((it) => {
+    const alvo = porNumero.get(it.numero);
+    if (it.anulada) return { numero: it.numero, status: 'anulada', motivo: it.motivo, antes: alvo.gabarito };
+    if (it.alterado) return { numero: it.numero, status: 'alterada', gabarito: it.gabarito, antes: alvo.gabarito, motivo: it.motivo };
+    // Diferente do que a IA extraiu, sem a banca dizer "alterada": é correção da extração, não alteração da banca
+    if (alvo.gabarito && alvo.gabarito !== it.gabarito) return { numero: it.numero, status: 'corrigida', gabarito: it.gabarito, antes: alvo.gabarito, motivo: `Gabarito extraído (${alvo.gabarito}) corrigido pelo definitivo.` };
+    return { numero: it.numero, status: 'confirmada', gabarito: it.gabarito, antes: alvo.gabarito };
+  });
+  const resumo = {
+    previa: !confirmar,
+    totalLidas: itens.length,
+    totalQuestoesProva: questoes.length,
+    atualizadas: detalhes.length,
+    anuladas: detalhes.filter((d) => d.status === 'anulada').length,
+    alteradas: detalhes.filter((d) => d.status === 'alterada').length,
+    corrigidas: detalhes.filter((d) => d.status === 'corrigida').length,
+    semCorrespondencia: itens.length - casados.length,
+    fonteOficial: oficialConfirmado,
+    detalhes,
   };
+  if (!confirmar) return { prova: p, resumo };
+
+  for (const d of detalhes) {
+    const alvo = porNumero.get(d.numero);
+    if (d.status === 'anulada') {
+      await query('UPDATE prova_questoes SET anulada=true, motivo_anulacao=$2, gabarito_definitivo=true WHERE id=$1', [alvo.id, d.motivo || 'Anulada no gabarito oficial definitivo.']);
+    } else {
+      const mudou = d.status === 'alterada' || d.status === 'corrigida';
+      await query(`UPDATE prova_questoes SET gabarito=$2, gabarito_alterado=$3, anulada=false,
+                     gabarito_original = CASE WHEN $4 THEN coalesce(gabarito_original, $5) ELSE gabarito_original END,
+                     motivo_anulacao=$6, gabarito_definitivo=true, consenso_gabarito=true
+                   WHERE id=$1`, [alvo.id, d.gabarito, d.status === 'alterada', mudou, d.antes, d.motivo || null]);
+    }
+  }
+  await query(`UPDATE provas SET gabarito_definitivo=true, gabarito_definitivo_url=$2, gabarito_definitivo_confirmado=$3,
+                 gabarito_text=coalesce($4, gabarito_text), updated_at=now() WHERE id=$1`, [provaId, officialUrl, oficialConfirmado, rawText]);
+  return { prova: await one('SELECT * FROM provas WHERE id=$1', [provaId]), resumo };
 }
 
 // ---------------------------------------------------------------------
-// B1) Importação de provas em lote pelo admin
+// B1) Importação de provas em lote pelo admin (máx. LOTE_MAX links; download e treino na fila)
 // ---------------------------------------------------------------------
+const LOTE_MAX = 50;
 export async function importarProvasEmLote({ user, defaultBanca, itens = [], texto = '' }) {
   if (user.role !== 'ADMIN') throw new HttpError(403, 'Acesso negado.');
 
@@ -640,61 +653,38 @@ export async function importarProvasEmLote({ user, defaultBanca, itens = [], tex
   }
 
   if (!lista.length) throw new HttpError(400, 'Nenhuma URL de prova fornecida para importação em lote.');
+  if (lista.length > LOTE_MAX) throw new HttpError(422, `Envie no máximo ${LOTE_MAX} links por vez (recebidos ${lista.length}).`);
 
+  // Validação rápida aqui (fonte oficial, banca); download e treino em segundo plano, um item por tarefa na fila (G4)
   const resultados = [];
-  let importadas = 0, duplicatas = 0, erros = 0;
-
+  let enfileiradas = 0, erros = 0;
   for (let i = 0; i < lista.length; i++) {
     const it = lista[i];
     const banca = it.banca || defaultBanca;
-    if (!banca || !BANCA[banca]) {
-      erros++;
-      resultados.push({ item: i + 1, url: it.provaUrl, status: 'erro', erro: `Banca "${banca || ''}" não informada ou não suportada.` });
-      continue;
-    }
-
-    try {
-      const dProva = await baixarDaFonteOficial(banca, it.provaUrl);
-      const file = { buffer: dProva.buffer, name: dProva.name, mime: dProva.mime };
-
-      let gabarito = null;
-      if (it.gabaritoUrl) {
-        const dGab = await baixarDaFonteOficial(banca, it.gabaritoUrl);
-        gabarito = { buffer: dGab.buffer, name: dGab.name, mime: dGab.mime };
-      }
-
-      const res = await submitProva({
-        user,
-        banca,
-        orgao: it.orgao || '',
-        cargo: it.cargo || '',
-        ano: it.ano || '',
-        file,
-        gabarito,
-        officialUrl: dProva.url,
-        oficialConfirmado: true,
-        officialUrlTipo: dProva.tipo,
-        ip: '127.0.0.1',
-      });
-
-      if (res.duplicate) {
-        duplicatas++;
-        resultados.push({ item: i + 1, url: dProva.url, status: 'duplicata', provaId: res.provaId, mensagem: res.message });
-      } else {
-        importadas++;
-        resultados.push({ item: i + 1, url: dProva.url, status: 'importada', provaId: res.prova?.id, titulo: res.prova?.titulo });
-      }
-    } catch (err) {
-      erros++;
-      resultados.push({ item: i + 1, url: it.provaUrl, status: 'erro', erro: err.message });
-    }
+    const falha = (erro) => { erros++; resultados.push({ item: i + 1, url: it.provaUrl, status: 'erro', erro }); };
+    if (!banca || !BANCA[banca]) { falha(`Banca "${banca || ''}" não informada ou não suportada.`); continue; }
+    const vp = validarUrlOficial(banca, it.provaUrl);
+    if (!vp.valida) { falha(vp.motivo); continue; }
+    if (it.gabaritoUrl) { const vg = validarUrlOficial(banca, it.gabaritoUrl); if (!vg.valida) { falha(`Gabarito: ${vg.motivo}`); continue; } }
+    await enqueue('prova.importar', { userId: user.id, banca, provaUrl: it.provaUrl, gabaritoUrl: it.gabaritoUrl || null,
+      orgao: String(it.orgao || '').slice(0, 120), cargo: String(it.cargo || '').slice(0, 120), ano: /^\d{4}$/.test(it.ano || '') ? it.ano : '' });
+    enfileiradas++;
+    resultados.push({ item: i + 1, url: vp.urlNormalizada, status: 'na_fila' });
   }
-
-  return {
-    total: lista.length,
-    importadas,
-    duplicatas,
-    erros,
-    resultados,
-  };
+  return { total: lista.length, enfileiradas, erros, resultados };
 }
+
+async function importarItemDoLote({ userId, banca, provaUrl, gabaritoUrl, orgao, cargo, ano }) {
+  const user = await one('SELECT * FROM users WHERE id=$1', [userId]);
+  if (!user || user.role !== 'ADMIN') return;
+  const dProva = await baixarDaFonteOficial(banca, provaUrl);
+  const dGab = gabaritoUrl ? await baixarDaFonteOficial(banca, gabaritoUrl) : null;
+  const res = await submitProva({
+    user, banca, orgao, cargo, ano,
+    file: { buffer: dProva.buffer, name: dProva.name, mime: dProva.mime },
+    gabarito: dGab ? { buffer: dGab.buffer, name: dGab.name, mime: dGab.mime } : null,
+    officialUrl: dProva.url, oficialConfirmado: true, officialUrlTipo: dProva.tipo, ip: '127.0.0.1',
+  });
+  console.log(`[lote] ${provaUrl} → ${res.duplicate ? 'duplicata' : 'importada ' + (res.prova?.id || '')}`);
+}
+registerJob('prova.importar', { run: importarItemDoLote, maxAttempts: 3, prioridade: -10 }); // fundo: não atrasa o aluno
