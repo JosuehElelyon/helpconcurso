@@ -105,6 +105,8 @@ export const config = {
     trainingMode: env('AI_TRAINING_MODE', 'direct'),
     maxRetries: num('AI_MAX_RETRIES', 3),
     timeoutMs: num('AI_TIMEOUT_MS', 240000),
+    // Dupla extração com consenso de gabarito (dois modelos grátis conferem cada questão)
+    consensoGabarito: bool('AI_CONSENSO_GABARITO', true),
     // Teto de gasto real com IA por dia (US$, dia de Brasília). 0 = sem limite. Ao atingir, novas chamadas são recusadas.
     limiteUsdDia: num('AI_LIMITE_USD_DIA', 0),
     keys: {

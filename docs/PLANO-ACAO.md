@@ -290,3 +290,22 @@ chamadas/429 por provedor; cache de prompt medido. Decisões de modelo e prompt 
   por dia → system estável para todos os alunos da banca no dia (cache). Leis extraídas entram por `untrusted()`. Prompt v5.
 - **C7** comentário mostra a descrição do comando, não o código.
 - Testes: 80.
+
+## Sprint 4 — concluída (02/11/2026)
+- **B1 (Importação em lote pelo admin):**
+  - Endpoint `POST /api/admin/provas/lote` aceita links oficiais de provas e gabaritos em JSON ou em texto colado (`link_prova | link_gabarito | orgao | cargo | ano | banca` ou uma URL por linha).
+  - Download seguro com proteção SSRF (`baixarDaFonteOficial`), submissão automática e enfileiramento de treino imediato.
+  - Front-end com modal "Importar em lote" e tabela de status (importadas, duplicadas, erros).
+- **F7 (Gabarito definitivo e anulações):**
+  - Migração `010_sprint4_gabarito_definitivo_lote_consenso.sql` adicionou colunas de rastreamento: `anulada`, `gabarito_alterado`, `gabarito_original`, `motivo_anulacao`, `gabarito_definitivo` em `prova_questoes`; e `gabarito_definitivo`, `gabarito_definitivo_url`, `gabarito_definitivo_confirmado`, `consenso_concluido` em `provas`.
+  - Parser determinístico `parseGabaritoTexto` cobre todos os formatos usuais de gabarito oficiais (A-E, C/E, anulações por palavras-chave ou símbolos como X e #, retificações e alterações de letras) com custo $0 de tokens.
+  - Endpoint `POST /api/admin/provas/:id/gabarito-definitivo` aceita link oficial (confirmado), arquivo ou texto colado.
+  - Questões anuladas e sem consenso são automaticamente excluídas dos simulados e contagens dos alunos (`getQuestoesReaisDoTopico`, `buildEditalDashboard`, `knowledge.js`).
+- **F6 (Dupla extração com consenso de gabarito):**
+  - `trainProva` executa extração dupla com dois modelos gratuitos distintos da cascata (`avoid: { provider, model }`).
+  - Questões com gabaritos divergentes são registradas com `consenso_gabarito = false` e detalhe das respostas de cada modelo em `divergencia_gabarito`. Prova sinalizada com `consenso_concluido = false`.
+  - Questões divergentes ficam ocultas dos alunos até validação por gabarito definitivo ou revisão humana.
+- **Front-End & Painel Admin:**
+  - Badges visuais: `✔ Gabarito definitivo`, `ANULADA`, `Alterada (A → B)`, `⚠ Divergência no gabarito`.
+  - Botão e modal "Gabarito definitivo" e "Importar em lote" integrados na tela Base de Provas do Admin.
+- Testes: 86 testes automatizados passando (100% de sucesso).

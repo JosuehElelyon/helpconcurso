@@ -6,7 +6,8 @@ import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
 import { requireAdmin } from '../lib/auth.js';
 import { BANCA } from '../lib/bancas.js';
 import { getFile, deleteFile } from '../lib/storage.js';
-import { approveProva, rejectProva, reprocessProva, enqueueRelabel, publicStatus } from '../services/provas.js';
+import { uploader, fileOf } from '../lib/upload.js';
+import { approveProva, rejectProva, reprocessProva, enqueueRelabel, aplicarGabaritoDefinitivo, importarProvasEmLote, publicStatus } from '../services/provas.js';
 import { describeRouting } from '../ai/index.js';
 import { costUsd, USD_TO_BRL, spentTodayUsd } from '../ai/pricing.js';
 import { config } from '../config.js';
@@ -20,6 +21,8 @@ const view = (p, detail = false) => ({
   status: p.status, statusLabel: publicStatus[p.status], error: p.error, source: p.source, uploader: p.uploader_name ? { name: p.uploader_name, email: p.uploader_email } : null,
   needsOcr: p.needs_ocr, pageCount: p.page_count, materias: p.materias, numQuestoes: p.num_questoes, reviewNote: p.review_note, autoApproved: p.auto_approved,
   officialUrl: p.official_url || null, oficialConfirmado: !!p.oficial_confirmado, officialUrlTipo: p.official_url_tipo || null,
+  gabaritoDefinitivo: !!p.gabarito_definitivo, gabaritoDefinitivoUrl: p.gabarito_definitivo_url || null, gabaritoDefinitivoConfirmado: !!p.gabarito_definitivo_confirmado,
+  consensoConcluido: p.consenso_concluido !== false,
   securitySeverity: p.security?.decision?.severity || null, duplicateOf: p.duplicate_of, createdAt: p.created_at,
   ...(detail ? { security: p.security, classification: p.classification, analysis: p.analysis, textPreview: (p.text || '').slice(0, 6000) } : {}),
 });
@@ -48,8 +51,51 @@ r.post('/provas/:id/recusar', ah(async (req, res) => {
 r.post('/provas/:id/reprocessar', ah(async (req, res) => res.json({ prova: view(await reprocessProva(req.params.id)) })));
 // F5: rotula questões de provas antigas (cascata grátis — provas são documentos públicos)
 r.post('/provas/rotular', ah(async (_req, res) => res.json({ provas: await enqueueRelabel() })));
+
+// B1: Importação de provas em lote a partir de links oficiais
+r.post('/provas/lote', ah(async (req, res) => {
+  const b = parseBody(z.object({
+    banca: z.string().trim().optional(),
+    itens: z.array(z.object({
+      banca: z.string().trim().optional(),
+      provaUrl: z.string().trim().min(5),
+      gabaritoUrl: z.string().trim().optional(),
+      orgao: z.string().trim().max(120).optional(),
+      cargo: z.string().trim().max(120).optional(),
+      ano: z.string().trim().regex(/^(\d{4})?$/).optional(),
+    })).optional(),
+    texto: z.string().trim().optional(),
+  }), req.body || {});
+
+  const out = await importarProvasEmLote({
+    user: req.user,
+    defaultBanca: b.banca,
+    itens: b.itens,
+    texto: b.texto,
+  });
+  res.json(out);
+}));
+
+// F7: Aplica gabarito definitivo oficial (link oficial, arquivo ou texto)
+r.post('/provas/:id/gabarito-definitivo', uploader([{ name: 'gabarito', maxCount: 1 }]), ah(async (req, res) => {
+  const b = parseBody(z.object({
+    url: z.string().trim().max(500).optional().default(''),
+    text: z.string().trim().max(500000).optional().default(''),
+  }), req.body || {});
+
+  const file = fileOf(req, 'gabarito');
+  const out = await aplicarGabaritoDefinitivo({
+    provaId: req.params.id,
+    user: req.user,
+    url: b.url || null,
+    file: file || null,
+    text: b.text || null,
+  });
+  res.json({ prova: view(out.prova), resumo: out.resumo });
+}));
+
 r.get('/provas/:id/questoes', ah(async (req, res) => {
-  const rows = await many('SELECT numero, materia, materia_id, topico, topico_id, comando, pegadinha_tipo, habilidade, dispositivos, enunciado, alternativas, gabarito, flagged FROM prova_questoes WHERE prova_id=$1 ORDER BY numero NULLS LAST, created_at', [req.params.id]);
+  const rows = await many('SELECT numero, materia, materia_id, topico, topico_id, comando, pegadinha_tipo, habilidade, dispositivos, enunciado, alternativas, gabarito, flagged, anulada, gabarito_alterado, gabarito_original, motivo_anulacao, gabarito_definitivo, consenso_gabarito, divergencia_gabarito FROM prova_questoes WHERE prova_id=$1 ORDER BY numero NULLS LAST, created_at', [req.params.id]);
   res.json({ questoes: rows });
 }));
 r.get('/provas/:id/arquivo', ah(async (req, res) => {

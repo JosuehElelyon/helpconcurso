@@ -534,7 +534,8 @@ test('P1/P2: link oficial é só declarado, nunca bloqueia o envio e não vai pa
 
 test('F5: rotular provas antigas completa tópico/comando/pegadinha sem mexer no gabarito', async () => {
   const alvo = await one(`SELECT q.prova_id FROM prova_questoes q JOIN provas p ON p.id=q.prova_id
-                          WHERE p.status='READY' AND NOT q.flagged AND p.text IS NOT NULL LIMIT 1`);
+                          WHERE p.status='READY' AND NOT q.flagged AND p.text IS NOT NULL AND length(p.text) > 50
+                          ORDER BY length(p.text) DESC LIMIT 1`);
   assert.ok(alvo, 'precisa de uma prova pronta na base de teste');
   const antes = await one('SELECT count(*)::int AS n, string_agg(coalesce(gabarito, \'\'), \',\' ORDER BY id) AS gabs FROM prova_questoes WHERE prova_id=$1', [alvo.prova_id]);
   // Simula prova antiga (antes do prova_extract v2): sem rótulos
@@ -552,4 +553,48 @@ test('F5: rotular provas antigas completa tópico/comando/pegadinha sem mexer no
   assert.ok(depois.rotuladas > 0, 'nenhuma questão foi rotulada');
   assert.equal(depois.n, antes.n, 'não pode criar nem apagar questões');
   assert.equal(depois.gabs, antes.gabs, 'não pode mexer no gabarito');
+});
+
+test('Sprint 4: endpoints admin de lote e gabarito definitivo', async () => {
+  // Prova de teste pronta
+  const p = await one(`INSERT INTO provas(banca, banca_informada, file_name, file_key, status, titulo, text)
+                       VALUES ('fgv','fgv','fixture_s4.pdf','fx/s4','READY','Prova Sprint 4 Admin Endpoints','texto') RETURNING *`);
+
+  await pool.query(`INSERT INTO prova_questoes(prova_id, banca, materia, numero, enunciado, alternativas, gabarito)
+                    VALUES ($1, 'fgv', 'Direito Administrativo', 1, 'Questão 1', '["a","b"]'::jsonb, 'A'),
+                           ($1, 'fgv', 'Direito Administrativo', 2, 'Questão 2', '["a","b"]'::jsonb, 'B')`, [p.id]);
+
+  // 1. Proibido para usuário comum
+  assert.equal((await user('/api/admin/provas/lote', { method: 'POST', body: { banca: 'fgv', texto: 'https://fgv.br/p.pdf' } })).status, 403);
+  assert.equal((await user(`/api/admin/provas/${p.id}/gabarito-definitivo`, { method: 'POST', body: { text: '1 - A' } })).status, 403);
+
+  // 2. Admin aplica gabarito definitivo via API
+  const gdRes = await admin(`/api/admin/provas/${p.id}/gabarito-definitivo`, {
+    method: 'POST',
+    body: { text: '1 - ALTERADA PARA B\n2 - ANULADA' },
+  });
+  assert.equal(gdRes.status, 200, JSON.stringify(gdRes.data));
+  assert.equal(gdRes.data.resumo.atualizadas, 2);
+  assert.equal(gdRes.data.resumo.anuladas, 1);
+  assert.equal(gdRes.data.resumo.alteradas, 1);
+
+  // 3. GET questoes retorna os novos campos
+  const qList = await admin(`/api/admin/provas/${p.id}/questoes`);
+  assert.equal(qList.status, 200);
+  const q1 = qList.data.questoes.find((q) => q.numero === 1);
+  const q2 = qList.data.questoes.find((q) => q.numero === 2);
+  assert.equal(q1.gabarito, 'B');
+  assert.equal(q1.gabarito_alterado, true);
+  assert.equal(q1.gabarito_definitivo, true);
+  assert.equal(q2.anulada, true);
+  assert.equal(q2.gabarito_definitivo, true);
+
+  // 4. Admin importa em lote via API com rejeição de fonte não oficial
+  const loteRes = await admin('/api/admin/provas/lote', {
+    method: 'POST',
+    body: { banca: 'fgv', texto: 'https://cursinho.com/prova.pdf' },
+  });
+  assert.equal(loteRes.status, 200);
+  assert.equal(loteRes.data.erros, 1);
+  assert.match(loteRes.data.resultados[0].erro, /cursinho|oficiais/i);
 });

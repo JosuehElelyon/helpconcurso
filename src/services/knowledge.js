@@ -32,7 +32,7 @@ export async function getKnowledge(banca, materia, nExemplos = 6, editalId = nul
     const base = `SELECT q.id, q.materia, q.enunciado, q.alternativas, q.gabarito,
                          (p.edital_id = $3) AS from_edital, (p.id = ANY($4::uuid[])) AS from_caderno
                   FROM prova_questoes q JOIN provas p ON p.id=q.prova_id
-                  WHERE q.banca=$1 AND p.status='READY' AND NOT q.flagged`;
+                  WHERE q.banca=$1 AND p.status='READY' AND NOT q.flagged AND NOT q.anulada`;
     let pool = [];
     if (materia) {
       pool = await many(`${base} AND q.materia ILIKE $2 ORDER BY (p.id = ANY($4::uuid[])) DESC, (p.edital_id = $3) DESC NULLS LAST, md5(q.id::text || $5) LIMIT 40`, [banca, `%${materia}%`, editalId || null, pIds, dia]);

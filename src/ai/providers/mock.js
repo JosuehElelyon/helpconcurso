@@ -40,9 +40,15 @@ function respond(task, req) {
         const body = parts[i + 1].trim();
         const alts = body.split(/\s[A-E]\)\s/).slice(1).map((s) => s.trim()).slice(0, 5);
         const licit = /licita/i.test(body);
-        qs.push({ numero: Number(parts[i]), materia: 'Noções de Direito Administrativo', topico: licit ? 'Licitações — modalidades' : 'Atos administrativos — elementos',
+        const num = Number(parts[i]);
+        const numGab = data.match(new RegExp(`(?:^|\\s)${num}\\s*[-:.)]\\s*([A-E]|C|E)`, 'i'));
+        let gab = numGab ? numGab[1].toUpperCase() : (alts.length ? LET[(num - 1) % 5] : (num % 2 === 0 ? 'C' : 'E'));
+        if (req.avoid && process.env.MOCK_CONSENSUS_DIVERGE === 'true' && num === 2) {
+          gab = gab === 'B' ? 'C' : (gab === 'C' ? 'E' : 'B');
+        }
+        qs.push({ numero: num, materia: 'Noções de Direito Administrativo', topico: licit ? 'Licitações — modalidades' : 'Atos administrativos — elementos',
           comando: 'assinale_correta', pegadinha: licit ? 'troca_conceito' : 'Generalização absoluta', habilidade: 'memorizacao', dispositivos: licit ? ['Lei 14.133/2021 art. 28'] : [],
-          enunciado: body.split(/\s[A-E]\)\s/)[0].slice(0, 600) || body.slice(0, 600), alternativas: alts, gabarito: '' });
+          enunciado: body.split(/\s[A-E]\)\s/)[0].slice(0, 600) || body.slice(0, 600), alternativas: alts, gabarito: gab });
       }
       return { questoes: qs, alertas: [] };
     }

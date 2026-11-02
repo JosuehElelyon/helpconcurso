@@ -160,7 +160,7 @@ export async function runText(task, req) {
       if (req.signal?.aborted) throw new AiAbortError();
       const t0 = Date.now();
       try {
-        const out = await provider.generate({ task, model, system, messages: [{ role: 'user', content }], maxTokens: req.maxTokens || 4096, temperature: req.temperature, onText: req.onText, signal: req.signal, cacheSystem: req.cacheSystem, esforco: config.ai.tasks[task]?.esforco });
+        const out = await provider.generate({ task, model, system, messages: [{ role: 'user', content }], maxTokens: req.maxTokens || 4096, temperature: req.temperature, onText: req.onText, signal: req.signal, cacheSystem: req.cacheSystem, esforco: config.ai.tasks[task]?.esforco, avoid: req.avoid });
         const ms = Date.now() - t0;
         succeed(key);
         const isFallback = r > 0 || !!req.preferFallback;

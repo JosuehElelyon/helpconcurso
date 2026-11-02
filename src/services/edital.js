@@ -199,7 +199,7 @@ export async function buildEditalDashboard(edital, userId) {
   const realQuestions = (linkedProvaIds.length || edital.banca)
     ? await many(
       `SELECT q.materia, q.enunciado FROM prova_questoes q JOIN provas p ON p.id=q.prova_id
-       WHERE NOT q.flagged AND p.status='READY' AND (p.id = ANY($1::uuid[]) OR ($2::text IS NOT NULL AND q.banca=$2))
+       WHERE NOT q.flagged AND NOT q.anulada AND (q.consenso_gabarito IS NOT FALSE) AND p.status='READY' AND (p.id = ANY($1::uuid[]) OR ($2::text IS NOT NULL AND q.banca=$2))
        LIMIT 400`,
       [linkedProvaIds, edital.banca || null]
     )
@@ -536,7 +536,8 @@ export async function getQuestoesReaisDoTopico(edital, topicoIdOrCode, limite = 
             (p.edital_id = $1 OR p.id = $2) AS vinculada
      FROM prova_questoes q
      JOIN provas p ON p.id = q.prova_id
-     WHERE p.status = 'READY' AND NOT q.flagged AND q.gabarito IS NOT NULL AND length(trim(q.gabarito)) > 0
+     WHERE p.status = 'READY' AND NOT q.flagged AND NOT q.anulada AND (q.consenso_gabarito IS NOT FALSE)
+       AND q.gabarito IS NOT NULL AND length(trim(q.gabarito)) > 0
        AND (($3::text IS NOT NULL AND q.banca = $3) OR p.edital_id = $1 OR p.id = $2)
        AND (($4::text IS NOT NULL AND q.topico_id = $4) OR q.topico ILIKE $5 OR q.materia ILIKE $6)
      ORDER BY q.id

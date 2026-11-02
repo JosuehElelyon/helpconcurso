@@ -8,7 +8,8 @@
 import { one, many, query } from '../db.js';
 import { materiaId, topicoId, normNome } from './taxonomia.js';
 import { config } from '../config.js';
-import { BANCA } from '../lib/bancas.js';
+import { BANCA, validarUrlOficial } from '../lib/bancas.js';
+import { baixarDaFonteOficial } from '../lib/fonte-oficial.js';
 import { HttpError } from '../lib/http.js';
 import { putFile, getFile, makeKey, deleteFile } from '../lib/storage.js';
 import { secureUpload, scanExtracted, logSecurityEvent, scanText, SEV } from '../security/index.js';
@@ -227,6 +228,8 @@ function chunks(text) {
   return out;
 }
 
+const chaveQuestao = (enun) => normNome(enun).slice(0, 80);
+
 async function trainProva({ provaId }) {
   let p = await one('SELECT * FROM provas WHERE id=$1', [provaId]);
   if (!p || !['QUEUED', 'PROCESSING'].includes(p.status)) return;
@@ -262,8 +265,52 @@ async function trainProva({ provaId }) {
   const { data: analysis } = await runJSON('prova_analysis', { ...analysisReq, userId: p.uploaded_by }, provaAnalysisSchema);
   const questions = [];
   for (const r of extractReqs) {
-    try { const { data } = await runJSON('prova_extract', { ...r, userId: p.uploaded_by }, provaExtractSchema); questions.push(...data.questoes); }
-    catch (e) { if (e?.code === 'budget') throw e; console.warn(`[treino] parte da prova ${p.id} falhou: ${e.message}`); }
+    try {
+      const { data: ext1, meta: meta1 } = await runJSON('prova_extract', { ...r, userId: p.uploaded_by }, provaExtractSchema);
+      let ext2 = null, meta2 = null;
+      // F6: Dupla extração com consenso de gabarito entre modelos gratuitos
+      if (config.ai.consensoGabarito !== false) {
+        try {
+          const res2 = await runJSON('prova_extract', { ...r, userId: p.uploaded_by, avoid: { provider: meta1?.provider, model: meta1?.model } }, provaExtractSchema);
+          ext2 = res2.data;
+          meta2 = res2.meta;
+        } catch (e2) {
+          console.warn(`[consenso] segunda extração indisponível para parte da prova ${p.id}: ${e2.message}`);
+        }
+      }
+
+      const q2Map = new Map();
+      if (ext2?.questoes) {
+        for (const q of ext2.questoes) {
+          if (q.numero != null) q2Map.set(q.numero, q);
+          else q2Map.set(chaveQuestao(q.enunciado), q);
+        }
+      }
+
+      for (const q1 of ext1.questoes) {
+        const q2 = q2Map.get(q1.numero != null ? q1.numero : chaveQuestao(q1.enunciado));
+        let consenso = true;
+        let divergencia = null;
+
+        if (q2 && q1.gabarito && q2.gabarito && q1.gabarito.trim() && q2.gabarito.trim()) {
+          const g1 = q1.gabarito.trim().toUpperCase();
+          const g2 = q2.gabarito.trim().toUpperCase();
+          if (g1 !== g2) {
+            consenso = false;
+            divergencia = {
+              modelo1: { provider: meta1?.provider || 'modelo1', model: meta1?.model || 'padrao', gabarito: g1 },
+              modelo2: { provider: meta2?.provider || 'modelo2', model: meta2?.model || 'reserva', gabarito: g2 },
+            };
+          }
+        }
+        q1.consenso_gabarito = consenso;
+        q1.divergencia_gabarito = divergencia;
+        questions.push(q1);
+      }
+    } catch (e) {
+      if (e?.code === 'budget') throw e;
+      console.warn(`[treino] parte da prova ${p.id} falhou: ${e.message}`);
+    }
   }
   await finalize(p, analysis, questions);
 }
@@ -295,20 +342,23 @@ async function finalize(p, analysis, questions) {
   await query('DELETE FROM prova_questoes WHERE prova_id=$1', [p.id]);
   let saved = 0, flagged = 0;
   const seen = new Set();
+  let teveDivergencia = false;
   for (const q of questions.slice(0, 200)) {
     const enun = q.enunciado.trim();
     if (enun.length < 15) continue;
     const key = enun.slice(0, 120); if (seen.has(key)) continue; seen.add(key);
     const isBad = SEV[scanText([enun, ...q.alternativas].join('\n')).severity] >= SEV.medium;
     if (isBad) flagged++;
+    if (q.consenso_gabarito === false) teveDivergencia = true;
     // Rótulos de "como a banca cobra" + vínculo com a taxonomia própria (Fase 1 da base de conhecimento)
     const topico = clean([q.topico || ''])[0] || null;
     const matId = await materiaId(q.materia);
     const topId = topico && !isBad ? await topicoId(matId, topico) : null;
-    await query(`INSERT INTO prova_questoes(prova_id,banca,materia,numero,enunciado,alternativas,gabarito,flagged,topico,materia_id,topico_id,comando,pegadinha_tipo,habilidade,dispositivos)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+    await query(`INSERT INTO prova_questoes(prova_id,banca,materia,numero,enunciado,alternativas,gabarito,flagged,topico,materia_id,topico_id,comando,pegadinha_tipo,habilidade,dispositivos,consenso_gabarito,divergencia_gabarito)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [p.id, p.banca, q.materia || null, q.numero, enun, JSON.stringify(q.alternativas), q.gabarito || null, isBad,
-        topico, matId, topId, q.comando || null, q.pegadinha || null, q.habilidade || null, JSON.stringify(clean(q.dispositivos || []))]);
+        topico, matId, topId, q.comando || null, q.pegadinha || null, q.habilidade || null, JSON.stringify(clean(q.dispositivos || [])),
+        q.consenso_gabarito !== false, q.divergencia_gabarito ? JSON.stringify(q.divergencia_gabarito) : null]);
     saved++;
   }
   if (saved - flagged === 0) throw Object.assign(new Error('Nenhuma questão válida foi extraída da prova.'), { permanent: true });
@@ -317,8 +367,9 @@ async function finalize(p, analysis, questions) {
   await setStatus(p.id, 'READY', {
     titulo: analysis.titulo || p.titulo, ano: p.ano || (/^\d{4}$/.test(analysis.ano) ? analysis.ano : null), orgao: p.orgao || analysis.orgao || null, cargo: p.cargo || analysis.cargo || null,
     materias: JSON.stringify(analysis.materias), analysis: JSON.stringify(safeAnalysis), num_questoes: saved - flagged, ai_batch_id: null, error: null,
+    consenso_concluido: !teveDivergencia,
   });
-  console.log(`[treino] prova ${p.id} pronta: ${saved - flagged} questões (${flagged} descartadas pela segurança)`);
+  console.log(`[treino] prova ${p.id} pronta: ${saved - flagged} questões (${flagged} descartadas pela segurança, consenso=${!teveDivergencia})`);
   await notify(p.id);
 }
 
@@ -351,8 +402,6 @@ registerJob('prova.batch_poll', { run: pollProvaBatch, onDead: failTo('FAILED'),
 // Só completa os rótulos das questões já gravadas: não mexe em enunciado, gabarito nem alertas, e não refaz a análise.
 // Prova é documento público → roda na cascata grátis (dados='publico'); o Claude só entra como reserva.
 // ---------------------------------------------------------------------
-const chaveQuestao = (enun) => normNome(enun).slice(0, 80);
-
 async function relabelProva({ provaId }) {
   const p = await one("SELECT * FROM provas WHERE id=$1 AND status='READY'", [provaId]);
   if (!p?.text) return;
@@ -401,4 +450,251 @@ export async function reprocessProva(id) {
     await setStatus(id, 'CHECKING', { error: null }); await enqueue('prova.check', { provaId: id });
   }
   return one('SELECT * FROM provas WHERE id=$1', [id]);
+}
+
+// ---------------------------------------------------------------------
+// F7) Gabarito definitivo oficial: parsing determinístico e anulações
+// ---------------------------------------------------------------------
+export function parseGabaritoTexto(rawText) {
+  if (!rawText || typeof rawText !== 'string') return [];
+  const regex = /(?:quest[aã]o|item)?\s*(\d{1,3})\s*[-:.)]?\s*(?:gabarito\s*[:=]?\s*)?(?:alterad[ao]\s*(?:de\s*([a-e]|certo|errado|[ce])\s*)?para\s*([a-e]|certo|errado|[ce])|([a-e]|certo|errado|[ce])\s*\((?:alterad[ao]|retificad[ao])\)|(anulad[ao]s?|nul[ao]s?|cancelad[ao]s?|revogad[ao]|sem\s+resposta|[x#])|([a-e]|certo|errado|[ce]))(?:\b|[^\w]|$)/gi;
+
+  const map = new Map();
+  let m;
+  while ((m = regex.exec(rawText)) !== null) {
+    const numero = Number(m[1]);
+    if (numero < 1 || numero > 300) continue;
+    const normLetra = (s) => {
+      if (!s) return null;
+      const u = s.trim().toUpperCase();
+      if (u === 'CERTO') return 'C';
+      if (u === 'ERRADO') return 'E';
+      return u[0];
+    };
+    const altOrig = normLetra(m[2]);
+    const altNova = normLetra(m[3] || m[4]);
+    const isAnulada = !!m[5];
+    const simples = normLetra(m[6]);
+
+    const gabarito = isAnulada ? null : (altNova || simples || null);
+    const alterado = !!altNova || !!altOrig;
+    const motivo = isAnulada
+      ? 'Questão anulada no gabarito oficial.'
+      : alterado
+        ? (altOrig ? `Gabarito alterado de ${altOrig} para ${altNova}.` : `Gabarito alterado para ${altNova}.`)
+        : null;
+
+    const entry = {
+      numero,
+      gabarito,
+      anulada: isAnulada,
+      alterado,
+      original: altOrig,
+      motivo,
+    };
+
+    const prev = map.get(numero);
+    if (!prev) {
+      map.set(numero, entry);
+    } else {
+      if (entry.anulada || entry.alterado || !prev.gabarito) {
+        map.set(numero, {
+          ...entry,
+          original: entry.original || prev.gabarito || null,
+        });
+      } else if (!prev.anulada && !prev.alterado) {
+        map.set(numero, entry);
+      }
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.numero - b.numero);
+}
+
+export async function aplicarGabaritoDefinitivo({ provaId, user, url, file, text }) {
+  const p = await one('SELECT * FROM provas WHERE id=$1', [provaId]);
+  if (!p) throw new HttpError(404, 'Prova não encontrada.');
+
+  let rawText = text || '';
+  let oficialConfirmado = false;
+  let officialUrl = p.gabarito_definitivo_url || null;
+
+  if (url) {
+    const d = await baixarDaFonteOficial(p.banca, url);
+    const sec = await secureUpload(d.buffer, d.name, 'gabarito', { ocr: 'full', userId: user.id });
+    rawText = sec.text || '';
+    oficialConfirmado = true;
+    officialUrl = d.url;
+  } else if (file) {
+    const sec = await secureUpload(file.buffer, file.name, 'gabarito', { ocr: 'full', userId: user.id });
+    rawText = sec.text || '';
+  }
+
+  if (!rawText.trim()) throw new HttpError(400, 'Não foi possível extrair o texto do gabarito definitivo.');
+
+  const itens = parseGabaritoTexto(rawText);
+  if (!itens.length) throw new HttpError(422, 'Nenhuma questão ou gabarito foi identificado no texto fornecido.');
+
+  const questoes = await many('SELECT id, numero, gabarito, anulada, gabarito_alterado FROM prova_questoes WHERE prova_id=$1', [provaId]);
+  const porNumero = new Map(questoes.filter((q) => q.numero != null).map((q) => [q.numero, q]));
+
+  let atualizadas = 0, anuladasCount = 0, alteradasCount = 0;
+  const relatorio = [];
+
+  for (const item of itens) {
+    const alvo = porNumero.get(item.numero);
+    if (!alvo) continue;
+
+    let alterado = item.alterado;
+    let original = item.original || alvo.gabarito;
+    let motivo = item.motivo;
+
+    if (!item.anulada && item.gabarito && alvo.gabarito && item.gabarito !== alvo.gabarito && !alterado) {
+      alterado = true;
+      motivo = `Gabarito alterado de ${alvo.gabarito} para ${item.gabarito}.`;
+    }
+
+    if (item.anulada) {
+      await query(
+        `UPDATE prova_questoes
+         SET anulada = true, motivo_anulacao = $2, gabarito_definitivo = true
+         WHERE id = $1`,
+        [alvo.id, motivo || 'Anulada no gabarito oficial definitivo.']
+      );
+      anuladasCount++;
+      atualizadas++;
+      relatorio.push({ numero: item.numero, status: 'anulada', motivo });
+    } else {
+      await query(
+        `UPDATE prova_questoes
+         SET gabarito = $2,
+             gabarito_alterado = $3,
+             gabarito_original = CASE WHEN $3 THEN coalesce(gabarito_original, $4) ELSE gabarito_original END,
+             motivo_anulacao = $5,
+             gabarito_definitivo = true
+         WHERE id = $1`,
+        [alvo.id, item.gabarito, alterado, original, motivo]
+      );
+      if (alterado) alteradasCount++;
+      atualizadas++;
+      relatorio.push({ numero: item.numero, status: alterado ? 'alterada' : 'confirmada', gabarito: item.gabarito, motivo });
+    }
+  }
+
+  await query(
+    `UPDATE provas
+     SET gabarito_definitivo = true,
+         gabarito_definitivo_url = $2,
+         gabarito_definitivo_confirmado = $3,
+         gabarito_text = coalesce($4, gabarito_text),
+         updated_at = now()
+     WHERE id = $1`,
+    [provaId, officialUrl, oficialConfirmado, rawText]
+  );
+
+  const updatedProva = await one('SELECT * FROM provas WHERE id=$1', [provaId]);
+  return {
+    prova: updatedProva,
+    resumo: {
+      totalLidas: itens.length,
+      totalQuestoesProva: questoes.length,
+      atualizadas,
+      anuladas: anuladasCount,
+      alteradas: alteradasCount,
+      detalhes: relatorio,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------
+// B1) Importação de provas em lote pelo admin
+// ---------------------------------------------------------------------
+export async function importarProvasEmLote({ user, defaultBanca, itens = [], texto = '' }) {
+  if (user.role !== 'ADMIN') throw new HttpError(403, 'Acesso negado.');
+
+  let lista = Array.isArray(itens) ? [...itens] : [];
+  if (texto && typeof texto === 'string') {
+    const linhas = texto.split('\n').map((l) => l.trim()).filter((l) => l.length > 0 && !l.startsWith('#'));
+    for (const linha of linhas) {
+      const partes = linha.split(/\s*\|\s*/);
+      if (partes.length >= 2) {
+        const [provaUrl, gabaritoUrl, orgao, cargo, ano, bnc] = partes;
+        lista.push({
+          provaUrl,
+          gabaritoUrl: gabaritoUrl && /^https?:\/\//i.test(gabaritoUrl) ? gabaritoUrl : undefined,
+          orgao: orgao || undefined,
+          cargo: cargo || undefined,
+          ano: ano || undefined,
+          banca: bnc || undefined,
+        });
+      } else {
+        const urls = linha.split(/\s+/).filter((p) => /^https?:\/\//i.test(p));
+        if (urls.length >= 1) {
+          lista.push({
+            provaUrl: urls[0],
+            gabaritoUrl: urls[1] || undefined,
+          });
+        }
+      }
+    }
+  }
+
+  if (!lista.length) throw new HttpError(400, 'Nenhuma URL de prova fornecida para importação em lote.');
+
+  const resultados = [];
+  let importadas = 0, duplicatas = 0, erros = 0;
+
+  for (let i = 0; i < lista.length; i++) {
+    const it = lista[i];
+    const banca = it.banca || defaultBanca;
+    if (!banca || !BANCA[banca]) {
+      erros++;
+      resultados.push({ item: i + 1, url: it.provaUrl, status: 'erro', erro: `Banca "${banca || ''}" não informada ou não suportada.` });
+      continue;
+    }
+
+    try {
+      const dProva = await baixarDaFonteOficial(banca, it.provaUrl);
+      const file = { buffer: dProva.buffer, name: dProva.name, mime: dProva.mime };
+
+      let gabarito = null;
+      if (it.gabaritoUrl) {
+        const dGab = await baixarDaFonteOficial(banca, it.gabaritoUrl);
+        gabarito = { buffer: dGab.buffer, name: dGab.name, mime: dGab.mime };
+      }
+
+      const res = await submitProva({
+        user,
+        banca,
+        orgao: it.orgao || '',
+        cargo: it.cargo || '',
+        ano: it.ano || '',
+        file,
+        gabarito,
+        officialUrl: dProva.url,
+        oficialConfirmado: true,
+        officialUrlTipo: dProva.tipo,
+        ip: '127.0.0.1',
+      });
+
+      if (res.duplicate) {
+        duplicatas++;
+        resultados.push({ item: i + 1, url: dProva.url, status: 'duplicata', provaId: res.provaId, mensagem: res.message });
+      } else {
+        importadas++;
+        resultados.push({ item: i + 1, url: dProva.url, status: 'importada', provaId: res.prova?.id, titulo: res.prova?.titulo });
+      }
+    } catch (err) {
+      erros++;
+      resultados.push({ item: i + 1, url: it.provaUrl, status: 'erro', erro: err.message });
+    }
+  }
+
+  return {
+    total: lista.length,
+    importadas,
+    duplicatas,
+    erros,
+    resultados,
+  };
 }
