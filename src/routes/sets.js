@@ -35,7 +35,7 @@ export function isAnchored(trecho, materialNorm) {
 }
 
 export function normalizeQ(q, formato) {
-  const out = { tema: clean(q.tema, 120), nivel: clean(q.nivel, 20), enunciado: clean(q.enunciado, 6000), comentario: clean(q.comentario, 3000), trecho: clean(q.trecho_base, 1200), pegadinha: clean(q.pegadinha, 600) };
+  const out = { tema: clean(q.tema, 120), topico_edital: clean(q.topico_edital, 180), nivel: clean(q.nivel, 20), enunciado: clean(q.enunciado, 6000), comentario: clean(q.comentario, 3000), trecho: clean(q.trecho_base, 1200), pegadinha: clean(q.pegadinha, 600) };
   if (out.enunciado.length < 10) return null;
   if (formato === 'ce') {
     out.alternativas = [];
@@ -52,7 +52,7 @@ export function normalizeQ(q, formato) {
   return out;
 }
 
-const view = (s) => ({ id: s.id, banca: s.banca, materia: s.materia, assunto: s.assunto, nivel: s.nivel, formato: s.formato, arquivo: s.arquivo, questoes: s.questoes, respostas: s.respostas, finalizado: s.finalizado, revisao: s.review_stats ? { ...s.review_stats, motivos: undefined } : null, createdAt: s.created_at });
+const view = (s) => ({ id: s.id, banca: s.banca, materia: s.materia, assunto: s.assunto, nivel: s.nivel, formato: s.formato, arquivo: s.arquivo, editalId: s.edital_id || null, cadernoId: s.caderno_id || null, questoes: s.questoes, respostas: s.respostas, finalizado: s.finalizado, revisao: s.review_stats ? { ...s.review_stats, motivos: undefined } : null, createdAt: s.created_at });
 
 r.get('/cota', ah(async (req, res) => res.json({ quota: await generationQuota(req.user) })));
 
@@ -65,11 +65,13 @@ r.post('/', perUser, ah(async (req, res) => {
     banca: z.enum(Object.keys(BANCA), { errorMap: () => ({ message: 'Escolha uma banca.' }) }),
     qtd: z.coerce.number().int().min(1).max(20),
     nivel: z.enum(NIVEIS),
+    cadernoId: z.string().uuid().optional().nullable().or(z.literal('')).transform((v) => v || null),
   }), req.body);
   // Matéria e assunto também são texto do usuário que entra no prompt
   for (const v of [b.materia, b.assunto]) if (SEV[scanText(v).severity] >= SEV.medium) throw new HttpError(422, 'Matéria/assunto com conteúdo não permitido.');
   const m = await one('SELECT * FROM materials WHERE id=$1 AND user_id=$2', [b.materialId, req.user.id]);
   if (!m) throw new HttpError(404, 'Material não encontrado.');
+  const caderno = b.cadernoId ? await one('SELECT * FROM cadernos WHERE id=$1 AND user_id=$2', [b.cadernoId, req.user.id]) : null;
   const used = await consumeGeneration(req.user);
   await query('UPDATE materials SET materia=$2, assunto=$3 WHERE id=$1', [m.id, b.materia, b.assunto || null]);
 
@@ -81,17 +83,22 @@ r.post('/', perUser, ah(async (req, res) => {
   res.on('close', () => { if (!res.writableFinished) ctrl.abort(); }); // aluno fechou a página → para de gastar com a IA
   try {
     let knowledge;
-    try { knowledge = await getKnowledge(b.banca, b.materia); }
+    const topicHint = [b.assunto, ...(m.edital_match?.topicos_cobertos || []).map((t) => t.nome)].filter(Boolean).join(' ');
+    const targetEditalId = m.edital_id || caderno?.edital_id || null;
+    const targetProvasIds = Array.isArray(caderno?.provas_ids) ? caderno.provas_ids : [];
+    try { knowledge = await getKnowledge(b.banca, b.materia, 6, targetEditalId, topicHint, targetProvasIds); }
     catch (e) { console.warn('[gerar] sem conhecimento da banca:', e.message); knowledge = { provas: 0, caracteristicas: [], padroes: [], pegadinhas: [], exemplos: [] }; }
     const formato = BANCA[b.banca].formato;
     const materialNorm = normWords(m.text);
     let progressBase = 0, lastMeta = null, dropped = 0;
     const alertas = [];
     // Gera N questões, normaliza e passa pela varredura de segurança
+    const editalContext = m.edital_match?.topicos_cobertos || [];
+    const editalTitulo = m.edital_match?.edital_titulo || '';
     const gen = async (qtd, evitar) => {
       let count = 0;
       const { data, meta } = await runJSON('generate', {
-        ...promptGenerate({ ...b, qtd, evitar, text: m.text, knowledge }), cacheSystem: true, maxTokens: Math.min(32000, 1300 * qtd + 1500), userId: req.user.id, signal: ctrl.signal,
+        ...promptGenerate({ ...b, qtd, evitar, text: m.text, knowledge, editalContext, editalTitulo }), cacheSystem: true, maxTokens: Math.min(32000, 1300 * qtd + 1500), userId: req.user.id, signal: ctrl.signal,
         onText: (snap) => { const n = (snap.match(/"enunciado"\s*:/g) || []).length; if (n > count) { count = n; send({ type: 'progress', count: Math.min(b.qtd, progressBase + count) }); } },
       }, generateSchema);
       lastMeta = meta; alertas.push(...data.alertas);
@@ -138,9 +145,14 @@ r.post('/', perUser, ah(async (req, res) => {
     const data = { alertas }, meta = lastMeta;
     if (data.alertas.length) await logSecurityEvent({ userId: req.user.id, kind: 'ia_relatou_instrucao', severity: 'medium', fileName: m.file_name, details: { alertas: data.alertas, materialId: m.id } });
     if (!qs.length) throw Object.assign(new Error('Nenhuma questão passou na revisão automática. Tente novamente ou use um material mais completo.'), { code: 'bad_output' });
-    const s = await one(`INSERT INTO question_sets(user_id,material_id,banca,materia,assunto,nivel,formato,arquivo,questoes,model,review_stats)
-                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [req.user.id, m.id, b.banca, b.materia, b.assunto || null, b.nivel, formato, m.file_name, JSON.stringify(qs), `${meta.provider}:${meta.model}`, JSON.stringify(stats)]);
+    const s = await one(`INSERT INTO question_sets(user_id,material_id,edital_id,caderno_id,banca,materia,assunto,nivel,formato,arquivo,questoes,model,review_stats)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      [req.user.id, m.id, targetEditalId, caderno ? caderno.id : null, b.banca, b.materia, b.assunto || null, b.nivel, formato, m.file_name, JSON.stringify(qs), `${meta.provider}:${meta.model}`, JSON.stringify(stats)]);
+    if (caderno) {
+      const mIds = Array.isArray(caderno.materiais_ids) ? caderno.materiais_ids : [];
+      if (!mIds.includes(m.id)) mIds.unshift(m.id);
+      await query('UPDATE cadernos SET materiais_ids=$2, updated_at=now() WHERE id=$1', [caderno.id, JSON.stringify(mIds)]).catch(() => {});
+    }
     send({ type: 'done', set: view(s), descartadas: dropped + stats.descartadas, exemplosUsados: knowledge.exemplos.length, provasUsadas: knowledge.provas });
   } catch (e) {
     await refundGeneration(req.user, used).catch(() => {});

@@ -16,6 +16,8 @@ export const AI_TASKS = {
   prova_extract:  { label: 'Extrair questões reais da prova',     primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
   review:         { label: 'Revisor: resolver questões sem o gabarito', primary: 'anthropic:claude-haiku-5-5', fallback: 'anthropic:claude-sonnet-5-5' },
   report_check:   { label: 'Verificar erro reportado por aluno',  primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
+  edital_parse:   { label: 'Extrair conteúdo programático do edital', primary: 'anthropic:claude-haiku-5-5', fallback: 'anthropic:claude-sonnet-5-5' },
+  edital_match:   { label: 'Cruzar material de estudo com o edital',  primary: 'anthropic:claude-haiku-5-5', fallback: 'anthropic:claude-sonnet-5-5' },
   json_repair:    { label: 'Corrigir JSON malformado',            primary: 'anthropic:claude-haiku-5-5',  fallback: null },
 };
 const taskEnv = (t) => t.toUpperCase();
@@ -63,6 +65,8 @@ export const config = {
     trainingMode: env('AI_TRAINING_MODE', 'direct'),
     maxRetries: num('AI_MAX_RETRIES', 3),
     timeoutMs: num('AI_TIMEOUT_MS', 240000),
+    // Teto de gasto real com IA por dia (US$, dia de Brasília). 0 = sem limite. Ao atingir, novas chamadas são recusadas.
+    limiteUsdDia: num('AI_LIMITE_USD_DIA', 0),
     keys: {
       anthropic: env('ANTHROPIC_API_KEY'),
       openai: env('OPENAI_API_KEY'), gemini: env('GEMINI_API_KEY'), groq: env('GROQ_API_KEY'),

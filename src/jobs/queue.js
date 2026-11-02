@@ -30,14 +30,20 @@ async function runOne(job) {
     } else await query("UPDATE jobs SET status='done', locked_at=NULL, updated_at=now() WHERE id=$1", [job.id]);
   } catch (e) {
     const msg = String(e?.message || e).slice(0, 500);
+    if (e?.code === 'budget') { // limite diário de gasto: espera 30 min sem gastar tentativa
+      await query("UPDATE jobs SET status='queued', attempts=attempts-1, last_error=$2, run_after=now() + interval '30 minutes', locked_at=NULL, updated_at=now() WHERE id=$1", [job.id, msg]);
+      console.warn(`[ERRO-IA] [LIMITE-DIARIO] ${job.type}#${job.id} adiada por 30 min`);
+      return;
+    }
+    const tag = e?.name === 'AiError' || e?.code === 'bad_output' || e?.code === 'rate_limit' ? '[ERRO-IA] [FILA]' : '[ERRO-FILA]';
     if (job.attempts >= job.max_attempts || e?.permanent) {
       await query("UPDATE jobs SET status='dead', last_error=$2, locked_at=NULL, updated_at=now() WHERE id=$1", [job.id, msg]);
-      console.error(`[jobs] ${job.type}#${job.id} desistiu após ${job.attempts} tentativa(s): ${msg}`);
-      try { await h?.onDead?.(job.payload, e); } catch (e2) { console.error('[jobs] onDead falhou', e2); }
+      console.error(`${tag} ${job.type}#${job.id} desistiu após ${job.attempts} tentativa(s): ${msg}`);
+      try { await h?.onDead?.(job.payload, e); } catch (e2) { console.error('[ERRO-FILA] onDead falhou', e2); }
     } else {
       const wait = Math.min(1800, 20 * 3 ** (job.attempts - 1));
       await query("UPDATE jobs SET status='queued', last_error=$2, run_after=now() + ($3 || ' seconds')::interval, locked_at=NULL, updated_at=now() WHERE id=$1", [job.id, msg, String(wait)]);
-      console.warn(`[jobs] ${job.type}#${job.id} falhou (tentativa ${job.attempts}), nova tentativa em ${wait}s: ${msg}`);
+      console.warn(`${tag} ${job.type}#${job.id} falhou (tentativa ${job.attempts}), nova tentativa em ${wait}s: ${msg}`);
     }
   }
 }

@@ -24,18 +24,22 @@ r.get('/me', (req, res) => res.json({ user: publicUser(req.user) || null }));
 r.post('/register', mailLimiter, ah(async (req, res) => {
   const b = parseBody(z.object({ name: z.string().trim().min(2, 'Informe seu nome.').max(80), email, password }), req.body);
   const isAdminEmail = config.adminEmails.includes(b.email);
-  if (config.registrationMode === 'allowlist' && !isAdminEmail && !config.allowedEmails.includes(b.email)) {
+  const isInvited = isAdminEmail || config.allowedEmails.includes(b.email);
+  if (config.registrationMode === 'allowlist' && !isInvited) {
     throw new HttpError(403, 'O cadastro está aberto apenas para convidados nesta fase de testes.');
   }
   let user = await byEmail(b.email);
+  // Conta confirmada nunca é sobrescrita pelo cadastro (nem de convidado/admin): quem esqueceu a senha usa "Esqueci a senha".
+  // Toda conta só é ativada pelo código enviado ao e-mail — é isso que prova que a pessoa é dona do endereço.
   if (user?.email_verified_at) throw new HttpError(409, 'Já existe uma conta com este e-mail. Entre ou recupere a senha.');
   const hash = await hashPassword(b.password);
   const role = isAdminEmail ? 'ADMIN' : 'USER';
   if (user) user = await one('UPDATE users SET name=$2, password_hash=$3, role=$4, updated_at=now() WHERE id=$1 RETURNING *', [user.id, b.name, hash, role]);
   else user = await one('INSERT INTO users(name,email,password_hash,role) VALUES ($1,$2,$3,$4) RETURNING *', [b.name, b.email, hash, role]);
   const { code: c, ttlMin } = await issueCode(user.id, 'VERIFY_EMAIL');
-  await sendVerificationEmail(user, c, ttlMin);
-  res.status(201).json({ ok: true, email: user.email });
+  const mailRes = await sendVerificationEmail(user, c, ttlMin);
+  const aviso = mailRes?.sent === false ? 'Conta criada, mas o e-mail com o código falhou agora. Toque em "Reenviar código" em instantes.' : null;
+  res.status(201).json({ ok: true, email: user.email, aviso });
 }));
 
 r.post('/verify', ah(async (req, res) => {

@@ -1,13 +1,20 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config.js';
 
-let transport = null;
-if (config.smtp.host) {
-  transport = nodemailer.createTransport({
-    host: config.smtp.host, port: config.smtp.port, secure: config.smtp.secure,
+function makeTransport() {
+  if (!config.smtp.host) return null;
+  return nodemailer.createTransport({
+    host: config.smtp.host,
+    port: config.smtp.port,
+    secure: config.smtp.secure,
+    pool: false,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
     auth: config.smtp.user ? { user: config.smtp.user, pass: config.smtp.pass } : undefined,
   });
 }
+let transport = makeTransport();
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -30,9 +37,21 @@ function layout({ title, intro, code, buttonLabel, link, outro }) {
 async function send({ to, subject, html, text }) {
   if (!transport) {
     console.log(`\n[e-mail simulado] Para: ${to}\nAssunto: ${subject}\n${text}\n`);
-    return;
+    return { sent: true, simulated: true };
   }
-  await transport.sendMail({ from: config.smtp.from, to, subject, html, text });
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await makeTransport().sendMail({ from: config.smtp.from, to, subject, html, text });
+      console.log(`[SMTP] [OK] e-mail enviado para ${to} ("${subject}")`);
+      return { sent: true };
+    } catch (e) {
+      console.warn(`[ERRO-SMTP] tentativa=${attempt}/2 para=${to} codigo=${e.code || 'SMTP'} msg="${e.message}"`);
+      if (attempt === 2) {
+        console.log(`\n[FALLBACK-EMAIL] Não foi possível entregar via SMTP para ${to}. Conteúdo:\nAssunto: ${subject}\n${text}\n`);
+        return { sent: false, error: e.message };
+      }
+    }
+  }
 }
 
 export function sendVerificationEmail(user, code, ttlMin) {

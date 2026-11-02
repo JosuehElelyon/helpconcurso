@@ -20,6 +20,8 @@ import setRoutes from './routes/sets.js';
 import provaRoutes from './routes/provas.js';
 import adminRoutes from './routes/admin.js';
 import meRoutes from './routes/me.js';
+import editalRoutes from './routes/editais.js';
+import cadernoRoutes from './routes/cadernos.js';
 import { bancasRouter } from './routes/bancas.js';
 
 assertConfig();
@@ -59,7 +61,7 @@ app.use((req, _res, next) => {
 app.use(loadUser);
 
 app.get('/api/health', async (_req, res) => {
-  try { await pool.query('SELECT 1'); res.json({ ok: true, versao: '1.1.0' }); } catch { res.status(503).json({ ok: false }); }
+  try { await pool.query('SELECT 1'); res.json({ ok: true, versao: '1.4.0' }); } catch { res.status(503).json({ ok: false }); }
 });
 app.use('/api/auth', authRoutes);
 app.use('/api/materials', materialRoutes);
@@ -68,6 +70,8 @@ app.use('/api/provas', provaRoutes);
 app.use('/api/bancas', bancasRouter);
 app.use('/api/admin', adminRoutes);
 app.use('/api/me', meRoutes);
+app.use('/api/editais', editalRoutes);
+app.use('/api/cadernos', cadernoRoutes);
 app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Rota não encontrada.')));
 
 const pub = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -79,11 +83,14 @@ app.use((err, req, res, _next) => {
   if (res.headersSent) { try { res.end(); } catch {} return; }
   if (err instanceof HttpError) return res.status(err.status).json({ error: err.message, ...err.extra });
   if (err instanceof UploadBlockedError) return res.status(422).json({ error: err.message, blocked: true });
-  if (err instanceof AiError) { console.warn(`[${req.id}] IA: ${err.code} ${err.message}`); return res.status(err.code === 'aborted' ? 499 : 503).json({ error: userMessage(err) }); }
+  if (err instanceof AiError) {
+    console.error(`[ERRO-IA] [req=${req.id}] rota="${req.method} ${req.originalUrl}" codigo=${err.code} msg="${err.message}"`);
+    return res.status(err.code === 'aborted' ? 499 : 503).json({ error: userMessage(err) });
+  }
   if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'Conteúdo muito grande.' });
   if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'JSON inválido.' });
-  if (err?.code === 'ECONNREFUSED' || err?.code === '57P01') { console.error(`[${req.id}] banco indisponível`, err.message); return res.status(503).json({ error: 'Serviço temporariamente indisponível. Tente novamente.' }); }
-  console.error(`[${req.id}]`, err);
+  if (err?.code === 'ECONNREFUSED' || err?.code === '57P01') { console.error(`[ERRO-BANCO] [req=${req.id}] banco indisponível:`, err.message); return res.status(503).json({ error: 'Serviço temporariamente indisponível. Tente novamente.' }); }
+  console.error(`[ERRO-INTERNO] [req=${req.id}] rota="${req.method} ${req.originalUrl}"`, err);
   res.status(500).json({ error: `Erro interno. Se persistir, informe o código ${req.id}.` });
 });
 
@@ -92,7 +99,7 @@ await migrate();
 await ensureBucket().catch((e) => console.warn('[s3]', e.message));
 await verifyMailer();
 await startWorker();
-const server = app.listen(config.port, () => console.log(`HelpConcurso v1.1 rodando em ${config.appUrl} (porta ${config.port})${config.ai.mock ? ' — IA SIMULADA' : ''}`));
+const server = app.listen(config.port, () => console.log(`HelpConcurso v1.4 rodando em ${config.appUrl} (porta ${config.port})${config.ai.mock ? ' — IA SIMULADA' : ''}`));
 server.requestTimeout = 10 * 60 * 1000; // gerações longas
 server.headersTimeout = 65 * 1000;
 

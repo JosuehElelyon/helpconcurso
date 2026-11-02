@@ -26,7 +26,7 @@ const RULES = [
   { code: 'ignorar_instrucoes', severity: 'critical', msg: 'Pede para ignorar/desconsiderar instruções ou regras',
     re: /\b(ignore|ignora|ignorem|desconsidere|desconsiderem|desconsidera|esqueca|esquecam|esquece|disregard|forget|override|bypass|anule|descarte|olvida|olvide)\b[^.\n]{0,50}\b(instruc\w*|instruct\w*|prompts?|comandos?|diretrizes|directives?|guidelines|orientacoes (anteriores|acima|do sistema)|(regras|rules|tudo|everything|all|todo|todas?) (as |the |o )?(anteriores|acima|previas|previous|prior|above|do sistema|of the system|que (te|lhe|you)))\b/ },
   { code: 'novas_instrucoes', severity: 'high', msg: 'Declara "novas instruções" ou regras para quem lê',
-    re: /\b(novas?|new|updated|atualizad\w*|nuevas?|verdadeiras?|real)\s+(instruc\w*|instructions?|regras?|rules?|diretriz\w*|ordens?|orders?|tarefas?|task)\b/ },
+    re: /\b(novas?|new|updated|atualizad\w*|nuevas?|verdadeiras?|real)\s+(instruc\w*(?!\s+normativ)|instructions?|diretriz\w*\s*:)\b|\b(novas?|new|updated|atualizad\w*|verdadeiras?)\s+(regras?|rules?|ordens?|orders?|tarefas?|tasks?)\s*(:|para\s+(voce|tu|a\s+ia|o\s+modelo|o\s+sistema)|do\s+sistema|da\s+ia|for\s+(you|the\s+ai)|a\s+seguir)/ },
   { code: 'troca_de_papel', severity: 'high', msg: 'Tenta redefinir o papel/identidade da IA',
     re: /\b(voce agora e|agora voce e|a partir de agora,? (voce|tu)|you are now|from now on,? you|you will now|eres ahora|a partir de ahora|finja (ser|que)|pretend (to be|you are)|roleplay as|entre no modo|enter (developer|god|dan) mode)\b/ },
   { code: 'fala_com_ia', severity: 'high', msg: 'Dirige uma mensagem/ordem a uma IA',

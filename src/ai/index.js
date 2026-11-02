@@ -12,6 +12,7 @@ import { createAnthropic } from './providers/anthropic.js';
 import { createOpenAICompat } from './providers/openai-compat.js';
 import { createMock } from './providers/mock.js';
 import { SECURITY_RULES } from './guard.js';
+import { costUsd, spentTodayUsd } from './pricing.js';
 
 const providers = new Map();
 function getProvider(name) {
@@ -44,7 +45,30 @@ const succeed = (k) => breaker.delete(k);
 
 const sleep = (ms, signal) => new Promise((res, rej) => { const t = setTimeout(res, ms); signal?.addEventListener('abort', () => { clearTimeout(t); rej(new AiAbortError()); }, { once: true }); });
 
+// ---------- Limite diário de gasto (AI_LIMITE_USD_DIA) ----------
+// O gasto do dia vem do banco a cada 60 s; entre uma leitura e outra, somamos o custo de cada chamada concluída.
+const budget = { day: '', usd: 0, at: 0 };
+const todayBR = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+async function assertBudget(task) {
+  const limit = config.ai.limiteUsdDia;
+  if (!limit || config.ai.mock) return;
+  const day = todayBR();
+  if (budget.day !== day || Date.now() - budget.at > 60000) {
+    try { budget.usd = await spentTodayUsd(); budget.day = day; budget.at = Date.now(); }
+    catch (e) { console.warn('[ai] não foi possível ler o gasto do dia:', e.message); return; }
+  }
+  if (budget.usd >= limit) {
+    console.error(`[ERRO-IA] [LIMITE-DIARIO] tarefa=${task} gasto_hoje=US$${budget.usd.toFixed(4)} limite=US$${limit}`);
+    throw new AiError(`Limite diário de gasto com IA atingido (US$ ${limit}).`, { code: 'budget', retryable: false, fallback: false });
+  }
+}
+
+export const _resetBudgetCache = () => { budget.at = 0; }; // para testes
+
 async function logUsage(row) {
+  if (row.ok && row.usage && row.provider !== 'mock' && budget.day === todayBR()) {
+    budget.usd += costUsd(row.model, row.usage.input, row.usage.output, row.usage.cacheRead, row.batch);
+  }
   try {
     await query(`INSERT INTO ai_usage(task,provider,model,input_tokens,output_tokens,cache_read_tokens,duration_ms,ok,fallback,batch,error,user_id)
                  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
@@ -59,39 +83,54 @@ async function logUsage(row) {
  *          onText?:(s:string)=>void, signal?:AbortSignal, userId?:string, cacheSystem?:boolean}} req
  */
 export async function runText(task, req) {
-  const routes = routeFor(task);
+  let routes = routeFor(task);
+  if (req.preferFallback && routes.length > 1) routes = [routes[1], routes[0]];
+  await assertBudget(task);
   const content = [...(req.pdf ? [{ type: 'pdf', data: req.pdf }] : []), { type: 'text', text: req.prompt }];
   const system = [SECURITY_RULES, req.system].filter(Boolean).join('\n\n');
   let lastErr;
   for (let r = 0; r < routes.length; r++) {
     const { provider: pName, model } = routes[r];
     const key = `${pName}:${model}`;
-    if (isOpen(key) && r < routes.length - 1) { lastErr = new AiError('Modelo temporariamente desativado (disjuntor).', { code: 'unavailable' }); continue; }
+    if (isOpen(key) && r < routes.length - 1) {
+      console.warn(`[ERRO-IA] [DISJUNTOR-ABERTO] tarefa=${task} modelo=${key} — pulando para modelo reserva`);
+      lastErr = new AiError('Modelo temporariamente desativado (disjuntor).', { code: 'unavailable' });
+      continue;
+    }
     let provider;
-    try { provider = getProvider(pName); } catch (e) { lastErr = e; continue; }
+    try { provider = getProvider(pName); } catch (e) {
+      console.error(`[ERRO-IA] [CONFIG] tarefa=${task} provedor=${pName} msg="${e.message}"`);
+      lastErr = e;
+      continue;
+    }
     for (let attempt = 1; attempt <= config.ai.maxRetries; attempt++) {
       if (req.signal?.aborted) throw new AiAbortError();
       const t0 = Date.now();
       try {
         const out = await provider.generate({ task, model, system, messages: [{ role: 'user', content }], maxTokens: req.maxTokens || 4096, temperature: req.temperature, onText: req.onText, signal: req.signal, cacheSystem: req.cacheSystem });
+        const ms = Date.now() - t0;
         succeed(key);
-        logUsage({ task, provider: provider.name, model, usage: out.usage, ms: Date.now() - t0, ok: true, fallback: r > 0, userId: req.userId });
+        const isFallback = r > 0 || !!req.preferFallback;
+        logUsage({ task, provider: provider.name, model, usage: out.usage, ms, ok: true, fallback: isFallback, userId: req.userId });
         if (out.stopReason === 'max_tokens' || out.stopReason === 'length') out.truncated = true;
-        return { ...out, provider: provider.name, model, fallback: r > 0 };
+        console.log(`[IA] [OK] tarefa=${task} modelo=${provider.name}:${model}${isFallback ? ' (reserva)' : ''} tempo=${ms}ms tokens_in=${out.usage?.input ?? 0} tokens_out=${out.usage?.output ?? 0}${out.truncated ? ' [TRUNCADO]' : ''}`);
+        return { ...out, provider: provider.name, model, fallback: isFallback };
       } catch (e) {
+        const ms = Date.now() - t0;
         const err = e instanceof AiError ? e : Object.assign(new AiError(e?.message || 'erro', { retryable: e?.retryable ?? true, code: e?.code || 'network' }), { cause: e });
-        logUsage({ task, provider: provider.name, model, ms: Date.now() - t0, ok: false, fallback: r > 0, error: `${err.code}: ${err.message}`, userId: req.userId });
+        logUsage({ task, provider: provider.name, model, ms, ok: false, fallback: r > 0, error: `${err.code}: ${err.message}`, userId: req.userId });
+        console.error(`[ERRO-IA] [FALHA-CHAMADA] tarefa=${task} modelo=${key} codigo=${err.code} tentativa=${attempt}/${config.ai.maxRetries} tempo=${ms}ms msg="${err.message}"`);
         if (err instanceof AiAbortError || req.signal?.aborted) throw new AiAbortError();
         lastErr = err;
         fail(key);
         if (!err.retryable || attempt === config.ai.maxRetries) break;
         const wait = Math.min(20000, 800 * 2 ** (attempt - 1)) + Math.random() * 400; // espera exponencial + jitter
-        console.warn(`[ai] ${task} ${key} falhou (${err.code}), nova tentativa em ${Math.round(wait)}ms`);
+        console.warn(`[ERRO-IA] [RETRY] tarefa=${task} modelo=${key} aguardando ${Math.round(wait)}ms para nova tentativa`);
         await sleep(wait, req.signal);
       }
     }
     if (lastErr && lastErr.fallback === false) break;
-    if (r < routes.length - 1) console.warn(`[ai] ${task}: trocando para o modelo reserva ${routes[r + 1].provider}:${routes[r + 1].model}`);
+    if (r < routes.length - 1) console.warn(`[ERRO-IA] [FALLBACK] tarefa=${task}: trocando para modelo reserva ${routes[r + 1].provider}:${routes[r + 1].model}`);
   }
   throw lastErr || new AiError('Nenhum modelo de IA disponível.', { code: 'not_configured' });
 }
@@ -106,16 +145,21 @@ export function extractJSON(text) {
 
 /**
  * Executa a tarefa, interpreta o JSON e valida com um schema zod.
- * Se falhar: 1) tenta consertar o JSON com a tarefa json_repair; 2) repete a tarefa uma vez.
+ * Se falhar: 1) tenta consertar o JSON com a tarefa json_repair; 2) repete a tarefa uma vez (usando modelo reserva se disponível).
  */
 export async function runJSON(task, req, schema) {
-  let lastErr;
+  let lastErr, schemaFeedback = '';
   for (let round = 0; round < 2; round++) {
-    const out = await runText(task, { ...req, prompt: req.prompt + '\n\nResponda APENAS com JSON válido, sem markdown e sem texto fora do JSON.' });
+    const extraRule = schemaFeedback
+      ? `\n\nATENÇÃO — CORREÇÃO OBRIGATÓRIA: Sua tentativa anterior falhou na validação (${schemaFeedback}). Corrija e preencha todos os campos obrigatórios do JSON sem deixá-los vazios.\nResponda APENAS com JSON válido, sem markdown e sem texto fora do JSON.`
+      : '\n\nResponda APENAS com JSON válido, sem markdown e sem texto fora do JSON.';
+    const out = await runText(task, { ...req, preferFallback: round > 0, prompt: req.prompt + extraRule });
     let obj;
     try { obj = extractJSON(out.text); }
     catch (e) {
       lastErr = e;
+      const preview = String(out.text || '').slice(0, 300).replace(/\s+/g, ' ');
+      console.warn(`[ERRO-IA] [JSON-INVALIDO] tarefa=${task} modelo=${out.provider}:${out.model} rodada=${round + 1}/2 msg="${e.message}" previa="${preview}"`);
       try {
         const fixed = await runText('json_repair', { prompt: `Corrija o conteúdo abaixo para que seja um JSON válido, sem alterar os dados e sem acrescentar nada. Se estiver cortado no fim, feche as estruturas abertas descartando o item incompleto. Responda só com o JSON.\n\n${out.text.slice(0, 120000)}`, maxTokens: Math.min(16000, (req.maxTokens || 4096) + 500), userId: req.userId, signal: req.signal });
         obj = extractJSON(fixed.text);
@@ -123,7 +167,12 @@ export async function runJSON(task, req, schema) {
     }
     const v = schema ? schema.safeParse(obj) : { success: true, data: obj };
     if (v.success) return { data: v.data, meta: { provider: out.provider, model: out.model, fallback: out.fallback, truncated: out.truncated } };
-    lastErr = new AiOutputError('Resposta da IA fora do formato esperado: ' + v.error.issues.slice(0, 2).map((i) => `${i.path.join('.')} ${i.message}`).join('; '));
+    const issues = v.error.issues.slice(0, 3).map((i) => `${i.path.join('.')} ${i.message}`).join('; ');
+    const preview = String(out.text || '').slice(0, 350).replace(/\s+/g, ' ');
+    console.error(`[ERRO-IA] [SCHEMA-INVALIDO] tarefa=${task} modelo=${out.provider}:${out.model} rodada=${round + 1}/2 motivo="${issues}" previa_resposta="${preview}"`);
+    logUsage({ task, provider: out.provider, model: out.model, ok: false, fallback: out.fallback, error: `bad_output: ${issues}`, userId: req.userId });
+    schemaFeedback = issues;
+    lastErr = new AiOutputError('Resposta da IA fora do formato esperado: ' + issues);
   }
   throw lastErr;
 }
@@ -135,6 +184,7 @@ export function batchSupported(task) {
 }
 /** Envia vários pedidos de uma tarefa em lote. items: [{id, prompt, system?, maxTokens?}] */
 export async function submitBatch(task, items) {
+  await assertBudget(task);
   const { provider: pName, model } = routeFor(task)[0];
   const p = getProvider(pName);
   const system = (s) => [SECURITY_RULES, s].filter(Boolean).join('\n\n');

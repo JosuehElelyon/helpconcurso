@@ -31,6 +31,7 @@ export function userMessage(e) {
   if (e.code === 'unavailable' || e.code === 'network' || e.code === 'timeout') return 'A IA está indisponível no momento. Tente novamente em instantes.';
   if (e.code === 'aborted') return 'Operação cancelada.';
   if (e.code === 'bad_output') return 'A IA respondeu em um formato inesperado. Tente novamente.';
+  if (e.code === 'budget') return 'O limite diário de uso da IA foi atingido. As gerações voltam amanhã.';
   if (e.code === 'not_configured') return 'A IA não está configurada no servidor.';
   return 'Não foi possível concluir com a IA. Tente novamente.';
 }

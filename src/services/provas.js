@@ -40,7 +40,7 @@ const isTrusted = (u) => u && (u.role === 'ADMIN' || (u.approved_contribs >= con
 // ---------------------------------------------------------------------
 // 1) Envio
 // ---------------------------------------------------------------------
-export async function submitProva({ user, banca, orgao, cargo, ano, file, gabarito, ip }) {
+export async function submitProva({ user, banca, orgao, cargo, ano, editalId, file, gabarito, ip }) {
   if (!BANCA[banca]) throw new HttpError(400, 'Escolha a banca.');
   if (user.role !== 'ADMIN') {
     const n = await one("SELECT count(*)::int AS n FROM provas WHERE uploaded_by=$1 AND created_at > now() - interval '24 hours'", [user.id]);
@@ -59,13 +59,17 @@ export async function submitProva({ user, banca, orgao, cargo, ano, file, gabari
   const fileKey = await putFile(makeKey(`provas/${banca}`, file.name), file.buffer, file.mime);
   const gabKey = gabarito ? await putFile(makeKey(`provas/${banca}`, gabarito.name), gabarito.buffer, gabarito.mime) : null;
   const security = { findings: [...sec.findings, ...(gab ? gab.findings.map((f) => ({ ...f, where: 'gabarito:' + f.where })) : [])], decision: sec.decision, gabaritoDecision: gab?.decision || null, antivirus: sec.antivirus };
+  // Só vincula a um edital do próprio aluno
+  const validEditalId = /^[0-9a-f-]{36}$/i.test(String(editalId || ''))
+    ? (await one('SELECT id FROM editais WHERE id=$1 AND user_id=$2', [editalId, user.id]))?.id || null
+    : null;
   let p;
   try {
     p = await one(`INSERT INTO provas(banca, banca_informada, orgao, cargo, ano, titulo, file_name, file_key, gabarito_name, gabarito_key, sha256, gabarito_sha256,
-                     text, gabarito_text, needs_ocr, page_count, security, source, uploaded_by, status)
-                   VALUES ($1,$1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'CHECKING') RETURNING *`,
+                     text, gabarito_text, needs_ocr, page_count, security, source, uploaded_by, edital_id, status)
+                   VALUES ($1,$1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'CHECKING') RETURNING *`,
       [banca, orgao, cargo, ano, [orgao, cargo, ano].filter(Boolean).join(' · ') || file.name, file.name, fileKey, gabarito?.name || null, gabKey, sec.sha256, gab?.sha256 || null,
-       sec.needsOcr ? null : sec.text, gab?.text || null, sec.needsOcr, sec.pages, JSON.stringify(security), user.role === 'ADMIN' ? 'admin' : 'user', user.id]);
+       sec.needsOcr ? null : sec.text, gab?.text || null, sec.needsOcr, sec.pages, JSON.stringify(security), user.role === 'ADMIN' ? 'admin' : 'user', user.id, validEditalId]);
   } catch (e) {
     await deleteFile(fileKey); await deleteFile(gabKey);
     if (e.code === '23505') return { duplicate: true, message: 'Essa prova acabou de ser enviada por outra pessoa e já está na nossa base.' };
@@ -241,7 +245,7 @@ async function trainProva({ provaId }) {
   const questions = [];
   for (const r of extractReqs) {
     try { const { data } = await runJSON('prova_extract', { ...r, userId: p.uploaded_by }, provaExtractSchema); questions.push(...data.questoes); }
-    catch (e) { console.warn(`[treino] parte da prova ${p.id} falhou: ${e.message}`); }
+    catch (e) { if (e?.code === 'budget') throw e; console.warn(`[treino] parte da prova ${p.id} falhou: ${e.message}`); }
   }
   await finalize(p, analysis, questions);
 }

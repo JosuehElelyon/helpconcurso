@@ -10,7 +10,7 @@ export const detectSchema = z.object({ materia: str(80), confianca: num01, temas
 
 export const generateSchema = z.object({
   questoes: z.array(z.object({
-    tema: str(120), nivel: str(20), enunciado: str(6000), alternativas: strArr(5, 1500), gabarito: str(3),
+    tema: str(120), topico_edital: str(180).optional().default(''), nivel: str(20), enunciado: str(6000), alternativas: strArr(5, 1500), gabarito: str(3),
     comentario: str(3000), trecho_base: str(1200), pegadinha: str(600),
   })).min(1).max(25),
   alertas: strArr(5, 300).optional().default([]),
@@ -50,4 +50,69 @@ export const reportCheckSchema = z.object({
   resposta_correta: str(3),
   ambigua: bool,
   explicacao: str(1200),
+});
+
+// Extração estruturada (verticalizada) do conteúdo programático de um edital
+const normTopico = (raw, idx) => {
+  if (typeof raw === 'string') {
+    const m = raw.trim().match(/^(\d+(?:\.\d+)*)\s*[-–.):]?\s*(.+)$/);
+    return m ? { codigo: m[1], nome: m[2] } : { codigo: String(idx + 1), nome: raw.trim() };
+  }
+  if (raw && typeof raw === 'object') {
+    const nome = raw.nome || raw.titulo || raw.topico || raw.assunto || raw.descricao || raw.item || '';
+    const codigo = raw.codigo || raw.numero || raw.id || String(idx + 1);
+    return { codigo: String(codigo), nome: String(nome) };
+  }
+  return { codigo: String(idx + 1), nome: '' };
+};
+
+const normDisciplina = (raw) => {
+  if (!raw || typeof raw !== 'object') return { materia: '', peso: 1, topicos: [] };
+  const materia = raw.materia || raw.disciplina || raw.nome || raw.area || '';
+  const rawTops = Array.isArray(raw.topicos) ? raw.topicos : Array.isArray(raw.itens) ? raw.itens : Array.isArray(raw.assuntos) ? raw.assuntos : Array.isArray(raw.conteudos) ? raw.conteudos : [];
+  const topicos = rawTops.map(normTopico).filter((t) => t.nome && t.nome.trim().length > 1);
+  return { materia, peso: raw.peso, topicos };
+};
+
+export const editalParseSchema = z.preprocess((obj) => {
+  if (!obj || typeof obj !== 'object') return obj;
+  const rawDiscs = Array.isArray(obj.disciplinas) ? obj.disciplinas : Array.isArray(obj.materias) ? obj.materias : Array.isArray(obj.conteudos) ? obj.conteudos : [];
+  return {
+    ...obj,
+    disciplinas: rawDiscs.map(normDisciplina).filter((d) => d.materia && d.topicos.length > 0),
+  };
+}, z.object({
+  titulo: str(180),
+  orgao: str(120),
+  cargo: str(120),
+  banca: str(40),
+  ano: str(10),
+  disciplinas: z.array(z.object({
+    materia: str(100),
+    peso: z.preprocess((v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.min(10, Math.round(n)) : 1; }, z.number()),
+    topicos: z.array(z.object({
+      codigo: str(30),
+      nome: str(220),
+    })).min(1).max(40),
+  })).min(1).max(25),
+}));
+
+// Cruzamento entre o material de estudo do aluno e o edital verticalizado
+export const editalMatchSchema = z.object({
+  disciplina_id: str(40),
+  disciplina_nome: str(100),
+  cobertura_disciplina_pct: z.preprocess((v) => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0; }, z.number()),
+  topicos_cobertos: z.array(z.object({
+    id: str(40),
+    codigo: str(30),
+    nome: str(220),
+    nivel_cobertura: z.preprocess((v) => (String(v).toLowerCase().includes('comp') ? 'completo' : 'parcial'), z.enum(['completo', 'parcial'])),
+    resumo: str(240),
+  })).max(30),
+  topicos_faltantes: z.array(z.object({
+    id: str(40),
+    codigo: str(30),
+    nome: str(220),
+  })).max(30),
+  analise: str(500),
 });

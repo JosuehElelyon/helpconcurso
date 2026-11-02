@@ -1,7 +1,7 @@
 // Provedor simulado (AI_MOCK=true): respostas determinísticas para desenvolver e testar sem custo.
 // Imita o comportamento de cada tarefa o suficiente para exercitar todo o fluxo, inclusive as barreiras de segurança.
 const LET = ['A', 'B', 'C', 'D', 'E'];
-const untrusted = (txt) => { const m = txt.match(/<<INICIO-[a-f0-9]+>>\n?([\s\S]*?)\n?<<FIM-[a-f0-9]+>>/); return m ? m[1] : txt; };
+const untrusted = (txt, label = '') => { const m = txt.match(new RegExp(`${label}[^\\n]*\\n<<INICIO-[a-f0-9]+>>\\n?([\\s\\S]*?)\\n?<<FIM-[a-f0-9]+>>`)); return m ? m[1] : txt; };
 const sentences = (t) => t.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.split(/\s+/).length >= 6);
 
 function respond(task, req) {
@@ -13,9 +13,10 @@ function respond(task, req) {
     case 'generate': {
       const n = Number((all.match(/elabore (\d+) quest/i) || [])[1] || 5);
       const ce = /Formato CEBRASPE/.test(all);
-      const ss = sentences(data);
+      const ss = sentences(untrusted(all, 'MATERIAL DO ALUNO'));
+      const hasEdital = /TÓPICOS DO EDITAL VINCULADO/.test(all);
       return { questoes: Array.from({ length: n }, (_, i) => ({
-        tema: 'Tema de teste', nivel: 'Médio', enunciado: `(Simulado${/QUESTÕES DE REPOSIÇÃO/.test(all) ? ' refeita' : ''}) Questão ${i + 1}: com base no material, assinale a opção correta.`,
+        tema: 'Tema de teste', topico_edital: hasEdital ? '[D1-T1] 1 Atos administrativos' : '', nivel: 'Médio', enunciado: `(Simulado${/QUESTÕES DE REPOSIÇÃO/.test(all) ? ' refeita' : ''}) Questão ${i + 1}: com base no material, assinale a opção correta.`,
         alternativas: ce ? [] : LET.map((l) => `Alternativa ${l} de teste`), gabarito: ce ? (i % 2 ? 'C' : 'E') : LET[i % 5],
         comentario: 'Comentário de teste.', trecho_base: ss.length ? ss[i % ss.length].slice(0, 160) : '', pegadinha: '' })), alertas: [] };
     }
@@ -56,6 +57,33 @@ function respond(task, req) {
       const confirmed = /gabarito|errad|ambígu|ambigu/i.test((all.match(/MOTIVO INFORMADO PELO ALUNO[\s\S]*?<<INICIO-[a-f0-9]+>>\n?([\s\S]*?)\n?<<FIM/) || [])[1] || '');
       return { gabarito_correto: !confirmed, resposta_correta: confirmed ? 'B' : 'A', ambigua: false, explicacao: confirmed ? 'O material sustenta outra alternativa (simulado).' : 'O gabarito está de acordo com o material (simulado).' };
     }
+    case 'edital_parse':
+      return {
+        titulo: 'TRF-1 · Analista Judiciário (2024)', orgao: 'TRF-1', cargo: 'Analista Judiciário', banca: 'fgv', ano: '2024',
+        disciplinas: [
+          { materia: 'Direito Administrativo', peso: 2, topicos: [
+            { codigo: '1', nome: 'Atos administrativos: requisitos, atributos e classificação' },
+            { codigo: '2', nome: 'Licitações e contratos administrativos (Lei 14.133/2021)' },
+            { codigo: '3', nome: 'Poderes da Administração e controle administrativo' },
+          ] },
+          { materia: 'Língua Portuguesa', peso: 1, topicos: [
+            { codigo: '1', nome: 'Compreensão e interpretação de textos' },
+            { codigo: '2', nome: 'Concordância verbal e nominal e regência' },
+          ] },
+        ],
+      };
+    case 'edital_match':
+      return {
+        disciplina_id: 'D1', disciplina_nome: 'Direito Administrativo', cobertura_disciplina_pct: 67,
+        topicos_cobertos: [
+          { id: 'D1-T1', codigo: '1', nome: 'Atos administrativos: requisitos, atributos e classificação', nivel_cobertura: 'completo', resumo: 'Aborda os requisitos (competência, finalidade, forma, motivo e objeto) e atributos.' },
+          { id: 'D1-T2', codigo: '2', nome: 'Licitações e contratos administrativos (Lei 14.133/2021)', nivel_cobertura: 'completo', resumo: 'Trata das modalidades de licitação na Lei 14.133/2021.' },
+        ],
+        topicos_faltantes: [
+          { id: 'D1-T3', codigo: '3', nome: 'Poderes da Administração e controle administrativo' },
+        ],
+        analise: 'Seu material cobre 2 dos 3 tópicos de Direito Administrativo do edital (67%). Para fechar a disciplina, estude Poderes da Administração e controle administrativo.',
+      };
     case 'json_repair': { const m = all.match(/\{[\s\S]*\}/); return m ? JSON.parse(m[0]) : {}; }
     default: return {};
   }

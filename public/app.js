@@ -63,10 +63,15 @@ const S = {
   provaBanca: 'fgv', adminTab: 'revisao', adminProvas: [], adminCounts: {}, monitor: null,
   cform: null, cBusy: false, cResults: [], minhas: [], quota: null,
   stars: null, feedback: {}, reportOpen: null,
+  editais: [], activeEdital: null, editalUploading: false, editalErr: '', editalShowForm: false, editalMode: 'file',
+  edForm: null, linkProvaId: null, linkBusy: false,
+  cadernos: [], activeCaderno: null, cadernoBusy: false, cadernoNewOpen: false, cadForm: null,
+  cadernoFeedTab: '', cadFeedBusy: false, cadFilter: { status: 'all', origem: 'all', materia: '', q: '' },
+  cadNoteOpen: null, materiaisDisponiveis: [], provasDisponiveis: [], bancoTab: 'cadernos',
 };
 const BANCA = () => Object.fromEntries(S.bancas.map((b) => [b.id, b]));
 const isAdmin = () => S.user?.role === 'ADMIN';
-const newWiz = () => ({ stage: '', step: 1, mode: 'file', uploading: false, err: '', warnings: [], material: null, materia: '', assunto: '', banca: '', qtd: 10, nivel: 'Médio', generating: false, genCount: 0, genErr: '' });
+const newWiz = () => ({ stage: '', step: 1, mode: 'file', uploading: false, err: '', warnings: [], material: null, materia: '', assunto: '', banca: S.activeEdital?.banca && S.bancas.some((b) => b.id === S.activeEdital.banca) ? S.activeEdital.banca : '', qtd: 10, nivel: 'Médio', generating: false, genCount: 0, genErr: '', editalId: S.activeEdital?.id || '', cadernoId: '', showEditalUpload: false, editalBusy: false });
 
 // ---------- Render ----------
 function render() {
@@ -81,11 +86,13 @@ function viewBody() {
   switch (S.view) {
     case 'gerar': return viewGerar();
     case 'questoes': return viewBanco();
+    case 'caderno': return viewCaderno();
     case 'simulado': return viewPratica();
     case 'bancas': return viewBancas();
     case 'provas': return isAdmin() ? viewProvas() : viewHome();
     case 'contribuir': return viewContribuir();
     case 'estrelas': return viewEstrelas();
+    case 'edital': return viewEdital();
     default: return viewHome();
   }
 }
@@ -166,8 +173,8 @@ function bindAuth() {
         });
         if (r) return await enterApp(r.user);
       } else if (S.auth === 'criar') {
-        await api('/auth/register', { method: 'POST', body: { name: v('#fName'), email, password: vals['#fPass'] } });
-        S.auth = 'verificar'; S.authOk = 'Conta criada! Verifique sua caixa de entrada (e o spam).';
+        const r = await api('/auth/register', { method: 'POST', body: { name: v('#fName'), email, password: vals['#fPass'] } });
+        S.auth = 'verificar'; S.authOk = r.aviso || 'Conta criada! Verifique sua caixa de entrada (e o spam).';
       } else if (S.auth === 'verificar') {
         const r = await api('/auth/verify', { method: 'POST', body: { email: S.authEmail, code: v('#fCode') } });
         toast('E-mail confirmado. Bem-vindo!'); return await enterApp(r.user);
@@ -187,8 +194,8 @@ function bindAuth() {
 // ---------- Shell (header + menu sanduíche) ----------
 function viewShell(body) {
   const u = S.user;
-  const nav = [['home', 'Início', 'home'], ['gerar', 'Gerar questões', 'spark'], ['questoes', 'Meus simulados', 'list'], ['contribuir', 'Enviar provas', 'upload'], ['estrelas', 'Minhas estrelas', 'star'], ['bancas', 'Bancas e estilos', 'layers']];
-  const item = ([v, l, i]) => `<button class="nav-item ${S.view === v || (v === 'questoes' && S.view === 'simulado') ? 'on' : ''}" data-go="${v}">${ic(i)} ${l}${v === 'questoes' && S.sets.length ? `<span class="badge">${S.sets.length}</span>` : ''}</button>`;
+  const nav = [['home', 'Início', 'home'], ['gerar', 'Gerar questões', 'spark'], ['questoes', 'Cadernos de questões', 'book'], ['edital', 'Meu edital', 'target'], ['contribuir', 'Enviar provas', 'upload'], ['estrelas', 'Minhas estrelas', 'star'], ['bancas', 'Bancas e estilos', 'layers']];
+  const item = ([v, l, i]) => `<button class="nav-item ${S.view === v || (v === 'questoes' && ['simulado', 'caderno'].includes(S.view)) ? 'on' : ''}" data-go="${v}">${ic(i)} ${l}${v === 'questoes' && (S.cadernos.length || S.sets.length) ? `<span class="badge">${S.cadernos.length || S.sets.length}</span>` : ''}${v === 'edital' && S.activeEdital ? `<span class="badge brand">${S.activeEdital.resumo?.coberturaPct ?? 0}%</span>` : ''}</button>`;
   return `<header class="header"><div class="header-in">
       <div class="logo" data-go="home"><span class="logo-mark">${ic('logo')}</span><span>HelpConcurso</span></div>
       <div class="spacer"></div>
@@ -233,6 +240,16 @@ function viewHome() {
       <div class="card stat"><div class="v">${st.provas}</div><div class="l">Provas na base da IA</div></div>
     </div>
   </div>
+  <div class="section-h"><h3>Meu edital</h3><button class="btn btn-quiet" data-go="edital">${S.activeEdital ? 'Ver painel completo' : 'Enviar edital'} ${ic('arrowR', 'sm')}</button></div>
+  ${S.activeEdital ? viewHomeEditalCard(S.activeEdital) : `<div class="card card-pad row" style="justify-content:space-between;margin-bottom:8px">
+    <div style="display:flex;gap:14px;align-items:center"><span class="li-icon" style="background:var(--brand);width:44px;height:44px">${ic('target')}</span>
+      <div><div style="font-weight:800">Cruze seus estudos com o edital da sua prova</div><div class="hint">Envie o edital do seu concurso para ver quais tópicos cada resumo cobre, sua % de avanço e o vínculo de cada questão com o edital.</div></div></div>
+    <button class="btn btn-ghost" data-go="edital">${ic('upload', 'sm')} Enviar meu edital</button></div>`}
+  <div class="section-h"><h3>Meus Cadernos de Questões</h3><button class="btn btn-quiet" data-go="questoes">${S.cadernos.length ? 'Ver todos os cadernos' : 'Criar meu 1º caderno'} ${ic('arrowR', 'sm')}</button></div>
+  ${S.cadernos.length ? `<div class="cad-grid" style="margin-bottom:8px">${S.cadernos.slice(0, 3).map(cadernoCardHtml).join('')}</div>` : `<div class="card card-pad row" style="justify-content:space-between;margin-bottom:8px">
+    <div style="display:flex;gap:14px;align-items:center"><span class="li-icon" style="background:var(--brand);width:44px;height:44px">${ic('book')}</span>
+      <div><div style="font-weight:800">Crie um Caderno de Questões por banca, concurso ou edital</div><div class="hint">Alimente seu caderno continuamente com seus próprios conteúdos e com provas antigas da banca e revise todo o seu histórico de questões em um só lugar.</div></div></div>
+    <button class="btn btn-primary" data-new-caderno-home="1">${ic('book', 'sm')} Criar caderno de questões</button></div>`}
   <div class="section-h"><h3>Bancas</h3><button class="btn btn-quiet" data-go="${isAdmin() ? 'provas' : 'contribuir'}">${isAdmin() ? 'Base de provas' : 'Enviar provas'} ${ic('arrowR', 'sm')}</button></div>
   <div class="banca-strip">${S.bancas.map((b) => `<button class="banca-tile" style="--c:${b.cor}" data-bancatile="${b.id}"><div class="bn">${b.nome}</div><div class="bf">${b.formato === 'ce' ? 'Certo ou Errado' : 'Múltipla escolha'}</div><div class="bc">${b.provasTreinadas} prova(s) treinada(s)</div></button>`).join('')}</div>
   <div class="section-h"><h3>Simulados recentes</h3>${S.sets.length ? `<button class="btn btn-quiet" data-go="questoes">Ver todos ${ic('arrowR', 'sm')}</button>` : ''}</div>
@@ -257,30 +274,82 @@ function viewGerar() {
   <div class="card card-pad">${[wizStep1, wizStep2, wizStep3, wizStep4][w.step - 1](w)}</div>`;
 }
 const FT = { pdf: '#B42318', docx: '#1D4ED8', doc: '#1D4ED8', txt: '#6B7684', md: '#6B7684' };
+function wizEditalBox(w) {
+  const list = S.editais || [];
+  const selEd = list.find((e) => e.id === w.editalId);
+  const selBanca = selEd?.banca && BANCA()[selEd.banca];
+  if (w.editalBusy) {
+    return `<div class="edital-box"><div class="row"><span class="spinner sm"></span><b>Lendo e verticalizando seu edital com a IA…</b><span class="hint">Extraindo disciplinas e tópicos do conteúdo programático.</span></div></div>`;
+  }
+  return `<div class="edital-box">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <div style="display:flex;gap:10px;align-items:center">
+        <span class="li-icon" style="background:var(--brand);width:36px;height:36px">${ic('target', 'sm')}</span>
+        <div>
+          <div style="font-weight:800;font-size:14px">Cruzar material com o Edital e Prova do concurso <span class="badge brand">Novo</span></div>
+          <div class="hint">Relaciona seu material ao Edital, à Banca e às Provas cadastradas para calcular % de avanço e gerar questões fiéis.</div>
+        </div>
+      </div>
+      <div class="row">
+        ${list.length ? `<select class="select" id="wizEditalSel" style="width:auto;min-width:240px;padding:8px 11px;font-size:13.5px">
+          <option value="">Sem edital vinculado</option>
+          ${list.map((e) => { const b = e.banca && BANCA()[e.banca]; return `<option value="${e.id}" ${w.editalId === e.id ? 'selected' : ''}>${b ? `[${b.nome}] ` : ''}${esc(e.titulo)} (${e.totalTopicos} tópicos)</option>`; }).join('')}
+        </select>` : ''}
+        <button type="button" class="btn btn-ghost" id="wizToggleEditalUp" style="padding:8px 12px;font-size:13px">${ic('upload', 'sm')} ${w.showEditalUpload ? 'Cancelar' : list.length ? 'Novo edital' : 'Enviar edital'}</button>
+      </div>
+    </div>
+    ${selEd ? `<div class="row" style="margin-top:8px;gap:8px;font-size:12.5px">
+      ${selBanca ? `<span class="badge" style="background:${selBanca.cor};color:#fff">Banca: ${esc(selBanca.nome)}</span>` : ''}
+      ${selEd.orgao ? `<span class="badge">Órgão: ${esc(selEd.orgao)}</span>` : ''}
+      ${selEd.cargo ? `<span class="badge">Cargo: ${esc(selEd.cargo)}</span>` : ''}
+      <span class="hint">A banca e as provas vinculadas a este edital serão priorizadas na geração das questões.</span>
+    </div>` : ''}
+    ${w.showEditalUpload ? `<div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)">
+      <div class="row" style="margin-bottom:10px;gap:10px">
+        <div class="field" style="margin:0;min-width:200px"><label for="wizEdBanca">Banca deste edital</label>
+          <select class="select" id="wizEdBanca"><option value="">Detectar automaticamente</option>${S.bancas.map((b) => `<option value="${b.id}" ${w.banca === b.id ? 'selected' : ''}>${b.nome}</option>`).join('')}</select>
+        </div>
+        ${(S.minhas || []).length ? `<div class="field" style="margin:0;flex:1;min-width:220px"><label for="wizEdProva">Vincular a uma prova enviada <span class="hint">(opcional)</span></label>
+          <select class="select" id="wizEdProva"><option value="">Nenhuma prova selecionada</option>${(S.minhas || []).map((p) => `<option value="${p.id}">${esc(p.titulo)}</option>`).join('')}</select>
+        </div>` : ''}
+      </div>
+      <label class="drop slim" id="wizEditalDrop" style="padding:18px">
+        <input type="file" id="wizEditalFile" class="sr" accept=".pdf,.doc,.docx,.txt">
+        <strong style="font-size:14px">${ic('upload', 'sm')} Escolha o arquivo do Edital (ou conteúdo programático)</strong>
+        <span class="hint">PDF, DOCX, DOC ou TXT · A IA extrai automaticamente as matérias e tópicos</span>
+      </label>
+    </div>` : ''}
+  </div>`;
+}
 function wizStep1(w) {
-  if (w.uploading) return `<div class="progress-box"><div class="spinner"></div><b>Lendo seu material…</b><div class="hint">Verificando a segurança do arquivo, extraindo o texto e identificando a matéria.<br>PDFs escaneados podem levar até 1 minuto.</div></div>`;
+  if (w.uploading) return `<div class="progress-box"><div class="spinner"></div><b>Lendo seu material${w.editalId ? ' e cruzando com o edital' : ''}…</b><div class="hint">Verificando a segurança do arquivo, extraindo o texto, identificando a matéria${w.editalId ? ' e mapeando os tópicos do edital' : ''}.<br>PDFs escaneados podem levar até 1 minuto.</div></div>`;
   const m = w.material;
   if (m) {
     const ext = m.fileName ? m.fileName.split('.').pop().toLowerCase() : 'texto';
-    return `<div class="file-card"><span class="ftype" style="background:${FT[ext] || 'var(--brand)'}">${esc(ext.toUpperCase())}</span>
-      <div style="flex:1;min-width:0"><div class="li-title">${esc(m.fileName || 'Texto colado')}</div><div class="li-meta">${m.pages ? m.pages + ' páginas · ' : ''}${m.wordCount.toLocaleString('pt-BR')} palavras extraídas</div></div>
+    return `${wizEditalBox(w)}<div class="file-card"><span class="ftype" style="background:${FT[ext] || 'var(--brand)'}">${esc(ext.toUpperCase())}</span>
+      <div style="flex:1;min-width:0"><div class="li-title">${esc(m.fileName || 'Texto colado')}</div><div class="li-meta">${m.pages ? m.pages + ' páginas · ' : ''}${m.wordCount.toLocaleString('pt-BR')} palavras extraídas${m.editalMatch ? ` · <b style="color:var(--brand)">${m.editalMatch.cobertura_disciplina_pct}% da disciplina no edital</b>` : ''}</div></div>
       <button class="btn btn-quiet" id="resetFile">${ic('refresh', 'sm')} Trocar</button></div>
       ${(w.warnings || []).map((t) => `<div class="banner warn" style="margin:12px 0 0">${ic('alert', 'sm')}<div>${esc(t)}</div></div>`).join('')}
       <div class="preview">${esc(m.preview)}${m.wordCount > 220 ? '…' : ''}</div>
       <div class="wiz-foot"><span></span><button class="btn btn-primary" data-step="2">Continuar ${ic('arrowR', 'sm')}</button></div>`;
   }
   return `${w.err ? `<div class="banner bad">${ic('alert', 'sm')}<div>${esc(w.err)}</div></div>` : ''}
+  ${wizEditalBox(w)}
   ${w.mode === 'file' ? `
     <label class="drop" id="drop"><input type="file" id="fileIn" class="sr" accept=".pdf,.doc,.docx,.txt,.md">
-      <div class="big">${ic('upload', 'lg')}</div><strong>Arraste seu arquivo aqui ou clique para escolher</strong><span class="hint">Resumos, anotações, apostilas ou trechos de lei · até 25 MB</span>
+      <div class="big">${ic('upload', 'lg')}</div><strong>Arraste seu material de estudo aqui ou clique para escolher</strong><span class="hint">Resumos, anotações, exercícios, apostilas ou trechos de lei · até 25 MB</span>
       <div class="formats"><span class="badge">PDF</span><span class="badge">DOCX</span><span class="badge">DOC</span><span class="badge">TXT</span></div>
     </label>
     <div style="text-align:center;margin-top:14px"><button class="btn btn-quiet" id="modePaste">Prefere colar o texto?</button></div>`
   : `<div class="field"><label for="pasteIn">Cole seu material de estudo</label><textarea class="textarea" id="pasteIn" placeholder="Cole aqui seu resumo, anotações ou o conteúdo da apostila…"></textarea><span class="hint">Mínimo de 60 palavras.</span></div>
     <div class="wiz-foot"><button class="btn btn-ghost" id="modeFile">${ic('arrowL', 'sm')} Enviar arquivo</button><button class="btn btn-primary" id="usePaste">Usar este texto ${ic('arrowR', 'sm')}</button></div>`}`;
 }
+function donutSvg(pct, size = 76, color = 'var(--brand)') {
+  const r = 30, c = 2 * Math.PI * r, off = c - (Math.max(0, Math.min(100, pct)) / 100) * c;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 76 76" class="donut"><circle cx="38" cy="38" r="${r}" fill="none" stroke="var(--line-2)" stroke-width="8"/><circle cx="38" cy="38" r="${r}" fill="none" stroke="${color}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 38 38)"/><text x="38" y="43" text-anchor="middle" font-size="15" font-weight="800" fill="var(--ink)">${Math.round(pct)}%</text></svg>`;
+}
 function wizStep2(w) {
-  const d = w.material?.detect;
+  const d = w.material?.detect, em = w.material?.editalMatch;
   const opts = S.materias.map((m) => `<option ${m === w.materia ? 'selected' : ''}>${esc(m)}</option>`).join('');
   return `${d ? `<div class="detect"><span class="li-icon" style="background:var(--brand);width:48px;height:48px">${ic('spark')}</span>
      <div style="flex:1"><div class="eyebrow">${d.origem === 'palavras-chave' ? 'Sugestão por palavras-chave' : 'Matéria identificada pela IA'}</div>
@@ -288,8 +357,31 @@ function wizStep2(w) {
        <div class="conf"><i style="width:${Math.round((d.confianca || 0) * 100)}%"></i></div><div class="hint">Confiança de ${Math.round((d.confianca || 0) * 100)}%</div>
        ${d.resumo ? `<p style="margin:10px 0 0;color:var(--ink-2)">${esc(d.resumo)}</p>` : ''}
        ${(d.temas || []).length ? `<div class="chips" style="margin-top:10px">${d.temas.map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : ''}
-     </div></div><hr style="border:0;border-top:1px solid var(--line-2);margin:22px 0">`
+     </div></div>`
     : '<p style="margin-top:0">Não conseguimos identificar a matéria automaticamente. <b>Qual é a matéria deste material?</b></p>'}
+  ${em ? `<div class="edital-match-card">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:16px">
+      <div style="display:flex;gap:16px;align-items:center;flex:1;min-width:240px">
+        ${donutSvg(em.cobertura_disciplina_pct, 76, 'var(--brand)')}
+        <div>
+          <div class="eyebrow" style="color:var(--brand)">Cruzamento com seu Edital · ${esc(em.edital_titulo)}</div>
+          <div style="font-size:17px;font-weight:800;margin:2px 0">Cobre ${em.cobertura_disciplina_pct}% de ${esc(em.disciplina_nome)} no edital</div>
+          <div class="hint">${(em.topicos_cobertos || []).length} de ${em.total_topicos_disciplina || ((em.topicos_cobertos || []).length + (em.topicos_faltantes || []).length)} tópico(s) desta disciplina identificados no seu material</div>
+        </div>
+      </div>
+      <button type="button" class="btn btn-quiet" data-go="edital">${ic('target', 'sm')} Ver edital completo</button>
+    </div>
+    ${em.analise ? `<p style="margin:12px 0 0;font-size:13.5px;color:var(--ink-2)">${esc(em.analise)}</p>` : ''}
+    ${(em.topicos_cobertos || []).length ? `<div class="eyebrow" style="margin:14px 0 6px">Tópicos do edital abordados neste material</div>
+      <div class="edital-topics-list">${em.topicos_cobertos.map((t) => `<div class="edital-topic-hit ${t.nivel_cobertura}">
+        <div class="row" style="justify-content:space-between"><span style="font-weight:700;font-size:13.5px">${t.codigo ? `<b>${esc(t.codigo)}.</b> ` : ''}${esc(t.nome)}</span>
+          <span class="badge ${t.nivel_cobertura === 'completo' ? 'brand' : 'accent'}">${t.nivel_cobertura === 'completo' ? '✓ Cobertura completa' : '◐ Cobertura parcial'}</span></div>
+        ${t.resumo ? `<div class="hint" style="margin-top:3px">${esc(t.resumo)}</div>` : ''}
+      </div>`).join('')}</div>` : ''}
+    ${(em.topicos_faltantes || []).length ? `<details style="margin-top:10px"><summary>Faltam ${(em.topicos_faltantes || []).length} tópico(s) desta disciplina no edital (ver lacunas)</summary>
+      <div class="chips" style="margin-top:8px">${em.topicos_faltantes.map((t) => `<span class="chip">${t.codigo ? esc(t.codigo) + '. ' : ''}${esc(t.nome)}</span>`).join('')}</div></details>` : ''}
+  </div>` : ''}
+  <hr style="border:0;border-top:1px solid var(--line-2);margin:22px 0">
   <div class="opts" style="margin-top:0">
     <div class="field"><label for="matSel">${d ? 'Confirme ou altere a matéria' : 'Matéria'}</label><select class="select" id="matSel"><option value="">Selecione…</option>${opts}</select></div>
     <div class="field"><label for="assIn">Assunto específico <span class="hint">(opcional)</span></label><input class="input" id="assIn" placeholder="Ex.: Atos administrativos" value="${esc(w.assunto)}"></div>
@@ -297,6 +389,7 @@ function wizStep2(w) {
   <div class="wiz-foot"><button class="btn btn-ghost" data-step="1">${ic('arrowL', 'sm')} Voltar</button><button class="btn btn-primary" id="toStep3">Escolher banca ${ic('arrowR', 'sm')}</button></div>`;
 }
 function wizStep3(w) {
+  const cadsForBanca = (S.cadernos || []).filter((c) => !w.banca || c.banca === w.banca);
   return `<div style="margin-bottom:14px"><div class="eyebrow">Matéria</div><b>${esc(w.materia)}${w.assunto ? ` · ${esc(w.assunto)}` : ''}</b></div>
   <div class="field" style="margin-bottom:8px"><label>Em qual banca as questões devem se basear?</label></div>
   <div class="banca-pick">${S.bancas.map((b) => `<button class="bp ${w.banca === b.id ? 'on' : ''}" style="--c:${b.cor}" data-banca="${b.id}">
@@ -307,6 +400,14 @@ function wizStep3(w) {
     <div><div class="field" style="margin-bottom:8px"><label>Quantidade de questões</label></div><div class="seg">${[5, 10, 15, 20].map((n) => `<button data-qtd="${n}" class="${w.qtd === n ? 'on' : ''}">${n}</button>`).join('')}</div></div>
     <div><div class="field" style="margin-bottom:8px"><label>Nível de dificuldade</label></div><div class="seg">${S.niveis.map((n) => `<button data-nivel="${n}" class="${w.nivel === n ? 'on' : ''}">${n}</button>`).join('')}</div></div>
   </div>
+  ${(S.cadernos || []).length ? `<div class="edital-subbox" style="margin-top:16px">
+    <div class="field" style="margin:0"><label for="wizCadSel">${ic('book', 'sm')} Alimentar qual Caderno de Questões com esta bateria? <span class="hint">(opcional)</span></label>
+      <select class="select" id="wizCadSel">
+        <option value="">Salvar apenas como simulado avulso</option>
+        ${(cadsForBanca.length ? cadsForBanca : S.cadernos).map((c) => { const b = BANCA()[c.banca]; return `<option value="${c.id}" ${w.cadernoId === c.id ? 'selected' : ''}>${b ? `[${b.nome}] ` : ''}${esc(c.titulo)} (${c.totalQuestoes} questões)</option>`; }).join('')}
+      </select>
+    </div>
+  </div>` : ''}
   ${S.quota && S.quota.remaining !== null ? `<div class="hint" style="margin-top:16px">${S.quota.remaining > 0 ? `Você ainda pode gerar ${S.quota.remaining} simulado(s) hoje${S.quota.bonus ? ` (inclui ${S.quota.bonus} crédito(s) extra(s))` : ''}.` : 'Você atingiu o limite de hoje. Envie provas para ganhar gerações extras.'}</div>` : ''}
   <div class="wiz-foot"><button class="btn btn-ghost" data-step="2">${ic('arrowL', 'sm')} Voltar</button><button class="btn btn-primary" id="gen" ${w.banca ? '' : 'disabled'}>${ic('spark', 'sm')} Gerar ${w.qtd} questões</button></div>`;
 }
@@ -323,11 +424,16 @@ function wizStep4(w) {
 async function uploadMaterial(payload) {
   const w = S.wiz; w.uploading = true; w.err = ''; render();
   try {
+    if (payload instanceof FormData) { if (w.editalId) payload.append('editalId', w.editalId); }
+    else if (payload && typeof payload === 'object' && w.editalId) payload.editalId = w.editalId;
     const r = payload instanceof FormData ? await api('/materials', { method: 'POST', form: payload }) : await api('/materials', { method: 'POST', body: payload });
     w.material = r.material; w.warnings = r.warnings || [];
-    const d = r.material.detect;
-    w.materia = d && S.materias.includes(d.materia) ? d.materia : (d?.materia ? 'Outra' : '');
-    if (d?.materia && w.materia === 'Outra') w.assunto = d.materia;
+    const d = r.material.detect, em = r.material.editalMatch;
+    const suggestedMat = em?.disciplina_nome && S.materias.includes(em.disciplina_nome) ? em.disciplina_nome : d?.materia;
+    w.materia = suggestedMat && S.materias.includes(suggestedMat) ? suggestedMat : (suggestedMat ? 'Outra' : '');
+    if (suggestedMat && w.materia === 'Outra') w.assunto = suggestedMat;
+    else if (em?.topicos_cobertos?.length === 1 && !w.assunto) w.assunto = em.topicos_cobertos[0].nome.slice(0, 100);
+    if (w.editalId) refreshEditais({ silent: true });
   } catch (e) { w.err = e.message; }
   w.uploading = false; render();
 }
@@ -336,7 +442,7 @@ async function generate() {
   const w = S.wiz; w.step = 4; w.generating = true; w.genErr = ''; w.genCount = 0; w.stage = ''; render();
   try {
     const res = await fetch('/api/sets', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ materialId: w.material.id, materia: w.materia, assunto: w.assunto, banca: w.banca, qtd: w.qtd, nivel: w.nivel }) });
+      body: JSON.stringify({ materialId: w.material.id, materia: w.materia, assunto: w.assunto, banca: w.banca, qtd: w.qtd, nivel: w.nivel, cadernoId: w.cadernoId || null }) });
     if (!res.ok) { let d = {}; try { d = await res.json(); } catch {} throw new Error(d.error || `Erro ${res.status}`); }
     const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = '', done = null;
@@ -357,9 +463,15 @@ async function generate() {
     }
     if (!done) throw new Error('A geração foi interrompida. Tente novamente.');
     S.sets.unshift(done.set);
-    S.wiz = null; S.active = done.set.id; go('simulado');
+    refreshCadernos({ silent: true });
+    if (done.set.cadernoId) {
+      S.wiz = null;
+      await openCaderno(done.set.cadernoId);
+    } else {
+      S.wiz = null; S.active = done.set.id; go('simulado');
+    }
     const rv = done.set.revisao;
-    toast(`${done.set.questoes.length} questões no estilo ${BANCA()[done.set.banca].nome}${rv && rv.revisor === 'ok' ? ` · revisor conferiu todas${rv.descartadas ? `, descartou ${rv.descartadas} e refez ${rv.refeitas}` : ''}` : ''}`);
+    toast(`${done.set.questoes.length} questões adicionadas${done.set.cadernoId ? ' ao seu Caderno de Questões' : ''} (${BANCA()[done.set.banca].nome})${rv && rv.revisor === 'ok' ? ` · revisor conferiu todas${rv.descartadas ? `, descartou ${rv.descartadas} e refez ${rv.refeitas}` : ''}` : ''}`);
     api('/sets/cota').then((r) => { S.quota = r.quota; }).catch(() => {});
   } catch (e) { w.genErr = e.message; render(); }
   finally { w.generating = false; }
@@ -371,7 +483,10 @@ function viewPratica() {
   if (!s) return `<div class="empty">Simulado não encontrado. <button class="btn btn-quiet" data-go="questoes">Voltar</button></div>`;
   const b = BANCA()[s.banca], r = s.respostas || {}, n = s.questoes.length;
   const resp = Object.keys(r).length, ac = s.questoes.filter((q, i) => r[i] === q.gabarito).length, er = resp - ac, ce = s.formato === 'ce';
-  return `<button class="btn btn-quiet" data-go="questoes" style="margin:-6px 0 10px -10px">${ic('arrowL', 'sm')} Meus simulados</button>
+  return `<div class="row" style="gap:8px;margin:-6px 0 10px -10px">
+    <button class="btn btn-quiet" data-go="questoes">${ic('arrowL', 'sm')} Cadernos e simulados</button>
+    ${s.cadernoId ? `<button class="btn btn-quiet" data-open-caderno="${s.cadernoId}">${ic('book', 'sm')} Abrir Caderno de Questões</button>` : ''}
+  </div>
   <div class="set-head">
     <div><div class="row" style="margin-bottom:6px"><span class="badge" style="background:${b.cor};color:#fff">${b.nome}</span><span class="badge">${esc(s.nivel)}</span><span class="badge">${b.formatoLabel}</span></div>
       <h1 class="page-title">${esc(s.materia)}${s.assunto ? ` <span style="color:var(--muted);font-weight:700">· ${esc(s.assunto)}</span>` : ''}</h1>
@@ -382,8 +497,8 @@ function viewPratica() {
   ${ce ? `<div class="banner info">${ic('info', 'sm')}<div>No estilo CEBRASPE, cada item errado anula um certo. Na dúvida, você pode deixar o item em branco.</div></div>` : ''}
   <div class="banner info">${ic('info', 'sm')}<div>As questões seguem o conteúdo do <b>seu material</b>. Se ele estiver desatualizado (ex.: lei alterada), a questão também estará. Achou um erro? Use <b>Reportar erro</b> — se a IA confirmar, você ganha estrelas.</div></div>
   ${s.questoes.map((q, i) => viewQ(q, i, r[i], ce, (S.feedback[s.id] || {})[i])).join('')}
-  <div class="row" style="justify-content:space-between;margin-top:20px">
-    <div class="row"><button class="btn btn-ghost" id="copySet">${ic('copy', 'sm')} Copiar questões</button><button class="btn btn-danger" id="delSet">${ic('trash', 'sm')} Excluir</button></div>
+  <div class="row no-print" style="justify-content:space-between;margin-top:20px">
+    <div class="row"><button class="btn btn-ghost" id="copySet">${ic('copy', 'sm')} Copiar questões</button><button class="btn btn-ghost" id="printSet">${ic('download', 'sm')} Imprimir / PDF</button><button class="btn btn-danger" id="delSet">${ic('trash', 'sm')} Excluir</button></div>
     <div class="row">${resp ? `<button class="btn btn-ghost" id="resetSet">${ic('refresh', 'sm')} Refazer</button>` : ''}<button class="btn btn-primary" id="finish">${s.finalizado ? 'Ver resultado' : 'Finalizar simulado'}</button></div>
   </div>`;
 }
@@ -394,7 +509,7 @@ function viewQ(q, i, ans, ce, fb) {
     ? `<div class="ce">${[['C', 'Certo'], ['E', 'Errado']].map(([L, t]) => `<button class="alt ${cls(L)}" data-ans="${i}:${L}" ${answered ? 'disabled' : ''}><span class="tx">${t}</span></button>`).join('')}</div>`
     : `<div class="alts">${q.alternativas.map((a, j) => `<button class="alt ${cls(LETRAS[j])}" data-ans="${i}:${LETRAS[j]}" ${answered ? 'disabled' : ''}><span class="lt">${LETRAS[j]}</span><span class="tx">${esc(a)}</span></button>`).join('')}</div>`;
   return `<article class="card q" id="q${i}">
-    <div class="q-top"><span class="q-num">${ce ? 'Item' : 'Questão'} ${i + 1}</span>${q.tema ? `<span class="badge">${esc(q.tema)}</span>` : ''}${q.nivel ? `<span class="badge">${esc(q.nivel)}</span>` : ''}${q.verificada ? `<span class="badge brand" title="Uma segunda IA resolveu sem ver o gabarito e chegou à mesma resposta">${ic('check', 'sm')} Verificada</span>` : ''}${q.contestada ? '<span class="sev high">Erro confirmado</span>' : ''}</div>
+    <div class="q-top"><span class="q-num">${ce ? 'Item' : 'Questão'} ${i + 1}</span>${q.tema ? `<span class="badge">${esc(q.tema)}</span>` : ''}${q.topico_edital ? `<span class="badge edital-tag" title="Tópico do edital cobrado nesta questão">${ic('target', 'sm')} Edital: ${esc(q.topico_edital)}</span>` : ''}${q.nivel ? `<span class="badge">${esc(q.nivel)}</span>` : ''}${q.verificada ? `<span class="badge brand" title="Uma segunda IA resolveu sem ver o gabarito e chegou à mesma resposta">${ic('check', 'sm')} Verificada</span>` : ''}${q.contestada ? '<span class="sev high">Erro confirmado</span>' : ''}</div>
     <p class="q-text">${esc(q.enunciado)}</p>${opts}
     ${answered ? `<div class="explain"><div class="verdict ${ok ? 'ok' : 'bad'}">${ic(ok ? 'check' : 'x', 'sm')} ${ok ? 'Você acertou' : 'Resposta incorreta'} · Gabarito: ${ce ? (q.gabarito === 'C' ? 'Certo' : 'Errado') : q.gabarito}</div>
       <p>${esc(q.comentario)}</p>
@@ -427,14 +542,399 @@ function setText(s) {
   return `HelpConcurso · ${s.materia}${s.assunto ? ' · ' + s.assunto : ''} · estilo ${b.nome}\n\n` + s.questoes.map((q, i) => `${i + 1}. ${q.enunciado}\n${s.formato === 'ce' ? '( ) Certo  ( ) Errado' : q.alternativas.map((a, j) => `${LETRAS[j]}) ${a}`).join('\n')}`).join('\n\n') + '\n\nGABARITO\n' + s.questoes.map((q, i) => `${i + 1}-${q.gabarito}`).join('  ');
 }
 
-// ---------- Meus simulados ----------
+// ---------- Cadernos de Questões + Simulados + Caderno de Erros ----------
+async function refreshCadernos({ silent = false } = {}) {
+  try {
+    const r = await api('/cadernos');
+    S.cadernos = r.cadernos || [];
+    S.materiaisDisponiveis = r.materiaisDisponiveis || [];
+    S.provasDisponiveis = r.provasDisponiveis || [];
+    if (!silent && S.screen === 'app') render();
+  } catch { /* opcional */ }
+}
+
+async function openCaderno(id) {
+  S.cadernoBusy = true;
+  S.view = 'caderno';
+  render();
+  try {
+    const r = await api(`/cadernos/${id}`);
+    S.activeCaderno = r.caderno;
+  } catch (e) {
+    toast(e.message);
+    S.view = 'questoes';
+  }
+  S.cadernoBusy = false;
+  render();
+  window.scrollTo({ top: 0 });
+}
+
+function cadernoCardHtml(c) {
+  const b = BANCA()[c.banca] || { nome: c.banca, cor: '#0F6E56' };
+  return `<div class="card card-pad cad-card" style="--c:${b.cor}">
+    <div>
+      <div class="row" style="gap:6px;margin-bottom:8px">
+        <span class="badge" style="background:${b.cor};color:#fff">${esc(b.nome)}</span>
+        ${c.orgao ? `<span class="badge">${esc(c.orgao)}</span>` : ''}
+        ${c.cargo ? `<span class="badge">${esc(c.cargo)}</span>` : ''}
+        ${c.ano ? `<span class="badge">${esc(c.ano)}</span>` : ''}
+        ${c.editalTitulo ? `<span class="badge edital-tag" title="Edital vinculado">${ic('target', 'sm')} ${esc(c.editalTitulo)}</span>` : ''}
+      </div>
+      <div style="font-size:17px;font-weight:800;line-height:1.3;margin-bottom:4px">${esc(c.titulo)}</div>
+      <div class="hint">${c.materiaisCount} conteúdo(s) seu(s) · ${c.provasCount} prova(s) antiga(s) da banca${c.favoritasCount ? ` · ★ ${c.favoritasCount} favorita(s)` : ''}</div>
+    </div>
+    <div class="cad-kpis">
+      <div><b>${c.totalQuestoes}</b><span>Questões (${c.questoesIa} IA · ${c.questoesProvas} provas)</span></div>
+      <div><b>${c.respondidas}/${c.totalQuestoes}</b><span>Respondidas</span></div>
+      <div><b style="color:${(c.taxaAcerto ?? 0) >= 70 ? 'var(--ok)' : 'var(--ink)'}">${c.taxaAcerto != null ? c.taxaAcerto + '%' : '—'}</b><span>Taxa de acerto</span></div>
+    </div>
+    <div class="row" style="justify-content:space-between;gap:8px">
+      <div class="row" style="gap:6px">
+        <button type="button" class="btn btn-quiet" style="padding:6px 10px;font-size:12.5px" data-cad-feed-mat="${c.id}" title="Alimentar com mais conteúdo seu">+ Meu conteúdo</button>
+        <button type="button" class="btn btn-quiet" style="padding:6px 10px;font-size:12.5px" data-cad-feed-prova="${c.id}" title="Alimentar com provas antigas da banca">+ Prova antiga</button>
+      </div>
+      <button type="button" class="btn btn-primary" style="padding:8px 14px;font-size:13px" data-open-caderno="${c.id}">${ic('book', 'sm')} Revisar caderno ${ic('arrowR', 'sm')}</button>
+    </div>
+  </div>`;
+}
+
+function getWrongQuestions() {
+  const out = [];
+  for (const s of S.sets || []) {
+    const r = s.respostas || {};
+    (s.questoes || []).forEach((q, i) => {
+      if (r[i] != null && r[i] !== q.gabarito) {
+        out.push({ setId: s.id, setMateria: s.materia, setAssunto: s.assunto, banca: s.banca, formato: s.formato, createdAt: s.createdAt, idx: i, ans: r[i], q });
+      }
+    });
+  }
+  return out;
+}
+
 function viewBanco() {
-  const f = S.filter, mats = [...new Set(S.sets.map((s) => s.materia))].sort();
+  const f = S.filter, tab = S.bancoTab || 'cadernos';
+  const mats = [...new Set(S.sets.map((s) => s.materia))].sort();
   const list = S.sets.filter((s) => (!f.banca || s.banca === f.banca) && (!f.materia || s.materia === f.materia));
-  return `<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h1 class="page-title">Meus simulados</h1><p class="page-sub">Todas as questões geradas a partir dos seus materiais.</p></div><button class="btn btn-primary" data-go="gerar">${ic('upload', 'sm')} Novo material</button></div>
-  ${S.sets.length ? `<div class="filters"><select class="select" id="fBanca"><option value="">Todas as bancas</option>${S.bancas.map((b) => `<option value="${b.id}" ${f.banca === b.id ? 'selected' : ''}>${b.nome}</option>`).join('')}</select>
-    <select class="select" id="fMat"><option value="">Todas as matérias</option>${mats.map((m) => `<option ${f.materia === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></div>` : ''}
-  <div class="card">${list.length ? `<div class="list">${list.map(setRow).join('')}</div>` : `<div class="empty">${ic('clip')}<div>${S.sets.length ? 'Nenhum simulado com esses filtros.' : 'Você ainda não gerou questões.'}</div></div>`}</div>`;
+  const allWrong = getWrongQuestions();
+  const wrongList = allWrong.filter((w) => (!f.banca || w.banca === f.banca) && (!f.materia || w.setMateria === f.materia));
+  const cads = (S.cadernos || []).filter((c) => !f.banca || c.banca === f.banca);
+  const cf = S.cadForm || (S.cadForm = { banca: S.activeEdital?.banca || 'cebraspe', editalId: S.activeEdital?.id || '', orgao: S.activeEdital?.orgao || '', cargo: S.activeEdital?.cargo || '', ano: S.activeEdital?.ano || '', titulo: '', descricao: '', importarExistentes: true });
+  const showNewForm = S.cadernoNewOpen || !(S.cadernos || []).length;
+
+  return `<div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+    <div>
+      <h1 class="page-title">Cadernos de questões</h1>
+      <p class="page-sub" style="margin-bottom:0">Crie um caderno para cada banca, concurso ou edital, alimente-o com mais conteúdos seus e com provas antigas da banca e revise seu histórico de questões.</p>
+    </div>
+    <div class="row">
+      <button type="button" class="btn btn-ghost" id="btnToggleNewCad">${ic('book', 'sm')} ${S.cadernoNewOpen ? 'Fechar formulário' : '+ Novo caderno'}</button>
+      <button type="button" class="btn btn-primary" data-go="gerar">${ic('spark', 'sm')} Gerar questões</button>
+    </div>
+  </div>
+
+  <div class="tabs" style="max-width:620px;margin-bottom:16px">
+    <button type="button" class="${tab === 'cadernos' ? 'on' : ''}" data-btab="cadernos">Meus cadernos (${(S.cadernos || []).length})</button>
+    <button type="button" class="${tab === 'simulados' ? 'on' : ''}" data-btab="simulados">Baterias geradas (${S.sets.length})</button>
+    <button type="button" class="${tab === 'erros' ? 'on' : ''}" data-btab="erros">Caderno de erros (${allWrong.length})</button>
+  </div>
+
+  ${tab === 'cadernos' && showNewForm ? `<form class="card card-pad" id="newCadForm" style="margin-bottom:18px" novalidate>
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <div><h3 style="margin:0;font-size:17px">Criar novo Caderno de Questões</h3>
+        <div class="hint">Configure o caderno para uma banca específica, um concurso (órgão/cargo) ou um edital cadastrado.</div></div>
+      ${(S.cadernos || []).length ? `<button type="button" class="btn btn-quiet" id="btnCancelNewCad">${ic('x', 'sm')} Fechar</button>` : ''}
+    </div>
+    <div class="field" style="margin-bottom:8px"><label>1. Banca examinadora do caderno</label></div>
+    <div class="banca-tabs" style="flex-wrap:wrap;margin-bottom:14px">
+      ${S.bancas.map((b) => `<button type="button" class="btab ${cf.banca === b.id ? 'on' : ''}" data-cad-banca="${b.id}"><span class="bdot" style="background:${b.cor}"></span>${b.nome}</button>`).join('')}
+    </div>
+    <div class="opts" style="margin-top:0;margin-bottom:12px">
+      <div class="field" style="margin:0">
+        <label for="cadEditalSel">2. Edital vinculado <span class="hint">(opcional — preenche órgão/cargo automaticamente)</span></label>
+        <select class="select" id="cadEditalSel">
+          <option value="">Sem edital específico (caderno geral da banca/concurso)</option>
+          ${(S.editais || []).map((e) => { const b = e.banca && BANCA()[e.banca]; return `<option value="${e.id}" ${cf.editalId === e.id ? 'selected' : ''}>${b ? `[${b.nome}] ` : ''}${esc(e.titulo)} (${e.totalTopicos} tópicos)</option>`; }).join('')}
+        </select>
+      </div>
+      <div class="field" style="margin:0">
+        <label for="cadTitulo">Nome do caderno <span class="hint">(opcional — gerado automaticamente se vazio)</span></label>
+        <input class="input" id="cadTitulo" maxlength="160" placeholder="Ex.: Caderno Reta Final BB — TI (Cesgranrio)" value="${esc(cf.titulo)}">
+      </div>
+    </div>
+    <div class="up-grid" style="margin-bottom:14px">
+      <div class="field" style="margin:0"><label for="cadOrgao">Concurso / Órgão <span class="hint">(opcional)</span></label><input class="input" id="cadOrgao" maxlength="120" placeholder="Ex.: Banco do Brasil, PF, TRF-1" value="${esc(cf.orgao)}"></div>
+      <div class="field" style="margin:0"><label for="cadCargo">Cargo <span class="hint">(opcional)</span></label><input class="input" id="cadCargo" maxlength="120" placeholder="Ex.: Agente de Tecnologia" value="${esc(cf.cargo)}"></div>
+      <div class="field" style="margin:0"><label for="cadAno">Ano <span class="hint">(opcional)</span></label><input class="input" id="cadAno" inputmode="numeric" maxlength="4" placeholder="Ex.: 2024" value="${esc(cf.ano)}"></div>
+    </div>
+    <label class="row" style="gap:8px;cursor:pointer;font-size:13.5px;margin-bottom:16px">
+      <input type="checkbox" id="cadImportar" ${cf.importarExistentes ? 'checked' : ''}>
+      <span>Reunir automaticamente neste caderno minhas questões já geradas, meus conteúdos e provas antigas desta banca/edital</span>
+    </label>
+    <div class="row" style="justify-content:flex-end">
+      <button type="submit" class="btn btn-primary" ${S.cadernoBusy ? 'disabled' : ''}>${S.cadernoBusy ? '<span class="spinner sm"></span> Criando…' : `${ic('book', 'sm')} Criar Caderno de Questões`}</button>
+    </div>
+  </form>` : ''}
+
+  ${tab === 'cadernos'
+    ? cads.length
+      ? `<div class="cad-grid">${cads.map(cadernoCardHtml).join('')}</div>`
+      : `<div class="card"><div class="empty">${ic('book')}<div>Nenhum caderno criado ainda.</div><div class="hint">Use o formulário acima para criar seu primeiro Caderno de Questões por banca, concurso ou edital!</div></div></div>`
+    : tab === 'simulados'
+      ? `${S.sets.length ? `<div class="filters"><select class="select" id="fBanca"><option value="">Todas as bancas</option>${S.bancas.map((b) => `<option value="${b.id}" ${f.banca === b.id ? 'selected' : ''}>${b.nome}</option>`).join('')}</select>
+          <select class="select" id="fMat"><option value="">Todas as matérias</option>${mats.map((m) => `<option ${f.materia === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></div>` : ''}
+         <div class="card">${list.length ? `<div class="list">${list.map(setRow).join('')}</div>` : `<div class="empty">${ic('clip')}<div>${S.sets.length ? 'Nenhuma bateria com esses filtros.' : 'Você ainda não gerou questões.'}</div></div>`}</div>`
+      : wrongList.length
+        ? `<div class="contrib-stack">${wrongList.map((w) => {
+            const b = BANCA()[w.banca] || { nome: w.banca, cor: '#666' };
+            const q = w.q;
+            const topico = q.topico_edital || q.tema || w.setAssunto || '';
+            return `<article class="card q">
+              <div class="row" style="justify-content:space-between;margin-bottom:10px">
+                <div class="row" style="gap:6px">
+                  <span class="badge" style="background:${b.cor};color:#fff">${esc(b.nome)}</span>
+                  <span class="badge">${esc(w.setMateria)}</span>
+                  ${topico ? `<span class="badge edital-tag">${ic('target', 'sm')} ${esc(topico)}</span>` : ''}
+                </div>
+                <div class="row" style="gap:8px">
+                  <button type="button" class="btn btn-quiet" data-open="${w.setId}">Abrir bateria</button>
+                  <button type="button" class="btn btn-primary" style="padding:7px 12px;font-size:12.5px" data-revanche="${esc(w.setMateria)}||${esc(topico)}||${esc(w.banca)}">${ic('spark', 'sm')} Gerar revanche IA neste tópico</button>
+                </div>
+              </div>
+              <p class="q-text" style="margin-bottom:12px">${esc(q.enunciado)}</p>
+              <div class="explain" style="margin-top:0">
+                <div class="verdict bad">${ic('x', 'sm')} Você marcou ${esc(w.ans)} · Gabarito correto: <b>${esc(q.gabarito)}</b></div>
+                <p>${esc(q.comentario)}</p>
+                ${q.trecho ? `<div class="trecho">“${esc(q.trecho)}”</div>` : ''}
+                ${q.pegadinha ? `<div class="pega"><b>Pegadinha da banca:</b> ${esc(q.pegadinha)}</div>` : ''}
+              </div>
+            </article>`;
+          }).join('')}</div>`
+        : `<div class="card"><div class="empty">${ic('check')}<div>${allWrong.length ? 'Nenhum erro encontrado para esses filtros.' : 'Nenhum erro registrado ainda! Resolva suas questões para alimentar o Caderno de Erros.'}</div></div></div>`}`;
+}
+
+function viewCaderno() {
+  if (S.cadernoBusy && !S.activeCaderno) return '<div class="progress-box"><div class="spinner"></div><b>Abrindo seu Caderno de Questões…</b></div>';
+  const c = S.activeCaderno;
+  if (!c) return `<div class="empty">Caderno não encontrado. <button class="btn btn-quiet" data-go="questoes">Voltar aos cadernos</button></div>`;
+  const b = BANCA()[c.banca] || { nome: c.banca, cor: '#0F6E56', formatoLabel: '' };
+  const f = S.cadFilter;
+  const ft = S.cadernoFeedTab;
+  const provasDaBanca = (S.provasDisponiveis || []).filter((p) => p.banca === c.banca && !(c.provas || []).some((cp) => cp.id === p.id));
+  const matsDisp = S.materiaisDisponiveis || [];
+  const setsSoltos = (S.sets || []).filter((s) => s.cadernoId !== c.id);
+
+  // Filtra as questões do histórico do caderno
+  const qNorm = String(f.q || '').trim().toLowerCase();
+  const filtered = (c.questoes || []).filter((q) => {
+    if (f.origem !== 'all' && q.origem !== f.origem) return false;
+    if (f.materia && q.materia !== f.materia) return false;
+    if (f.status === 'unanswered' && q.ans != null) return false;
+    if (f.status === 'wrong' && (q.ans == null || q.ans === q.gabarito)) return false;
+    if (f.status === 'correct' && (q.ans == null || q.ans !== q.gabarito)) return false;
+    if (f.status === 'fav' && !q.favorita) return false;
+    if (f.status === 'notes' && !q.anotacao) return false;
+    if (qNorm && !`${q.enunciado} ${q.materia} ${q.assunto} ${q.topico_edital} ${q.anotacao}`.toLowerCase().includes(qNorm)) return false;
+    return true;
+  });
+
+  return `<div class="row no-print" style="justify-content:space-between;margin:-6px 0 10px -10px">
+    <button class="btn btn-quiet" data-go="questoes">${ic('arrowL', 'sm')} Todos os Cadernos de Questões</button>
+    <div class="row" style="gap:6px">
+      ${c.editalId ? `<button class="btn btn-quiet" data-open-edital="${c.editalId}">${ic('target', 'sm')} Ver Edital vinculado</button>` : ''}
+      <button class="btn btn-quiet" id="printCaderno">${ic('download', 'sm')} Imprimir / PDF</button>
+      <button class="btn btn-quiet" id="delCaderno" style="color:var(--bad)">${ic('trash', 'sm')} Excluir caderno</button>
+    </div>
+  </div>
+
+  <div class="set-head" style="border-top:4px solid ${b.cor}">
+    <div style="flex:1;min-width:240px">
+      <div class="row" style="gap:6px;margin-bottom:6px">
+        <span class="badge" style="background:${b.cor};color:#fff">${esc(b.nome)}</span>
+        ${c.orgao ? `<span class="badge">${esc(c.orgao)}</span>` : ''}
+        ${c.cargo ? `<span class="badge">${esc(c.cargo)}</span>` : ''}
+        ${c.ano ? `<span class="badge">${esc(c.ano)}</span>` : ''}
+        ${c.editalTitulo ? `<span class="badge edital-tag">${ic('target', 'sm')} Edital: ${esc(c.editalTitulo)}</span>` : ''}
+      </div>
+      <h1 class="page-title">${esc(c.titulo)}</h1>
+      <div class="hint">${c.totalQuestoes} questões acumuladas (${c.questoesIa} geradas do seu conteúdo · ${c.questoesProvas} de provas antigas da banca) · ${(c.materiais || []).length} conteúdo(s) · ${(c.provas || []).length} prova(s)</div>
+    </div>
+    <div class="score-box">
+      <div><b>${c.totalQuestoes}</b><span>No caderno</span></div>
+      <div><b>${c.respondidas}/${c.totalQuestoes}</b><span>Resolvidas</span></div>
+      <div><b style="color:var(--ok)">${c.acertos}${c.taxaAcerto != null ? ` (${c.taxaAcerto}%)` : ''}</b><span>Acertos</span></div>
+      <div><b style="color:var(--bad)">${c.erros}</b><span>Para revisar</span></div>
+      <div><b style="color:#8A5A12">★ ${c.favoritasCount}</b><span>Favoritas</span></div>
+    </div>
+  </div>
+
+  <div class="cad-feed-bar no-print">
+    <button type="button" class="btn ${ft === 'material' ? 'btn-primary' : 'btn-ghost'}" data-cad-ftab="${ft === 'material' ? '' : 'material'}">${ic('upload', 'sm')} + Alimentar com meu conteúdo</button>
+    <button type="button" class="btn ${ft === 'prova' ? 'btn-primary' : 'btn-ghost'}" data-cad-ftab="${ft === 'prova' ? '' : 'prova'}">${ic('brain', 'sm')} + Alimentar com provas antigas da ${esc(b.nome)}</button>
+    ${setsSoltos.length ? `<button type="button" class="btn ${ft === 'simulado' ? 'btn-primary' : 'btn-ghost'}" data-cad-ftab="${ft === 'simulado' ? '' : 'simulado'}">${ic('list', 'sm')} + Anexar bateria já gerada (${setsSoltos.length})</button>` : ''}
+  </div>
+
+  ${ft === 'material' ? `<div class="cad-feed-panel no-print">
+    <div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <div><b style="font-size:15px">📄 Alimentar caderno com mais conteúdo seu</b>
+        <div class="hint">Envie um novo resumo/apostila ou escolha um material já enviado para gerar novas questões inéditas no estilo ${esc(b.nome)} direto neste caderno.</div></div>
+      <button type="button" class="btn btn-quiet" data-cad-ftab="">${ic('x', 'sm')} Fechar</button>
+    </div>
+    <div class="opts" style="margin-top:8px">
+      <div>
+        <button type="button" class="btn btn-primary btn-block" id="cadGoWizNewMat">${ic('upload', 'sm')} Enviar novo arquivo ou texto e gerar questões neste caderno</button>
+      </div>
+      ${matsDisp.length ? `<div class="row" style="gap:8px;flex-wrap:nowrap">
+        <select class="select" id="cadPickMat" style="flex:1">
+          <option value="">Ou escolha um conteúdo que você já enviou…</option>
+          ${matsDisp.map((m) => `<option value="${m.id}">${esc(m.fileName)}${m.materia ? ` (${esc(m.materia)})` : ''} · ${m.wordCount} palavras</option>`).join('')}
+        </select>
+        <button type="button" class="btn btn-ghost" id="cadUseExistingMat" ${S.cadFeedBusy ? 'disabled' : ''}>Gerar +questões</button>
+      </div>` : ''}
+    </div>
+  </div>` : ''}
+
+  ${ft === 'prova' ? `<div class="cad-feed-panel no-print">
+    <div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <div><b style="font-size:15px">🏛️ Alimentar caderno com provas antigas da banca (${esc(b.nome)})</b>
+        <div class="hint">Importe questões reais de provas anteriores da ${esc(b.nome)} para resolver no seu caderno e refinar ainda mais o estilo da IA neste concurso.</div></div>
+      <button type="button" class="btn btn-quiet" data-cad-ftab="">${ic('x', 'sm')} Fechar</button>
+    </div>
+    <div class="opts" style="margin-top:8px;align-items:flex-end">
+      <div>
+        <label class="hint" for="cadPickProva" style="display:block;margin-bottom:6px">Escolher prova da ${esc(b.nome)} já disponível na base</label>
+        <div class="row" style="gap:8px;flex-wrap:nowrap">
+          <select class="select" id="cadPickProva" style="flex:1">
+            <option value="">Selecione uma prova da ${esc(b.nome)}…</option>
+            ${provasDaBanca.map((p) => `<option value="${p.id}">${esc(p.titulo)}${p.numQuestoes ? ` (${p.numQuestoes} questões)` : ` [${p.statusLabel}]`}</option>`).join('')}
+          </select>
+          <button type="button" class="btn btn-primary" id="cadImportProvaBtn" ${S.cadFeedBusy || !provasDaBanca.length ? 'disabled' : ''}>${S.cadFeedBusy ? '<span class="spinner sm"></span>' : 'Importar p/ o caderno'}</button>
+        </div>
+      </div>
+      <div>
+        <label class="hint" for="cadUpProvaFile" style="display:block;margin-bottom:6px">Ou envie um novo PDF de prova antiga da ${esc(b.nome)}</label>
+        <input type="file" id="cadUpProvaFile" class="input" accept=".pdf,.doc,.docx,.txt" ${S.cadFeedBusy ? 'disabled' : ''}>
+      </div>
+    </div>
+  </div>` : ''}
+
+  ${ft === 'simulado' ? `<div class="cad-feed-panel no-print">
+    <div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <div><b style="font-size:15px">📚 Anexar bateria de questões já gerada</b>
+        <div class="hint">Traga simulados que você gerou anteriormente para dentro do histórico deste caderno.</div></div>
+      <button type="button" class="btn btn-quiet" data-cad-ftab="">${ic('x', 'sm')} Fechar</button>
+    </div>
+    <div class="row" style="gap:10px">
+      <select class="select" id="cadPickSet" style="flex:1">
+        <option value="">Escolha uma bateria de questões…</option>
+        ${setsSoltos.map((s) => `<option value="${s.id}">[${esc(BANCA()[s.banca]?.nome || s.banca)}] ${esc(s.materia)}${s.assunto ? ` · ${esc(s.assunto)}` : ''} (${(s.questoes || []).length} questões)</option>`).join('')}
+      </select>
+      <button type="button" class="btn btn-primary" id="cadAttachSetBtn" ${S.cadFeedBusy ? 'disabled' : ''}>Adicionar ao caderno</button>
+    </div>
+  </div>` : ''}
+
+  <div class="cad-sources no-print">
+    <div class="card card-pad">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <b style="font-size:14.5px">📄 Meus conteúdos que alimentam este caderno (${(c.materiais || []).length})</b>
+        <button type="button" class="link-btn" style="font-size:12.5px" data-cad-ftab="material">+ Adicionar conteúdo</button>
+      </div>
+      ${(c.materiais || []).length ? `<div class="file-list">${c.materiais.map((m) => `<div class="chip" style="align-items:center;gap:8px">
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📄 <b>${esc(m.fileName)}</b>${m.materia ? ` · ${esc(m.materia)}` : ''} <span class="hint">(${m.wordCount} pal.)</span></span>
+        <button type="button" class="link-btn" style="font-size:12px;white-space:nowrap" data-cad-gen-from-mat="${m.id}">+ Gerar questões</button>
+      </div>`).join('')}</div>` : `<div class="hint">Nenhum material vinculado ainda. Clique em <b>+ Alimentar com meu conteúdo</b> para enviar resumos ou anotações.</div>`}
+    </div>
+    <div class="card card-pad">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <b style="font-size:14.5px">🏛️ Provas antigas da banca neste caderno (${(c.provas || []).length})</b>
+        <button type="button" class="link-btn" style="font-size:12.5px" data-cad-ftab="prova">+ Adicionar prova</button>
+      </div>
+      ${(c.provas || []).length ? `<div class="file-list">${c.provas.map((p) => `<div class="chip" style="align-items:center;gap:8px">
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏛️ <b>${esc(p.titulo)}</b> ${p.numQuestoes ? `<span class="hint">(${p.numQuestoes} q.)</span>` : ''}</span>
+        <span class="st ${ST_CLASS[p.status] || 'READY'}">${esc(p.statusLabel)}</span>
+      </div>`).join('')}</div>` : `<div class="hint">Nenhuma prova antiga vinculada ainda. Clique em <b>+ Alimentar com provas antigas</b> para importar questões reais da ${esc(b.nome)}.</div>`}
+    </div>
+  </div>
+
+  <div class="cad-toolbar no-print">
+    <div class="row" style="gap:8px;flex:1">
+      <select class="select" id="cadFStatus" style="width:auto;min-width:190px;padding:8px 11px;font-size:13px">
+        <option value="all" ${f.status === 'all' ? 'selected' : ''}>Todas as questões (${(c.questoes || []).length})</option>
+        <option value="unanswered" ${f.status === 'unanswered' ? 'selected' : ''}>Não respondidas (${c.totalQuestoes - c.respondidas})</option>
+        <option value="wrong" ${f.status === 'wrong' ? 'selected' : ''}>Erradas para revisar (${c.erros})</option>
+        <option value="correct" ${f.status === 'correct' ? 'selected' : ''}>Acertadas (${c.acertos})</option>
+        <option value="fav" ${f.status === 'fav' ? 'selected' : ''}>★ Favoritas / Marcadas (${c.favoritasCount})</option>
+        <option value="notes" ${f.status === 'notes' ? 'selected' : ''}>📝 Com anotações (${c.anotacoesCount})</option>
+      </select>
+      <select class="select" id="cadFOrigem" style="width:auto;min-width:185px;padding:8px 11px;font-size:13px">
+        <option value="all" ${f.origem === 'all' ? 'selected' : ''}>Todas as origens</option>
+        <option value="ia" ${f.origem === 'ia' ? 'selected' : ''}>📄 Meu conteúdo (IA) (${c.questoesIa})</option>
+        <option value="prova" ${f.origem === 'prova' ? 'selected' : ''}>🏛️ Provas da banca (${c.questoesProvas})</option>
+      </select>
+      <select class="select" id="cadFMat" style="width:auto;min-width:170px;padding:8px 11px;font-size:13px">
+        <option value="">Todas as matérias</option>
+        ${(c.porMateria || []).map((m) => `<option value="${esc(m.materia)}" ${f.materia === m.materia ? 'selected' : ''}>${esc(m.materia)} (${m.total})</option>`).join('')}
+      </select>
+      <input class="input" id="cadFQ" placeholder="Buscar no caderno…" value="${esc(f.q)}" style="width:auto;min-width:170px;flex:1;padding:8px 11px;font-size:13px">
+    </div>
+    <div class="row" style="gap:6px">
+      ${c.erros > 0 ? `<button type="button" class="btn btn-ghost" id="cadResetErros" style="padding:7px 11px;font-size:12.5px">${ic('refresh', 'sm')} Refazer erradas (${c.erros})</button>` : ''}
+      ${c.respondidas > 0 ? `<button type="button" class="btn btn-quiet" id="cadResetAll" style="padding:7px 11px;font-size:12.5px">Limpar respostas</button>` : ''}
+    </div>
+  </div>
+
+  ${filtered.length
+    ? filtered.map((q, idx) => viewCadernoQ(q, idx)).join('')
+    : `<div class="card"><div class="empty">${ic('book')}<div>${(c.questoes || []).length ? 'Nenhuma questão encontrada para esses filtros.' : 'Este caderno ainda não tem questões.'}</div><div class="hint">Use os botões acima para alimentar o caderno com seu conteúdo ou com provas antigas da banca!</div></div></div>`}`;
+}
+
+function viewCadernoQ(q, idx) {
+  const ce = q.formato === 'ce';
+  const answered = q.ans != null;
+  const ok = answered && q.ans === q.gabarito;
+  const cls = (L) => (!answered ? '' : L === q.gabarito ? 'correct' : L === q.ans ? 'wrong' : '');
+  const opts = ce
+    ? `<div class="ce">${[['C', 'Certo'], ['E', 'Errado']].map(([L, t]) => `<button type="button" class="alt ${cls(L)}" data-cad-ans="${esc(q.key)}:::${L}" ${answered ? 'disabled' : ''}><span class="tx">${t}</span></button>`).join('')}</div>`
+    : `<div class="alts">${(q.alternativas || []).map((a, j) => `<button type="button" class="alt ${cls(LETRAS[j])}" data-cad-ans="${esc(q.key)}:::${LETRAS[j]}" ${answered ? 'disabled' : ''}><span class="lt">${LETRAS[j]}</span><span class="tx">${esc(a)}</span></button>`).join('')}</div>`;
+  const noteOpen = S.cadNoteOpen === q.key;
+
+  return `<article class="card q">
+    <div class="q-top" style="justify-content:space-between">
+      <div class="row" style="gap:6px">
+        <span class="q-num">#${idx + 1}</span>
+        <span class="badge ${q.origem === 'ia' ? 'brand' : 'accent'}" title="Fonte: ${esc(q.fonteTitulo)}">${q.origem === 'ia' ? '📄 Meu material' : '🏛️ Prova da banca'} · ${esc(q.fonteTitulo.slice(0, 32))}</span>
+        <span class="badge">${esc(q.materia)}</span>
+        ${q.assunto ? `<span class="badge">${esc(q.assunto)}</span>` : ''}
+        ${q.topico_edital ? `<span class="badge edital-tag">${ic('target', 'sm')} Edital: ${esc(q.topico_edital)}</span>` : ''}
+      </div>
+      <div class="row no-print" style="gap:6px">
+        <button type="button" class="fav-btn ${q.favorita ? 'on' : ''}" data-cad-fav="${esc(q.key)}" title="Marcar para revisão">${q.favorita ? '★ Favorita' : '☆ Favoritar'}</button>
+        <button type="button" class="fav-btn ${q.anotacao ? 'on' : ''}" data-cad-note-toggle="${esc(q.key)}" title="Anotação de estudo">📝 ${q.anotacao ? 'Ver/editar nota' : 'Anotar'}</button>
+      </div>
+    </div>
+    <p class="q-text">${esc(q.enunciado)}</p>
+    ${opts}
+    ${answered ? `<div class="explain">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div class="verdict ${ok ? 'ok' : 'bad'}" style="margin-bottom:0">${ic(ok ? 'check' : 'x', 'sm')} ${ok ? 'Você acertou' : 'Resposta incorreta'} · Gabarito: ${ce ? (q.gabarito === 'C' ? 'Certo' : 'Errado') : q.gabarito}</div>
+        <div class="row no-print" style="gap:8px">
+          <button type="button" class="btn btn-quiet" style="padding:4px 10px;font-size:12px" data-cad-clear="${esc(q.key)}">${ic('refresh', 'sm')} Resolver novamente</button>
+          ${!ok ? `<button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:12px" data-revanche="${esc(q.materia)}||${esc(q.topico_edital || q.assunto || '')}||${esc(q.banca)}">${ic('spark', 'sm')} Gerar +questões deste tema</button>` : ''}
+        </div>
+      </div>
+      <p>${esc(q.comentario)}</p>
+      ${q.trecho ? `<div class="trecho">“${esc(q.trecho)}”<div class="hint" style="font-style:normal;margin-top:4px">${q.ancorada ? '✓ Trecho conferido no seu material' : 'Trecho do seu material'}</div></div>` : ''}
+      ${q.pegadinha ? `<div class="pega"><b>Pegadinha da banca:</b> ${esc(q.pegadinha)}</div>` : ''}
+    </div>` : ''}
+    ${q.anotacao && !noteOpen ? `<div class="cad-note"><b>📝 Minha anotação:</b> ${esc(q.anotacao)}</div>` : ''}
+    ${noteOpen ? `<div class="report-box no-print" style="margin-top:12px">
+      <label class="hint" style="display:block;margin-bottom:4px">Sua anotação de revisão para esta questão:</label>
+      <textarea class="textarea" id="cadNoteIn" maxlength="1500" style="min-height:74px" placeholder="Anote o artigo de lei, macete ou motivo do erro para revisar depois…">${esc(q.anotacao)}</textarea>
+      <div class="row" style="justify-content:flex-end;margin-top:8px;gap:8px">
+        <button type="button" class="btn btn-quiet" data-cad-note-cancel>Cancelar</button>
+        <button type="button" class="btn btn-primary" data-cad-note-save="${esc(q.key)}">Salvar anotação</button>
+      </div>
+    </div>` : ''}
+  </article>`;
 }
 
 // ---------- Bancas e estilos (todos) ----------
@@ -453,39 +953,128 @@ function viewBancas() {
 
 // ---------- Enviar provas (todos os usuários) ----------
 const PENDING_ST = ['CHECKING', 'QUEUED', 'PROCESSING', 'BATCH_PENDING'];
-const ST_CLASS = { CHECKING: 'PROCESSING', IN_REVIEW: 'PENDING', QUEUED: 'PENDING', PROCESSING: 'PROCESSING', BATCH_PENDING: 'PROCESSING', READY: 'READY', DUPLICATE: 'PENDING', REJECTED: 'FAILED', FAILED: 'FAILED' };
+const ST_CLASS = {
+  CHECKING: 'CHECKING',
+  IN_REVIEW: 'IN_REVIEW',
+  QUEUED: 'QUEUED',
+  PROCESSING: 'PROCESSING',
+  BATCH_PENDING: 'BATCH_PENDING',
+  READY: 'READY',
+  DUPLICATE: 'DUPLICATE',
+  REJECTED: 'REJECTED',
+  FAILED: 'FAILED',
+};
 const stBadge = (p) => `<span class="st ${ST_CLASS[p.status] || 'PENDING'}">${PENDING_ST.includes(p.status) ? '<span class="spinner sm" style="width:12px;height:12px"></span>' : ''}${esc(p.statusLabel || p.status)}</span>`;
 const SEV_LABEL = { critical: 'Crítico', high: 'Alto', medium: 'Médio', low: 'Baixo', info: 'Info' };
 
 function viewContribuir() {
-  const f = S.cform || (S.cform = { banca: '', orgao: '', cargo: '', ano: '', files: [], gabarito: null });
+  const f = S.cform || (S.cform = { banca: '', orgao: '', cargo: '', ano: '', files: [], gabarito: null, editalId: '', editalFile: null });
   const mine = S.minhas || [];
+  const editais = S.editais || [];
+  const editaisForBanca = f.banca ? editais.filter((e) => !e.banca || e.banca === f.banca) : editais;
   return `<h1 class="page-title">Enviar provas</h1>
-  <p class="page-sub">Envie provas anteriores para a IA aprender o estilo de cada banca. Toda prova passa por verificações de segurança e, se preciso, por uma revisão. Cada prova aprovada vale gerações extras de questões para você.</p>
-  <div class="train-grid">
-    <form class="card card-pad" id="cForm" novalidate>
-      <div class="field" style="margin-bottom:8px"><label>Banca</label></div>
-      <div class="banca-tabs" style="flex-wrap:wrap">${S.bancas.map((b) => `<button type="button" class="btab ${f.banca === b.id ? 'on' : ''}" data-cb="${b.id}"><span class="bdot" style="background:${b.cor}"></span>${b.nome}</button>`).join('')}</div>
-      <div class="up-grid">
-        <div class="field"><label for="cOrgao">Órgão</label><input class="input" id="cOrgao" maxlength="120" placeholder="Ex.: TRF-1" value="${esc(f.orgao)}"></div>
-        <div class="field"><label for="cCargo">Cargo</label><input class="input" id="cCargo" maxlength="120" placeholder="Ex.: Analista" value="${esc(f.cargo)}"></div>
-        <div class="field"><label for="cAno">Ano</label><input class="input" id="cAno" inputmode="numeric" maxlength="4" placeholder="2024" value="${esc(f.ano)}"></div>
-      </div>
-      <label class="drop slim" id="cDrop"><input type="file" id="cFiles" class="sr" multiple accept=".pdf,.doc,.docx,.txt">
-        <div class="big" style="width:44px;height:44px">${ic('upload')}</div><strong style="font-size:15px">Arquivos das provas</strong><span class="hint">PDF (inclusive escaneado), DOCX, DOC ou TXT · até 10 por vez</span></label>
-      ${f.files.length ? `<div class="file-list">${f.files.map((x, i) => `<span class="chip"><span>${esc(x.name)}</span><button type="button" class="link-btn" data-rmc="${i}">remover</button></span>`).join('')}</div>` : ''}
-      <div class="field" style="margin-top:14px"><label for="cGab">Gabarito separado <span class="hint">(opcional, só com 1 prova)</span></label><input type="file" id="cGab" class="input" accept=".pdf,.doc,.docx,.txt" ${f.files.length > 1 ? 'disabled' : ''}>${f.gabarito ? `<span class="hint">Selecionado: ${esc(f.gabarito.name)}</span>` : ''}</div>
-      ${(S.cResults || []).length ? `<div class="file-list" style="margin-bottom:14px">${S.cResults.map((r) => `<div class="banner ${r.ok ? 'info' : r.dup ? 'warn' : 'bad'}" style="margin:0">${ic(r.ok ? 'check' : 'alert', 'sm')}<div><b>${esc(r.name)}</b>: ${esc(r.msg)}</div></div>`).join('')}</div>` : ''}
-      <button class="btn btn-primary btn-block" type="submit" ${S.cBusy || !f.files.length || !f.banca ? 'disabled' : ''}>${S.cBusy ? `<span class="spinner sm"></span> Enviando ${S.cBusy}…` : `${ic('upload', 'sm')} Enviar ${f.files.length > 1 ? f.files.length + ' provas' : 'prova'}`}</button>
-      <p class="hint" style="margin:10px 0 0">Arquivos com scripts, macros, anexos ou texto escondido com instruções são recusados automaticamente. Envios maliciosos repetidos pausam a conta.</p>
-    </form>
+  <p class="page-sub">Envie provas anteriores e o edital do concurso para a IA aprender o estilo da banca e cruzar a prova com os tópicos do edital e seus materiais de estudo.</p>
+  <div class="contrib-stack">
     <div class="card">
-      <div style="padding:16px 18px 8px" class="row"><h3 style="margin:0;font-size:16px">Minhas contribuições</h3><span class="badge">${mine.length}</span></div>
-      ${mine.length ? mine.map((p) => { const b = BANCA()[p.banca]; return `<div class="prova"><div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start">
-          <div style="min-width:0"><div class="li-title">${esc(p.titulo)}</div><div class="li-meta">${b ? b.nome : ''} · ${fmtDate(p.createdAt)}${p.numQuestoes ? ` · ${p.numQuestoes} questões na base` : ''}</div></div>${stBadge(p)}</div>
-          ${p.motivo ? `<div class="hint" style="margin-top:6px">${esc(p.motivo)}</div>` : ''}</div>`; }).join('')
-        : `<div class="empty" style="padding:24px">${ic('book')}<div>Você ainda não enviou provas.</div></div>`}
+      <div style="padding:18px 20px 12px;border-bottom:1px solid var(--line-2);justify-content:space-between" class="row">
+        <div class="row"><h3 style="margin:0;font-size:17px">Minhas contribuições</h3><span class="badge">${mine.length}</span></div>
+        <span class="hint">Cada prova aprovada na base vale estrelas e gerações extras</span>
+      </div>
+      ${mine.length ? mine.map((p) => {
+        const b = BANCA()[p.banca];
+        const isLinking = S.linkProvaId === p.id;
+        return `<div class="prova">
+          <div class="contrib-row">
+            <div style="min-width:0;flex:1">
+              <div class="li-title" style="white-space:normal;line-height:1.35">${esc(p.titulo)}</div>
+              <div class="li-meta" style="margin-top:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                ${b ? `<span class="badge" style="background:${b.cor};color:#fff">${esc(b.nome)}</span>` : ''}
+                <span>${fmtDate(p.createdAt)}${p.numQuestoes ? ` · <b>${p.numQuestoes} questões na base</b>` : ''}</span>
+                ${p.editalTitulo ? `<button type="button" class="badge edital-tag" data-open-edital="${p.editalId}" style="cursor:pointer" title="Abrir edital vinculado">${ic('target', 'sm')} Edital: ${esc(p.editalTitulo)}</button>` : ''}
+                <button type="button" class="link-btn" style="font-size:12.5px" data-toggle-link-edital="${p.id}">${p.editalId ? 'Trocar edital' : '+ Vincular edital a esta prova'}</button>
+              </div>
+            </div>
+            ${stBadge(p)}
+          </div>
+          ${p.motivo ? `<div class="hint" style="margin-top:6px">${esc(p.motivo)}</div>` : ''}
+          ${isLinking ? `<div class="edital-subbox" style="margin-top:10px">
+            <div class="row" style="justify-content:space-between;margin-bottom:8px">
+              <b style="font-size:13.5px">${ic('target', 'sm')} Relacionar Edital a esta prova (${esc(b ? b.nome : p.banca)})</b>
+              <button type="button" class="link-btn" data-toggle-link-edital="${p.id}">Fechar</button>
+            </div>
+            <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
+              ${editais.length ? `<div class="field" style="margin:0;flex:1;min-width:220px">
+                <label for="lpEdSel">Escolher um edital já cadastrado</label>
+                <select class="select" id="lpEdSel">
+                  <option value="">Selecione um edital…</option>
+                  ${editais.map((e) => `<option value="${e.id}" ${p.editalId === e.id ? 'selected' : ''}>${esc(e.titulo)} (${e.totalTopicos} tópicos)</option>`).join('')}
+                </select>
+              </div>
+              <button type="button" class="btn btn-primary" data-save-link-edital="${p.id}" ${S.linkBusy ? 'disabled' : ''}>Vincular selecionado</button>` : ''}
+              <div class="field" style="margin:0;flex:1;min-width:240px">
+                <label for="lpEdFile">Ou envie o arquivo do Edital desta prova (PDF, DOCX, TXT)</label>
+                <input type="file" id="lpEdFile" class="input" accept=".pdf,.doc,.docx,.txt" data-upload-link-edital="${p.id}" ${S.linkBusy ? 'disabled' : ''}>
+              </div>
+            </div>
+            ${S.linkBusy ? `<div class="hint" style="margin-top:8px"><span class="spinner sm"></span> Lendo e verticalizando o edital com a IA e vinculando à prova…</div>` : ''}
+          </div>` : ''}
+        </div>`;
+      }).join('') : `<div class="empty" style="padding:28px">${ic('book')}<div>Você ainda não enviou provas.</div><div class="hint">Use o formulário abaixo para enviar sua primeira prova.</div></div>`}
     </div>
+
+    <form class="card card-pad" id="cForm" novalidate>
+      <div style="margin-bottom:14px">
+        <h3 style="margin:0 0 4px;font-size:18px">Enviar nova prova</h3>
+        <div class="hint">Preencha os dados abaixo para cadastrar a prova na base da banca e, se desejar, já vincular o edital do mesmo concurso.</div>
+      </div>
+
+      <div class="form-sec">
+        <div class="form-sec-title"><span class="form-sec-num">1</span> Banca examinadora e concurso</div>
+        <div class="hint" style="margin-bottom:10px">Escolha a banca organizadora e informe o órgão, cargo e ano da prova.</div>
+        <div class="banca-tabs" style="flex-wrap:wrap;margin-bottom:14px">${S.bancas.map((b) => `<button type="button" class="btab ${f.banca === b.id ? 'on' : ''}" data-cb="${b.id}"><span class="bdot" style="background:${b.cor}"></span>${b.nome}</button>`).join('')}</div>
+        <div class="up-grid">
+          <div class="field" style="margin-bottom:0"><label for="cOrgao">Órgão / Instituição</label><input class="input" id="cOrgao" maxlength="120" placeholder="Ex.: Banco do Brasil, TRF-1" value="${esc(f.orgao)}"></div>
+          <div class="field" style="margin-bottom:0"><label for="cCargo">Cargo</label><input class="input" id="cCargo" maxlength="120" placeholder="Ex.: Agente de Tecnologia" value="${esc(f.cargo)}"></div>
+          <div class="field" style="margin-bottom:0"><label for="cAno">Ano da prova</label><input class="input" id="cAno" inputmode="numeric" maxlength="4" placeholder="Ex.: 2024" value="${esc(f.ano)}"></div>
+        </div>
+      </div>
+
+      <div class="form-sec">
+        <div class="form-sec-title"><span class="form-sec-num">2</span> Arquivos da prova e gabarito</div>
+        <div class="hint" style="margin-bottom:10px">Envie o caderno de questões (PDF, inclusive escaneado, DOCX, DOC ou TXT) e, se estiver em arquivo separado, o gabarito oficial.</div>
+        <label class="drop slim" id="cDrop"><input type="file" id="cFiles" class="sr" multiple accept=".pdf,.doc,.docx,.txt">
+          <div class="big" style="width:44px;height:44px">${ic('upload')}</div><strong style="font-size:15px">Arraste os arquivos das provas aqui ou clique para escolher</strong><span class="hint">PDF (inclusive escaneado), DOCX, DOC ou TXT · até 10 arquivos por vez</span></label>
+        ${f.files.length ? `<div class="file-list">${f.files.map((x, i) => `<span class="chip"><span>📄 ${esc(x.name)}</span><button type="button" class="link-btn" data-rmc="${i}">remover</button></span>`).join('')}</div>` : ''}
+        <div class="field" style="margin:14px 0 0"><label for="cGab">Gabarito separado <span class="hint">(opcional, disponível ao enviar 1 prova)</span></label><input type="file" id="cGab" class="input" accept=".pdf,.doc,.docx,.txt" ${f.files.length > 1 ? 'disabled' : ''}>${f.gabarito ? `<span class="hint">Selecionado: ${esc(f.gabarito.name)}</span>` : ''}</div>
+      </div>
+
+      <div class="form-sec">
+        <div class="form-sec-title"><span class="form-sec-num">3</span> Edital deste concurso <span class="badge brand">Conecta Banca + Prova + Estudo</span></div>
+        <div class="hint" style="margin-bottom:12px">O edital está diretamente ligado à banca, à prova e ao seu material de estudo. Vincule um edital já enviado ou anexe o PDF do edital agora para a IA verticalizar os tópicos e relacionar com as questões desta prova.</div>
+        <div class="edital-subbox">
+          <div class="opts" style="margin-top:0">
+            <div class="field" style="margin-bottom:0">
+              <label for="cEditalSel">Usar edital já cadastrado <span class="hint">(opcional)</span></label>
+              <select class="select" id="cEditalSel" ${f.editalFile ? 'disabled' : ''}>
+                <option value="">Nenhum edital selecionado</option>
+                ${editaisForBanca.map((e) => { const b = e.banca && BANCA()[e.banca]; return `<option value="${e.id}" ${f.editalId === e.id ? 'selected' : ''}>${b ? `[${b.nome}] ` : ''}${esc(e.titulo)} (${e.totalTopicos} tópicos)</option>`; }).join('')}
+              </select>
+            </div>
+            <div class="field" style="margin-bottom:0">
+              <label for="cEditalFile">Ou enviar arquivo do Edital junto com a prova <span class="hint">(PDF, DOCX, TXT)</span></label>
+              <input type="file" id="cEditalFile" class="input" accept=".pdf,.doc,.docx,.txt" ${f.files.length > 1 ? 'disabled' : ''}>
+              ${f.editalFile ? `<div class="row" style="justify-content:space-between;margin-top:4px"><span class="hint" style="color:var(--brand)">📋 Edital anexado: <b>${esc(f.editalFile.name)}</b></span><button type="button" class="link-btn" id="cRmEdital" style="font-size:12px">remover</button></div>` : ''}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      ${(S.cResults || []).length ? `<div class="file-list" style="margin:16px 0">${S.cResults.map((r) => `<div class="banner ${r.ok ? 'info' : r.dup ? 'warn' : 'bad'}" style="margin:0">${ic(r.ok ? 'check' : 'alert', 'sm')}<div><b>${esc(r.name)}</b>: ${esc(r.msg)}</div></div>`).join('')}</div>` : ''}
+      <div style="margin-top:20px">
+        <button class="btn btn-primary btn-block" type="submit" ${S.cBusy || !f.files.length || !f.banca ? 'disabled' : ''}>${S.cBusy ? `<span class="spinner sm"></span> Enviando ${S.cBusy}${f.editalFile ? ' e verticalizando edital' : ''}…` : `${ic('upload', 'sm')} Enviar ${f.files.length > 1 ? f.files.length + ' provas' : 'prova'}${f.editalFile ? ' + Edital' : f.editalId ? ' (vinculada ao Edital)' : ''}`}</button>
+        <p class="hint" style="margin:10px 0 0;text-align:center">Arquivos com scripts, macros, anexos ou texto escondido com instruções são recusados automaticamente. Envios maliciosos repetidos pausam a conta.</p>
+      </div>
+    </form>
   </div>`;
 }
 
@@ -524,8 +1113,13 @@ function viewProvas() {
     <div class="card card-pad" style="margin-bottom:16px"><h3 style="margin:0 0 4px;font-size:16px">IA por tarefa</h3>
       <p class="hint" style="margin:0 0 12px">${m.ia.mock ? '<b>Modo simulado (AI_MOCK=true)</b> — nenhuma chamada real. ' : ''}Treino: ${m.ia.trainingMode === 'batch' ? 'modo lote (mais barato)' : 'direto'}. Para trocar de fornecedor, altere AI_MODEL_&lt;TAREFA&gt; no .env.</p>
       <table class="tbl"><thead><tr><th>Tarefa</th><th>Principal</th><th>Reserva</th></tr></thead><tbody>${m.ia.routing.map((r) => `<tr><td>${esc(r.label)}</td><td><code>${esc(r.primary)}</code></td><td><code>${esc(r.fallback || '—')}</code></td></tr>`).join('')}</tbody></table></div>
-    <div class="card card-pad" style="margin-bottom:16px"><h3 style="margin:0 0 12px;font-size:16px">Uso da IA (30 dias)</h3>
-      ${m.ia.usage.length ? `<table class="tbl"><thead><tr><th>Tarefa</th><th>Modelo</th><th>Chamadas</th><th>Falhas</th><th>Reserva</th><th>Tokens entrada</th><th>Tokens saída</th><th>Cache</th><th>Tempo médio</th></tr></thead><tbody>${m.ia.usage.map((u) => `<tr><td>${esc(u.task)}</td><td><code>${esc(u.provider)}:${esc(u.model)}</code></td><td>${u.chamadas}</td><td>${u.falhas}</td><td>${u.reservas}</td><td>${Number(u.entrada).toLocaleString('pt-BR')}</td><td>${Number(u.saida).toLocaleString('pt-BR')}</td><td>${Number(u.cache).toLocaleString('pt-BR')}</td><td>${u.ms_medio != null ? (u.ms_medio / 1000).toFixed(1) + ' s' : '—'}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Sem chamadas ainda.</p>'}
+    <div class="card card-pad" style="margin-bottom:16px">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h3 style="margin:0;font-size:16px">Uso e Custos da IA (30 dias)</h3>
+        ${m.ia.custoTotal ? `<span class="badge brand" style="font-size:13px">Total estimado: R$ ${Number(m.ia.custoTotal.brl || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (US$ ${Number(m.ia.custoTotal.usd || 0).toFixed(4)})</span>` : ''}
+        ${m.ia.limiteDia ? `<span class="${m.ia.limiteDia.atingido ? 'sev high' : 'badge'}" style="font-size:13px" title="AI_LIMITE_USD_DIA no .env (dia de Brasília)">Hoje: US$ ${Number(m.ia.limiteDia.gastoHojeUsd || 0).toFixed(4)}${m.ia.limiteDia.usd ? ` de US$ ${Number(m.ia.limiteDia.usd).toFixed(2)}${m.ia.limiteDia.atingido ? ' — limite atingido, IA pausada até amanhã' : ''}` : ' (sem limite diário)'}</span>` : ''}
+      </div>
+      ${m.ia.usage.length ? `<table class="tbl"><thead><tr><th>Tarefa</th><th>Modelo</th><th>Chamadas</th><th>Falhas</th><th>Reserva</th><th>Tokens entrada</th><th>Tokens saída</th><th>Cache</th><th>Tempo médio</th><th>Custo est.</th></tr></thead><tbody>${m.ia.usage.map((u) => `<tr><td>${esc(u.task)}</td><td><code>${esc(u.provider)}:${esc(u.model)}</code></td><td>${u.chamadas}</td><td>${u.falhas}</td><td>${u.reservas}</td><td>${Number(u.entrada).toLocaleString('pt-BR')}</td><td>${Number(u.saida).toLocaleString('pt-BR')}</td><td>${Number(u.cache).toLocaleString('pt-BR')}</td><td>${u.ms_medio != null ? (u.ms_medio / 1000).toFixed(1) + ' s' : '—'}</td><td><b>R$ ${Number(u.custoBrl || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b> <span class="hint">(US$ ${Number(u.custoUsd || 0).toFixed(4)})</span></td></tr>`).join('')}</tbody></table>` : '<p class="hint">Sem chamadas ainda.</p>'}
       ${m.ia.revisor && m.ia.revisor.geradas ? `<p class="hint" style="margin:10px 0 0">Revisor automático (30 dias): ${m.ia.revisor.geradas} questões geradas, ${m.ia.revisor.descartadas} descartadas por divergência/ambiguidade, ${m.ia.revisor.refeitas} refeitas.</p>` : ''}
       ${(m.ia.qualidade || []).length ? `<h3 style="margin:18px 0 8px;font-size:15px">Qualidade percebida pelos alunos</h3><table class="tbl"><thead><tr><th>Banca</th><th>👍</th><th>👎</th><th>Erros confirmados</th><th>Reportes não confirmados</th></tr></thead><tbody>${m.ia.qualidade.map((q) => `<tr><td>${esc(BANCA()[q.banca]?.nome || q.banca)}</td><td>${q.gostei}</td><td>${q.nao_gostei}</td><td>${q.erros_confirmados}</td><td>${q.erros_nao_confirmados}</td></tr>`).join('')}</tbody></table>` : ''}
       <p class="hint" style="margin:10px 0 0">Fila de tarefas: ${Object.entries(m.ia.jobs).map(([k, v]) => `${esc(k)} ${v}`).join(' · ') || 'vazia'}</p></div>
@@ -652,6 +1246,225 @@ async function loadFeedback(setId) {
   } catch { /* opcional */ }
 }
 
+// ---------- Meu Edital (verticalizado + gráficos de avanço) ----------
+function viewHomeEditalCard(ed) {
+  const rs = ed.resumo || {};
+  const b = ed.banca && BANCA()[ed.banca];
+  return `<div class="card card-pad edital-home-card">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:16px">
+      <div style="display:flex;gap:16px;align-items:center;flex:1;min-width:240px">
+        ${donutSvg(rs.coberturaPct || 0, 74, 'var(--brand)')}
+        <div style="min-width:0">
+          <div class="row" style="gap:6px;margin-bottom:4px">
+            <span class="eyebrow" style="color:var(--brand)">Edital ativo</span>
+            ${b ? `<span class="badge" style="background:${b.cor};color:#fff">${esc(b.nome)}</span>` : ed.banca ? `<span class="badge">${esc(ed.banca)}</span>` : ''}
+            ${ed.ano ? `<span class="badge">${esc(ed.ano)}</span>` : ''}
+          </div>
+          <div style="font-size:17px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(ed.titulo)}</div>
+          <div class="hint">${rs.topicosEstudados || 0} de ${rs.totalTopicos || 0} tópicos estudados · ${rs.topicosPraticados || 0} praticados em questões${rs.taxaAcertoGeral != null ? ` · <b>${rs.taxaAcertoGeral}% de acerto</b>` : ''}</div>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn btn-ghost" data-go="edital">${ic('target', 'sm')} Ver avanço</button>
+        <button class="btn btn-primary" data-go="gerar">${ic('upload', 'sm')} Estudar material</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+const TOPIC_STATUS = {
+  dominado:  { label: 'Dominado ★', cls: 'READY' },
+  praticado: { label: 'Praticado',  cls: 'PROCESSING' },
+  estudado:  { label: 'Estudado',   cls: 'brand' },
+  pendente:  { label: 'Pendente',   cls: 'PENDING' },
+};
+
+function viewEdital() {
+  const ed = S.activeEdital;
+  const list = S.editais || [];
+  const mine = S.minhas || [];
+  const efm = S.edForm || (S.edForm = { banca: '', orgao: '', cargo: '', ano: '', provaId: '' });
+  const showUpload = S.editalShowForm || !ed;
+  const uploadCard = showUpload ? `<div class="card card-pad" style="margin-bottom:18px">
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <div><h3 style="margin:0;font-size:17px">${ed ? 'Enviar outro edital' : 'Envie o edital do seu concurso'}</h3>
+        <div class="hint">Relacione o edital à banca, ao concurso/cargo e à prova para cruzar automaticamente com seus materiais e simulados.</div></div>
+      ${ed ? `<button type="button" class="btn btn-quiet" id="edCancelForm">${ic('x', 'sm')} Fechar</button>` : ''}
+    </div>
+    ${S.editalErr ? `<div class="banner bad">${ic('alert', 'sm')}<div>${esc(S.editalErr)}</div></div>` : ''}
+    ${S.editalUploading ? `<div class="progress-box" style="padding:32px 16px"><div class="spinner"></div><b>Analisando e verticalizando seu edital com a IA…</b><div class="hint">Extraindo disciplinas, pesos e tópicos do conteúdo programático e vinculando à banca e prova.</div></div>`
+      : `<div class="form-sec" style="margin-bottom:14px">
+        <div class="field" style="margin-bottom:8px"><label>Banca organizadora do edital</label></div>
+        <div class="banca-tabs" style="flex-wrap:wrap;margin-bottom:12px">
+          <button type="button" class="btab ${!efm.banca ? 'on' : ''}" data-edb="">Detectar pela IA</button>
+          ${S.bancas.map((b) => `<button type="button" class="btab ${efm.banca === b.id ? 'on' : ''}" data-edb="${b.id}"><span class="bdot" style="background:${b.cor}"></span>${b.nome}</button>`).join('')}
+        </div>
+        <div class="up-grid" style="margin-bottom:12px">
+          <div class="field" style="margin-bottom:0"><label for="edOrgao">Órgão / Instituição <span class="hint">(opcional)</span></label><input class="input" id="edOrgao" maxlength="120" placeholder="Ex.: Banco do Brasil, TRF-1" value="${esc(efm.orgao)}"></div>
+          <div class="field" style="margin-bottom:0"><label for="edCargo">Cargo foco <span class="hint">(opcional)</span></label><input class="input" id="edCargo" maxlength="120" placeholder="Ex.: Agente de Tecnologia" value="${esc(efm.cargo)}"></div>
+          <div class="field" style="margin-bottom:0"><label for="edAno">Ano <span class="hint">(opcional)</span></label><input class="input" id="edAno" inputmode="numeric" maxlength="4" placeholder="Ex.: 2024" value="${esc(efm.ano)}"></div>
+        </div>
+        ${mine.length ? `<div class="field" style="margin-bottom:4px">
+          <label for="edProvaSel">Vincular a uma prova já enviada <span class="hint">(opcional — conecta as questões reais da prova ao edital)</span></label>
+          <select class="select" id="edProvaSel">
+            <option value="">Nenhuma prova selecionada</option>
+            ${mine.filter((p) => !efm.banca || p.banca === efm.banca).map((p) => `<option value="${p.id}" ${efm.provaId === p.id ? 'selected' : ''}>${esc(p.titulo)} (${p.numQuestoes || 0} questões)</option>`).join('')}
+          </select>
+        </div>` : ''}
+      </div>
+      ${S.editalMode === 'file' ? `
+      <label class="drop slim" id="edDrop">
+        <input type="file" id="edFileIn" class="sr" accept=".pdf,.doc,.docx,.txt">
+        <div class="big">${ic('upload')}</div>
+        <strong>Arraste o arquivo do Edital aqui ou clique para escolher</strong>
+        <span class="hint">PDF (inclusive escaneado), DOCX, DOC ou TXT · Edital completo ou anexo de conteúdo programático</span>
+      </label>
+      <div style="text-align:center;margin-top:12px"><button type="button" class="btn btn-quiet" id="edModePaste">Prefere colar o conteúdo programático?</button></div>`
+      : `<div class="field"><label for="edPasteIn">Cole o conteúdo programático do edital</label>
+        <textarea class="textarea" id="edPasteIn" placeholder="Cole aqui as disciplinas e os tópicos do edital do seu concurso…"></textarea></div>
+      <div class="wiz-foot"><button type="button" class="btn btn-ghost" id="edModeFile">${ic('arrowL', 'sm')} Enviar arquivo</button>
+        <button type="button" class="btn btn-primary" id="edUsePaste">${ic('spark', 'sm')} Verticalizar edital</button></div>`}`}
+  </div>` : '';
+
+  if (!ed) {
+    return `<h1 class="page-title">Meu edital</h1><p class="page-sub">Acompanhe visualmente sua cobertura do edital, o cruzamento com seus resumos, banca e provas, e seu desempenho por tópico.</p>${uploadCard}`;
+  }
+
+  const rs = ed.resumo || {};
+  const b = ed.banca && BANCA()[ed.banca];
+  const provasVinc = ed.provasVinculadas || [];
+  const matVinc = ed.materiaisVinculados || [];
+  return `<div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:18px">
+    <div>
+      <div class="row" style="gap:8px;margin-bottom:4px">
+        ${b ? `<span class="badge" style="background:${b.cor};color:#fff">${esc(b.nome)}</span>` : ed.banca ? `<span class="badge">${esc(ed.banca)}</span>` : ''}
+        ${ed.orgao ? `<span class="badge">${esc(ed.orgao)}</span>` : ''}
+        ${ed.cargo ? `<span class="badge">${esc(ed.cargo)}</span>` : ''}
+        ${ed.ano ? `<span class="badge">${esc(ed.ano)}</span>` : ''}
+      </div>
+      <h1 class="page-title">${esc(ed.titulo)}</h1>
+      <p class="page-sub" style="margin-bottom:0">${rs.totalDisciplinas} disciplina(s) · ${rs.totalTopicos} tópicos mapeados pela IA · ${provasVinc.length} prova(s) e ${matVinc.length} material(is) vinculado(s)</p>
+    </div>
+    <div class="row">
+      ${list.length > 1 ? `<select class="select" id="edSwitch" style="width:auto;min-width:210px">${list.map((x) => `<option value="${x.id}" ${x.id === ed.id ? 'selected' : ''}>${esc(x.titulo)}</option>`).join('')}</select>` : ''}
+      <button class="btn btn-ghost" id="edNewBtn">${ic('upload', 'sm')} Novo edital</button>
+      <button class="btn btn-danger" id="edDelBtn" title="Remover edital">${ic('trash', 'sm')}</button>
+    </div>
+  </div>
+  ${uploadCard}
+  <div class="hero" style="grid-template-columns:1.15fr 1fr;margin-bottom:18px">
+    <div class="card card-pad" style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
+      ${donutSvg(rs.coberturaPct || 0, 108, 'var(--brand)')}
+      <div style="flex:1;min-width:200px">
+        <div class="eyebrow" style="color:var(--brand)">Abrangência concluída do edital</div>
+        <div style="font-size:24px;font-weight:800;margin:4px 0">${rs.coberturaPct || 0}% do conteúdo coberto</div>
+        <p class="hint" style="margin:0 0 12px">Calculado pela IA cruzando seus materiais de estudo e simulados resolvidos com cada tópico do edital.</p>
+        <div class="edital-legend">
+          <span><i style="background:var(--ok)"></i>Dominados: <b>${rs.topicosDominados || 0}</b></span>
+          <span><i style="background:var(--accent)"></i>Praticados: <b>${rs.topicosPraticados || 0}</b></span>
+          <span><i style="background:var(--brand)"></i>Estudados: <b>${rs.topicosEstudados || 0}/${rs.totalTopicos || 0}</b></span>
+        </div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="card stat"><div class="v">${rs.topicosEstudados || 0}/${rs.totalTopicos || 0}</div><div class="l">Tópicos nos materiais</div></div>
+      <div class="card stat"><div class="v">${rs.praticadoPct || 0}%</div><div class="l">Tópicos com questões</div></div>
+      <div class="card stat"><div class="v" style="color:var(--ok)">${rs.dominadoPct || 0}%</div><div class="l">Tópicos dominados (≥70%)</div></div>
+      <div class="card stat"><div class="v">${rs.taxaAcertoGeral != null ? rs.taxaAcertoGeral + '%' : '—'}</div><div class="l">Taxa de acerto no edital</div></div>
+    </div>
+  </div>
+
+  <div class="train-grid" style="margin-bottom:18px">
+    <div class="card card-pad">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <div><h3 style="margin:0;font-size:16px">Provas vinculadas a este Edital (${provasVinc.length})</h3>
+          <div class="hint">As questões reais destas provas guiam o estilo da IA ao gerar simulados para este edital.</div></div>
+        <button type="button" class="btn btn-ghost" id="edSendProva" style="padding:7px 12px;font-size:13px">${ic('upload', 'sm')} Enviar prova</button>
+      </div>
+      ${provasVinc.length ? `<div class="file-list">${provasVinc.map((p) => `<div class="chip" style="align-items:center;gap:8px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📘 <b>${esc(p.titulo)}</b> ${p.numQuestoes ? `(${p.numQuestoes} questões)` : ''}</span></div>`).join('')}</div>`
+        : `<div class="hint">Nenhuma prova vinculada ainda. Envie a prova deste concurso ou vincule uma prova existente em <b>Enviar provas</b>.</div>`}
+    </div>
+    <div class="card card-pad">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <div><h3 style="margin:0;font-size:16px">Materiais de estudo cruzados (${matVinc.length})</h3>
+          <div class="hint">Resumos, apostilas e anotações analisados contra o conteúdo programático.</div></div>
+        <button type="button" class="btn btn-primary" data-go="gerar" style="padding:7px 12px;font-size:13px">${ic('upload', 'sm')} Enviar material</button>
+      </div>
+      ${matVinc.length ? `<div class="file-list">${matVinc.slice(0, 5).map((m) => `<div class="chip" style="align-items:center;gap:8px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📄 <b>${esc(m.nome)}</b>${m.disciplina ? ` · ${esc(m.disciplina)}` : ''}</span>${m.coberturaDisciplinaPct != null ? `<span class="badge brand">${m.coberturaDisciplinaPct}%</span>` : ''}</div>`).join('')}</div>`
+        : `<div class="hint">Nenhum material enviado ainda para este edital. Envie seu primeiro resumo para iniciar o acompanhamento!</div>`}
+    </div>
+  </div>
+
+  <div class="card card-pad" style="margin-bottom:18px">
+    <div class="row" style="justify-content:space-between;margin-bottom:14px">
+      <div><h3 style="margin:0;font-size:16px">Gráfico de avanço por disciplina</h3>
+        <div class="hint">Comparativo entre conteúdo estudado (materiais enviados) e taxa de acerto nas questões relacionadas.</div></div>
+      <div class="edital-legend">
+        <span><i style="background:var(--brand)"></i>% Conteúdo estudado</span>
+        <span><i style="background:var(--accent)"></i>% Acerto em questões</span>
+      </div>
+    </div>
+    <div class="edital-chart">
+      ${(ed.disciplinas || []).map((d) => `<div class="edital-bar-row">
+        <div class="edital-bar-head">
+          <div><b>${esc(d.materia)}</b> <span class="hint">(${d.estudados}/${d.totalTopicos} tópicos · ${d.questoesRespondidas} questões resolvidas)</span></div>
+          <div class="row" style="gap:10px;font-size:12.5px">
+            <span style="color:var(--brand);font-weight:800">${d.coberturaPct}% estudado</span>
+            <span style="color:#8A5A12;font-weight:800">${d.taxaAcerto != null ? d.taxaAcerto + '% acerto' : 'sem questões'}</span>
+          </div>
+        </div>
+        <div class="edital-dual-bars">
+          <div class="edital-track" title="Cobertura de estudo: ${d.coberturaPct}%"><i style="width:${Math.max(d.coberturaPct ? 3 : 0, d.coberturaPct)}%;background:var(--brand)"></i></div>
+          <div class="edital-track" title="Taxa de acerto: ${d.taxaAcerto ?? 0}%"><i style="width:${d.taxaAcerto != null ? Math.max(3, d.taxaAcerto) : 0}%;background:${(d.taxaAcerto ?? 0) >= 70 ? 'var(--ok)' : 'var(--accent)'}"></i></div>
+        </div>
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <div class="section-h"><h3>Edital verticalizado tópico a tópico</h3>
+    <button class="btn btn-primary" data-go="gerar">${ic('upload', 'sm')} Enviar resumo para avançar no edital</button></div>
+  <div class="grid">
+    ${(ed.disciplinas || []).map((d) => `<div class="card card-pad">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <div><h3 style="margin:0;font-size:17px">${esc(d.materia)}</h3>
+          <div class="hint">${d.estudados} de ${d.totalTopicos} tópicos estudados · ${d.dominados} dominado(s)${d.questoesNaBanca ? ` · <b style="color:#B45309">🔥 ${d.questoesNaBanca} q. na prova da banca</b>` : ''}</div></div>
+        <span class="badge ${d.coberturaPct >= 70 ? 'brand' : ''}">${d.coberturaPct}% concluído</span>
+      </div>
+      <div class="edital-topic-table">
+        ${(d.topicos || []).map((t) => {
+          const st = TOPIC_STATUS[t.status] || TOPIC_STATUS.pendente;
+          return `<div class="edital-topic-row">
+            <div style="flex:1;min-width:200px">
+              <div style="font-weight:700;font-size:14px"><span class="hint" style="margin-right:6px">${esc(t.codigo)}.</span>${esc(t.nome)}</div>
+              ${t.resumo ? `<div class="hint" style="margin-top:2px">${esc(t.resumo)}</div>` : ''}
+              ${(t.materiaisNomes || []).length ? `<div class="hint" style="margin-top:3px;color:var(--brand)">📄 Material: ${t.materiaisNomes.map(esc).join(', ')} (${t.cobertura === 'completo' ? 'completo' : 'parcial'})</div>` : ''}
+            </div>
+            <div class="row" style="gap:8px;flex-wrap:nowrap">
+              ${t.questoesNaBanca ? `<span class="badge ${t.incidenciaBanca === 'alta' ? 'accent' : ''}" title="Questões reais das provas da banca neste tópico">${t.incidenciaBanca === 'alta' ? '🔥 ' : '📌 '}${t.questoesNaBanca} na banca</span>` : ''}
+              ${t.questoesGeradas ? `<span class="badge" title="Questões resolvidas / geradas neste tópico">${t.questoesRespondidas}/${t.questoesGeradas} q.${t.taxaAcerto != null ? ` · ${t.taxaAcerto}%` : ''}</span>` : ''}
+              <span class="st ${st.cls}">${st.label}</span>
+              <button class="btn btn-quiet" data-train-topic="${esc(d.materia)}||${esc(t.nome)}" title="Gerar questões focadas neste tópico">${ic('spark', 'sm')} Treinar</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+async function refreshEditais({ silent = false } = {}) {
+  try {
+    const r = await api('/editais');
+    S.editais = r.editais || [];
+    S.activeEdital = r.active || null;
+    if (S.wiz && !S.wiz.material && !S.wiz.editalId && S.activeEdital) {
+      S.wiz.editalId = S.activeEdital.id;
+      if (!S.wiz.banca && S.activeEdital.banca && S.bancas.some((b) => b.id === S.activeEdital.banca)) S.wiz.banca = S.activeEdital.banca;
+    }
+    if (!silent && S.screen === 'app') render();
+  } catch { /* opcional */ }
+}
+
 // ---------- Modal ----------
 function viewModal() {
   const m = S.modal;
@@ -661,15 +1474,24 @@ function viewModal() {
 const confirmBox = (title, text, ok, danger, fn) => { S.modal = { title, text, ok, danger, fn }; render(); };
 
 // ---------- Navegação e eventos ----------
-const ROUTES = ['home', 'gerar', 'questoes', 'bancas', 'contribuir', 'estrelas', 'provas'];
+const ROUTES = ['home', 'gerar', 'edital', 'questoes', 'bancas', 'contribuir', 'estrelas', 'provas'];
 function go(v) {
   S.view = v; S.drawer = false;
   if (ROUTES.includes(v)) { try { if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v); } catch {} }
   if (v === 'provas' && isAdmin()) loadAdmin(S.adminTab === 'monitor').then(() => { if (S.view === 'provas') render(); }).catch((e) => toast(e.message));
   if (v === 'estrelas') refreshStars({ silent: true });
+  if (v === 'edital') { refreshEditais(); api('/provas/minhas').then((r) => { S.minhas = r.provas; if (S.view === 'edital') render(); }).catch(() => {}); }
   if (v === 'simulado' && S.active) loadFeedback(S.active);
-  if (v === 'contribuir') api('/provas/minhas').then((r) => { S.minhas = r.provas; if (S.view === 'contribuir') render(); }).catch(() => {});
-  if (v === 'gerar') api('/sets/cota').then((r) => { S.quota = r.quota; }).catch(() => {});
+  if (v === 'contribuir') {
+    refreshEditais({ silent: true });
+    api('/provas/minhas').then((r) => { S.minhas = r.provas; if (S.view === 'contribuir') render(); }).catch(() => {});
+  }
+  if (v === 'questoes') refreshCadernos({ silent: true }).then(() => { if (S.view === 'questoes') render(); });
+  if (v === 'gerar') {
+    refreshCadernos({ silent: true });
+    api('/sets/cota').then((r) => { S.quota = r.quota; }).catch(() => {});
+    api('/provas/minhas').then((r) => { S.minhas = r.provas; }).catch(() => {});
+  }
   render(); window.scrollTo({ top: 0 });
 }
 window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (S.screen === 'app' && ROUTES.includes(h) && h !== S.view) go(h); });
@@ -680,8 +1502,17 @@ function bindApp() {
   on('[data-go]', 'click', (e) => go(e.currentTarget.dataset.go));
   on('#openMenu', 'click', () => { S.drawer = true; render(); });
   on('[data-close]', 'click', () => { S.drawer = false; render(); });
-  on('#logout', 'click', async () => { await api('/auth/logout', { method: 'POST' }).catch(() => {}); Object.assign(S, { screen: 'auth', auth: 'entrar', user: null, sets: [], drawer: false, loaded: false }); render(); });
+  on('#logout', 'click', async () => { await api('/auth/logout', { method: 'POST' }).catch(() => {}); Object.assign(S, { screen: 'auth', auth: 'entrar', user: null, sets: [], cadernos: [], activeCaderno: null, drawer: false, loaded: false }); render(); });
   on('[data-open]', 'click', (e) => { S.active = e.currentTarget.dataset.open; go('simulado'); });
+  on('[data-open-caderno]', 'click', (e) => { S.cadernoFeedTab = ''; openCaderno(e.currentTarget.dataset.openCaderno); });
+  on('[data-cad-feed-mat]', 'click', (e) => { S.cadernoFeedTab = 'material'; openCaderno(e.currentTarget.dataset.cadFeedMat); });
+  on('[data-cad-feed-prova]', 'click', (e) => { S.cadernoFeedTab = 'prova'; openCaderno(e.currentTarget.dataset.cadFeedProva); });
+  on('[data-new-caderno-home]', 'click', () => { S.bancoTab = 'cadernos'; S.cadernoNewOpen = true; go('questoes'); });
+  on('[data-open-edital]', 'click', async (e) => {
+    const id = e.currentTarget.dataset.openEdital;
+    try { await api(`/editais/${id}/ativar`, { method: 'POST' }); } catch {}
+    go('edital');
+  });
   on('[data-bancatile]', 'click', (e) => { if (isAdmin()) { S.provaBanca = e.currentTarget.dataset.bancatile; S.adminTab = 'base'; go('provas'); } else go('bancas'); });
   on('[data-mclose]', 'click', (e) => { if (e.target === e.currentTarget) { S.modal = null; render(); } });
   on('[data-mclose2]', 'click', () => { S.modal = null; render(); });
@@ -697,6 +1528,42 @@ function bindApp() {
       ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
       drop.addEventListener('drop', (e) => { const f = e.dataTransfer.files[0]; if (f) send(f); });
     }
+    const wes = $('#wizEditalSel');
+    if (wes) wes.onchange = async () => {
+      w.editalId = wes.value;
+      const chosen = (S.editais || []).find((x) => x.id === w.editalId);
+      if (chosen?.banca && S.bancas.some((b) => b.id === chosen.banca)) w.banca = chosen.banca;
+      if (w.material) {
+        w.uploading = true; render();
+        try { const r = await api(`/materials/${w.material.id}/edital`, { method: 'POST', body: { editalId: w.editalId } }); w.material = r.material; refreshEditais({ silent: true }); }
+        catch (e) { toast(e.message); }
+        w.uploading = false;
+      }
+      render();
+    };
+    on('#wizToggleEditalUp', 'click', () => { w.showEditalUpload = !w.showEditalUpload; render(); });
+    const wef = $('#wizEditalFile');
+    if (wef) wef.onchange = async () => {
+      const f = wef.files[0]; if (!f) return;
+      const bancaIn = $('#wizEdBanca')?.value || w.banca || '';
+      const provaIn = $('#wizEdProva')?.value || '';
+      w.editalBusy = true; w.showEditalUpload = false; render();
+      try {
+        const fd = new FormData(); fd.append('file', f);
+        if (bancaIn) fd.append('banca', bancaIn);
+        if (provaIn) fd.append('provaId', provaIn);
+        const r = await api('/editais', { method: 'POST', form: fd });
+        await refreshEditais({ silent: true });
+        w.editalId = r.edital.id;
+        if (r.edital.banca && S.bancas.some((b) => b.id === r.edital.banca)) w.banca = r.edital.banca;
+        if (w.material) {
+          const rm = await api(`/materials/${w.material.id}/edital`, { method: 'POST', body: { editalId: w.editalId } });
+          w.material = rm.material;
+        }
+        toast(`Edital "${r.edital.titulo}" verticalizado (${r.edital.resumo.totalTopicos} tópicos)!`);
+      } catch (e) { toast(e.message); }
+      w.editalBusy = false; render();
+    };
     on('#modePaste', 'click', () => { w.mode = 'paste'; w.err = ''; render(); });
     on('#modeFile', 'click', () => { w.mode = 'file'; render(); });
     on('#usePaste', 'click', () => uploadMaterial({ text: $('#pasteIn').value || '' }));
@@ -705,7 +1572,15 @@ function bindApp() {
     const ms = $('#matSel'); if (ms) ms.onchange = () => { w.materia = ms.value; };
     const ai = $('#assIn'); if (ai) ai.oninput = () => { w.assunto = ai.value.trim(); };
     on('#toStep3', 'click', () => { if (!w.materia) return toast('Selecione a matéria do material.'); w.step = 3; render(); });
-    on('[data-banca]', 'click', (e) => { w.banca = e.currentTarget.dataset.banca; render(); });
+    on('[data-banca]', 'click', (e) => {
+      w.banca = e.currentTarget.dataset.banca;
+      if (!w.cadernoId) {
+        const matchCad = (S.cadernos || []).find((c) => c.banca === w.banca && (!w.editalId || c.editalId === w.editalId));
+        if (matchCad) w.cadernoId = matchCad.id;
+      }
+      render();
+    });
+    const wcs = $('#wizCadSel'); if (wcs) wcs.onchange = () => { w.cadernoId = wcs.value; };
     on('[data-qtd]', 'click', (e) => { w.qtd = +e.currentTarget.dataset.qtd; render(); });
     on('[data-nivel]', 'click', (e) => { w.nivel = e.currentTarget.dataset.nivel; render(); });
     on('#gen', 'click', () => { if (!w.generating) generate(); });
@@ -737,12 +1612,78 @@ function bindApp() {
     });
     on('[data-ans]', 'click', (e) => { const [i, L] = e.currentTarget.dataset.ans.split(':'); s.respostas = { ...(s.respostas || {}), [i]: L }; const y = window.scrollY; render(); window.scrollTo({ top: y }); saveSetSoon(s, { respostas: s.respostas }); });
     on('#copySet', 'click', async () => { try { await navigator.clipboard.writeText(setText(s)); toast('Questões copiadas com o gabarito'); } catch { toast('Não foi possível copiar'); } });
+    on('#printSet', 'click', () => window.print());
     on('#delSet', 'click', () => confirmBox('Excluir simulado?', 'As questões deste simulado serão removidas.', 'Excluir', true, async () => { await api(`/sets/${s.id}`, { method: 'DELETE' }).catch(() => {}); S.sets = S.sets.filter((x) => x.id !== s.id); go('questoes'); toast('Simulado excluído'); }));
     on('#resetSet', 'click', () => confirmBox('Refazer simulado?', 'Suas respostas serão apagadas para você resolver de novo.', 'Refazer', false, () => { s.respostas = {}; s.finalizado = false; api(`/sets/${s.id}`, { method: 'PATCH', body: { respostas: {}, finalizado: false } }).catch(() => {}); render(); window.scrollTo({ top: 0 }); }));
     on('#finish', 'click', () => {
       const n = s.questoes.length, r = s.respostas || {}, resp = Object.keys(r).length, ac = s.questoes.filter((q, i) => r[i] === q.gabarito).length;
       const fin = () => { s.finalizado = true; clearTimeout(saveT); api(`/sets/${s.id}`, { method: 'PATCH', body: { respostas: r, finalizado: true } }).catch(() => {}); render(); toast(`Resultado: ${ac} de ${n} (${Math.round((ac / n) * 100)}%)${s.formato === 'ce' ? ` · nota líquida ${ac - (resp - ac)}` : ''}`); };
       if (resp < n && !s.finalizado && s.formato !== 'ce') confirmBox('Finalizar com questões em branco?', `Você respondeu ${resp} de ${n}. As demais contam como erro.`, 'Finalizar', false, fin); else fin();
+    });
+  }
+  if (S.view === 'edital') {
+    const efm = S.edForm || (S.edForm = { banca: '', orgao: '', cargo: '', ano: '', provaId: '' });
+    on('[data-edb]', 'click', (e) => { efm.banca = e.currentTarget.dataset.edb; render(); });
+    ['Orgao', 'Cargo', 'Ano'].forEach((k) => { const el = $('#ed' + k); if (el) el.oninput = () => { efm[k.toLowerCase()] = el.value; }; });
+    const eps = $('#edProvaSel');
+    if (eps) eps.onchange = () => { efm.provaId = eps.value; };
+    const submitEdital = async (payload) => {
+      if (efm.ano && !/^\d{4}$/.test(efm.ano)) return toast('Ano inválido.');
+      S.editalUploading = true; S.editalErr = ''; render();
+      try {
+        if (payload instanceof FormData) {
+          if (efm.banca) payload.append('banca', efm.banca);
+          if (efm.orgao) payload.append('orgao', efm.orgao);
+          if (efm.cargo) payload.append('cargo', efm.cargo);
+          if (efm.ano) payload.append('ano', efm.ano);
+          if (efm.provaId) payload.append('provaId', efm.provaId);
+        } else if (payload && typeof payload === 'object') {
+          Object.assign(payload, { banca: efm.banca, orgao: efm.orgao, cargo: efm.cargo, ano: efm.ano, provaId: efm.provaId });
+        }
+        const r = payload instanceof FormData ? await api('/editais', { method: 'POST', form: payload }) : await api('/editais', { method: 'POST', body: payload });
+        S.editalShowForm = false; S.edForm = null;
+        await refreshEditais({ silent: true });
+        toast(`Edital verticalizado: ${r.edital.resumo.totalDisciplinas} disciplinas e ${r.edital.resumo.totalTopicos} tópicos!`);
+      } catch (e) { S.editalErr = e.message; }
+      S.editalUploading = false; render();
+    };
+    const ef = $('#edFileIn'), edDrop = $('#edDrop');
+    if (ef) ef.onchange = () => { if (ef.files[0]) { const fd = new FormData(); fd.append('file', ef.files[0]); submitEdital(fd); } };
+    if (edDrop) {
+      ['dragenter', 'dragover'].forEach((t) => edDrop.addEventListener(t, (e) => { e.preventDefault(); edDrop.classList.add('over'); }));
+      ['dragleave', 'drop'].forEach((t) => edDrop.addEventListener(t, (e) => { e.preventDefault(); edDrop.classList.remove('over'); }));
+      edDrop.addEventListener('drop', (e) => { const f = e.dataTransfer.files[0]; if (f) { const fd = new FormData(); fd.append('file', f); submitEdital(fd); } });
+    }
+    on('#edModePaste', 'click', () => { S.editalMode = 'paste'; S.editalErr = ''; render(); });
+    on('#edModeFile', 'click', () => { S.editalMode = 'file'; render(); });
+    on('#edUsePaste', 'click', () => submitEdital({ text: $('#edPasteIn')?.value || '' }));
+    on('#edNewBtn', 'click', () => { S.editalShowForm = true; S.editalErr = ''; render(); });
+    on('#edCancelForm', 'click', () => { S.editalShowForm = false; S.editalErr = ''; render(); });
+    on('#edSendProva', 'click', () => {
+      const ed = S.activeEdital;
+      S.cform = { banca: ed?.banca && S.bancas.some((b) => b.id === ed.banca) ? ed.banca : '', orgao: ed?.orgao || '', cargo: ed?.cargo || '', ano: ed?.ano || '', files: [], gabarito: null, editalId: ed?.id || '', editalFile: null };
+      go('contribuir');
+    });
+    const sw = $('#edSwitch');
+    if (sw) sw.onchange = async () => {
+      try { const r = await api(`/editais/${sw.value}/ativar`, { method: 'POST' }); S.activeEdital = r.edital; await refreshEditais({ silent: true }); render(); }
+      catch (e) { toast(e.message); }
+    };
+    on('#edDelBtn', 'click', () => {
+      const ed = S.activeEdital; if (!ed) return;
+      confirmBox('Remover este edital?', `O edital "${ed.titulo}" será excluído. Seus materiais e simulados continuam salvos.`, 'Remover', true, async () => {
+        await api(`/editais/${ed.id}`, { method: 'DELETE' }).catch(() => {});
+        await refreshEditais();
+        toast('Edital removido');
+      });
+    });
+    on('[data-train-topic]', 'click', (e) => {
+      const [mat, top] = e.currentTarget.dataset.trainTopic.split('||');
+      S.wiz = newWiz();
+      if (S.materias.includes(mat)) S.wiz.materia = mat;
+      S.wiz.assunto = top.slice(0, 100);
+      go('gerar');
+      toast(`Envie seu resumo sobre "${top.slice(0, 50)}" para gerar questões focadas!`);
     });
   }
   if (S.view === 'estrelas') {
@@ -757,12 +1698,191 @@ function bindApp() {
     const fb = $('#fBanca'), fm = $('#fMat');
     if (fb) fb.onchange = () => { S.filter.banca = fb.value; render(); };
     if (fm) fm.onchange = () => { S.filter.materia = fm.value; render(); };
+    on('[data-btab]', 'click', (e) => { S.bancoTab = e.currentTarget.dataset.btab; render(); });
+    on('#btnToggleNewCad', 'click', () => { S.cadernoNewOpen = !S.cadernoNewOpen; S.bancoTab = 'cadernos'; render(); });
+    on('#btnCancelNewCad', 'click', () => { S.cadernoNewOpen = false; render(); });
+    const cf = S.cadForm || (S.cadForm = { banca: 'cebraspe', editalId: '', orgao: '', cargo: '', ano: '', titulo: '', descricao: '', importarExistentes: true });
+    on('[data-cad-banca]', 'click', (e) => { cf.banca = e.currentTarget.dataset.cadBanca; render(); });
+    const ces = $('#cadEditalSel');
+    if (ces) ces.onchange = () => {
+      cf.editalId = ces.value;
+      const ed = (S.editais || []).find((x) => x.id === cf.editalId);
+      if (ed) {
+        if (ed.banca && S.bancas.some((b) => b.id === ed.banca)) cf.banca = ed.banca;
+        if (ed.orgao && !cf.orgao) cf.orgao = ed.orgao;
+        if (ed.cargo && !cf.cargo) cf.cargo = ed.cargo;
+        if (ed.ano && !cf.ano) cf.ano = ed.ano;
+      }
+      render();
+    };
+    ['Titulo', 'Orgao', 'Cargo', 'Ano'].forEach((k) => { const el = $('#cad' + k); if (el) el.oninput = () => { cf[k.toLowerCase()] = el.value; }; });
+    const cim = $('#cadImportar'); if (cim) cim.onchange = () => { cf.importarExistentes = cim.checked; };
+    const ncf = $('#newCadForm');
+    if (ncf) ncf.onsubmit = async (ev) => {
+      ev.preventDefault();
+      if (!cf.banca) return toast('Escolha a banca do caderno.');
+      if (cf.ano && !/^\d{4}$/.test(cf.ano)) return toast('Ano inválido.');
+      S.cadernoBusy = true; render();
+      try {
+        const r = await api('/cadernos', { method: 'POST', body: cf });
+        S.cadernoNewOpen = false; S.cadForm = null;
+        S.activeCaderno = r.caderno;
+        await refreshCadernos({ silent: true });
+        S.view = 'caderno';
+        toast(`Caderno "${r.caderno.titulo}" criado com ${r.caderno.totalQuestoes} questão(ões)!`);
+      } catch (err) { toast(err.message); }
+      S.cadernoBusy = false; render();
+    };
+    on('[data-revanche]', 'click', (e) => {
+      const [mat, top, b] = e.currentTarget.dataset.revanche.split('||');
+      S.wiz = newWiz();
+      if (S.materias.includes(mat)) S.wiz.materia = mat;
+      if (top) S.wiz.assunto = top.slice(0, 100);
+      if (b && S.bancas.some((x) => x.id === b)) S.wiz.banca = b;
+      go('gerar');
+      toast(`Envie seu resumo de ${mat}${top ? ` (${top.slice(0, 40)})` : ''} para gerar uma bateria de revanche!`);
+    });
+  }
+  if (S.view === 'caderno' && S.activeCaderno) {
+    const c = S.activeCaderno;
+    on('[data-cad-ftab]', 'click', (e) => { S.cadernoFeedTab = e.currentTarget.dataset.cadFtab; render(); });
+    on('#printCaderno', 'click', () => window.print());
+    on('#delCaderno', 'click', () => confirmBox('Excluir este Caderno de Questões?', `O caderno "${c.titulo}" será removido. Seus materiais, provas e baterias avulsas continuam salvos.`, 'Excluir', true, async () => {
+      await api(`/cadernos/${c.id}`, { method: 'DELETE' }).catch(() => {});
+      S.activeCaderno = null;
+      await refreshCadernos({ silent: true });
+      go('questoes');
+      toast('Caderno excluído');
+    }));
+    on('#cadGoWizNewMat', 'click', () => {
+      S.wiz = newWiz();
+      S.wiz.cadernoId = c.id;
+      S.wiz.banca = c.banca;
+      if (c.editalId) S.wiz.editalId = c.editalId;
+      go('gerar');
+      toast(`Envie seu conteúdo para gerar novas questões direto no caderno "${c.titulo}"!`);
+    });
+    const useExistingMat = async (matId) => {
+      if (!matId) return toast('Selecione um material.');
+      S.cadFeedBusy = true; render();
+      try {
+        const r = await api(`/cadernos/${c.id}/alimentar-material`, { method: 'POST', body: { materialId: matId } });
+        S.activeCaderno = r.caderno;
+        S.wiz = newWiz();
+        S.wiz.cadernoId = c.id;
+        S.wiz.banca = c.banca;
+        S.wiz.editalId = c.editalId || r.material.editalId || '';
+        S.wiz.material = { id: r.material.id, fileName: r.material.fileName, detect: r.material.detect, editalMatch: r.material.editalMatch, wordCount: 500, preview: '' };
+        S.wiz.materia = r.material.materia && S.materias.includes(r.material.materia) ? r.material.materia : (r.material.detect?.materia && S.materias.includes(r.material.detect.materia) ? r.material.detect.materia : '');
+        S.wiz.step = 2;
+        S.cadFeedBusy = false;
+        go('gerar');
+        toast('Material selecionado! Confirme a matéria e gere novas questões para o seu caderno.');
+      } catch (err) { S.cadFeedBusy = false; toast(err.message); render(); }
+    };
+    on('#cadUseExistingMat', 'click', () => useExistingMat($('#cadPickMat')?.value));
+    on('[data-cad-gen-from-mat]', 'click', (e) => useExistingMat(e.currentTarget.dataset.cadGenFromMat));
+    on('#cadImportProvaBtn', 'click', async () => {
+      const provaId = $('#cadPickProva')?.value;
+      if (!provaId) return toast('Selecione uma prova da banca.');
+      S.cadFeedBusy = true; render();
+      try {
+        const r = await api(`/cadernos/${c.id}/alimentar-prova`, { method: 'POST', body: { provaId } });
+        S.activeCaderno = r.caderno;
+        S.cadernoFeedTab = '';
+        await refreshCadernos({ silent: true });
+        toast(r.message);
+      } catch (err) { toast(err.message); }
+      S.cadFeedBusy = false; render();
+    });
+    const cup = $('#cadUpProvaFile');
+    if (cup) cup.onchange = async () => {
+      const file = cup.files[0]; if (!file) return;
+      S.cadFeedBusy = true; render();
+      try {
+        const fd = new FormData(); fd.append('prova', file);
+        const r = await api(`/cadernos/${c.id}/alimentar-prova`, { method: 'POST', form: fd });
+        S.activeCaderno = r.caderno;
+        S.cadernoFeedTab = '';
+        await refreshCadernos({ silent: true });
+        toast(r.message);
+      } catch (err) { toast(err.message); }
+      S.cadFeedBusy = false; render();
+    };
+    on('#cadAttachSetBtn', 'click', async () => {
+      const setId = $('#cadPickSet')?.value;
+      if (!setId) return toast('Selecione uma bateria de questões.');
+      S.cadFeedBusy = true; render();
+      try {
+        const r = await api(`/cadernos/${c.id}/vincular-simulado`, { method: 'POST', body: { setId } });
+        S.activeCaderno = r.caderno;
+        S.sets = S.sets.map((s) => (s.id === setId ? { ...s, cadernoId: c.id } : s));
+        S.cadernoFeedTab = '';
+        await refreshCadernos({ silent: true });
+        toast('Bateria de questões adicionada ao caderno!');
+      } catch (err) { toast(err.message); }
+      S.cadFeedBusy = false; render();
+    });
+    const fs = $('#cadFStatus'), fo = $('#cadFOrigem'), fm = $('#cadFMat'), fq = $('#cadFQ');
+    if (fs) fs.onchange = () => { S.cadFilter.status = fs.value; render(); };
+    if (fo) fo.onchange = () => { S.cadFilter.origem = fo.value; render(); };
+    if (fm) fm.onchange = () => { S.cadFilter.materia = fm.value; render(); };
+    if (fq) fq.oninput = () => {
+      S.cadFilter.q = fq.value;
+      const pos = fq.selectionStart;
+      render();
+      const nfq = $('#cadFQ'); if (nfq) { nfq.focus(); try { nfq.setSelectionRange(pos, pos); } catch {} }
+    };
+    const interagir = async (body, msg) => {
+      const y = window.scrollY;
+      try {
+        const r = await api(`/cadernos/${c.id}/interagir`, { method: 'PATCH', body });
+        S.activeCaderno = r.caderno;
+        refreshCadernos({ silent: true });
+        if (msg) toast(msg);
+      } catch (err) { toast(err.message); }
+      render(); window.scrollTo({ top: y });
+    };
+    on('[data-cad-ans]', 'click', (e) => {
+      const [key, L] = e.currentTarget.dataset.cadAns.split(':::');
+      interagir({ key, resposta: L });
+    });
+    on('[data-cad-clear]', 'click', (e) => interagir({ key: e.currentTarget.dataset.cadClear, resposta: null }));
+    on('[data-cad-fav]', 'click', (e) => {
+      const key = e.currentTarget.dataset.cadFav;
+      const q = (c.questoes || []).find((x) => x.key === key);
+      interagir({ key, favorita: !q?.favorita });
+    });
+    on('[data-cad-note-toggle]', 'click', (e) => {
+      const key = e.currentTarget.dataset.cadNoteToggle;
+      S.cadNoteOpen = S.cadNoteOpen === key ? null : key;
+      const y = window.scrollY; render(); window.scrollTo({ top: y });
+    });
+    on('[data-cad-note-cancel]', 'click', () => { S.cadNoteOpen = null; const y = window.scrollY; render(); window.scrollTo({ top: y }); });
+    on('[data-cad-note-save]', 'click', (e) => {
+      const key = e.currentTarget.dataset.cadNoteSave;
+      const anotacao = ($('#cadNoteIn')?.value || '').trim();
+      S.cadNoteOpen = null;
+      interagir({ key, anotacao }, 'Anotação salva no caderno!');
+    });
+    on('#cadResetErros', 'click', () => confirmBox('Refazer questões erradas?', `As respostas das ${c.erros} questão(ões) que você errou serão limpas para você tentar novamente.`, 'Refazer erradas', false, () => interagir({ reset: 'erros' }, 'Questões erradas liberadas para revisão!')));
+    on('#cadResetAll', 'click', () => confirmBox('Refazer todo o caderno?', 'Todas as respostas deste caderno serão limpas para você resolver novamente.', 'Limpar e refazer', false, () => interagir({ reset: 'all' }, 'Caderno reiniciado!')));
+    on('[data-revanche]', 'click', (e) => {
+      const [mat, top, b] = e.currentTarget.dataset.revanche.split('||');
+      S.wiz = newWiz();
+      S.wiz.cadernoId = c.id;
+      if (S.materias.includes(mat)) S.wiz.materia = mat;
+      if (top) S.wiz.assunto = top.slice(0, 100);
+      if (b && S.bancas.some((x) => x.id === b)) S.wiz.banca = b;
+      go('gerar');
+      toast(`Envie seu resumo de ${mat} para gerar mais questões no seu caderno!`);
+    });
   }
   if (S.view === 'contribuir') {
     const f = S.cform;
     on('[data-cb]', 'click', (e) => { f.banca = e.currentTarget.dataset.cb; render(); });
     ['Orgao', 'Cargo', 'Ano'].forEach((k) => { const el = $('#c' + k); if (el) el.oninput = () => { f[k.toLowerCase()] = el.value; }; });
-    const addFiles = (list) => { f.files = f.files.concat([...list]).slice(0, 10); if (f.files.length > 1) f.gabarito = null; S.cResults = []; render(); };
+    const addFiles = (list) => { f.files = f.files.concat([...list]).slice(0, 10); if (f.files.length > 1) { f.gabarito = null; f.editalFile = null; } S.cResults = []; render(); };
     const cf = $('#cFiles'), cd = $('#cDrop');
     if (cf) cf.onchange = () => addFiles(cf.files);
     if (cd) {
@@ -771,7 +1891,47 @@ function bindApp() {
       cd.addEventListener('drop', (e) => addFiles(e.dataTransfer.files));
     }
     const cg = $('#cGab'); if (cg) cg.onchange = () => { f.gabarito = cg.files[0] || null; render(); };
+    const ces = $('#cEditalSel'); if (ces) ces.onchange = () => { f.editalId = ces.value; render(); };
+    const cef = $('#cEditalFile'); if (cef) cef.onchange = () => { f.editalFile = cef.files[0] || null; if (f.editalFile) f.editalId = ''; render(); };
+    on('#cRmEdital', 'click', () => { f.editalFile = null; render(); });
     on('[data-rmc]', 'click', (e) => { f.files.splice(+e.currentTarget.dataset.rmc, 1); render(); });
+    on('[data-open-edital]', 'click', async (e) => {
+      const id = e.currentTarget.dataset.openEdital;
+      try { await api(`/editais/${id}/ativar`, { method: 'POST' }); } catch {}
+      go('edital');
+    });
+    on('[data-toggle-link-edital]', 'click', (e) => {
+      const id = e.currentTarget.dataset.toggleLinkEdital;
+      S.linkProvaId = S.linkProvaId === id ? null : id;
+      render();
+    });
+    on('[data-save-link-edital]', 'click', async (e) => {
+      const id = e.currentTarget.dataset.saveLinkEdital;
+      const edId = $('#lpEdSel')?.value || '';
+      S.linkBusy = true; render();
+      try {
+        await api(`/provas/${id}/edital`, { method: 'POST', body: { editalId: edId } });
+        S.minhas = (await api('/provas/minhas')).provas;
+        await refreshEditais({ silent: true });
+        S.linkProvaId = null;
+        toast(edId ? 'Edital vinculado à prova com sucesso!' : 'Vínculo de edital removido.');
+      } catch (err) { toast(err.message); }
+      S.linkBusy = false; render();
+    });
+    on('[data-upload-link-edital]', 'change', async (e) => {
+      const id = e.currentTarget.dataset.uploadLinkEdital;
+      const file = e.currentTarget.files[0]; if (!file) return;
+      S.linkBusy = true; render();
+      try {
+        const fd = new FormData(); fd.append('edital', file);
+        const r = await api(`/provas/${id}/edital`, { method: 'POST', form: fd });
+        S.minhas = (await api('/provas/minhas')).provas;
+        await refreshEditais({ silent: true });
+        S.linkProvaId = null;
+        toast(`Edital "${r.editalTitulo}" verticalizado e vinculado à prova!`);
+      } catch (err) { toast(err.message); }
+      S.linkBusy = false; render();
+    });
     const form = $('#cForm');
     if (form) form.onsubmit = async (ev) => {
       ev.preventDefault();
@@ -779,19 +1939,23 @@ function bindApp() {
       if (f.ano && !/^\d{4}$/.test(f.ano)) return toast('Ano inválido.');
       S.cResults = [];
       const files = [...f.files];
+      let sharedEditalId = f.editalId || '';
       for (let i = 0; i < files.length; i++) {
         S.cBusy = `${i + 1}/${files.length}`; render();
         const fd = new FormData();
         fd.append('banca', f.banca); fd.append('orgao', f.orgao); fd.append('cargo', f.cargo); fd.append('ano', f.ano);
         fd.append('prova', files[i]);
         if (f.gabarito && files.length === 1) fd.append('gabarito', f.gabarito);
+        if (f.editalFile && i === 0) fd.append('edital', f.editalFile);
+        else if (sharedEditalId) fd.append('editalId', sharedEditalId);
         try {
           const r = await api('/provas', { method: 'POST', form: fd });
-          S.cResults.push(r.duplicate ? { name: files[i].name, dup: true, msg: r.message } : { name: files[i].name, ok: true, msg: 'Recebida. Em verificação.' });
+          if (r.editalId && !sharedEditalId) sharedEditalId = r.editalId;
+          S.cResults.push(r.duplicate ? { name: files[i].name, dup: true, msg: r.message } : { name: files[i].name, ok: true, msg: `Recebida. Em verificação.${r.editalId ? ' Edital vinculado!' : ''}` });
         } catch (e) { S.cResults.push({ name: files[i].name, msg: e.message }); if (e.status === 429) break; }
       }
-      S.cBusy = false; f.files = []; f.gabarito = null;
-      try { S.minhas = (await api('/provas/minhas')).provas; } catch {}
+      S.cBusy = false; f.files = []; f.gabarito = null; f.editalFile = null;
+      try { S.minhas = (await api('/provas/minhas')).provas; await refreshEditais({ silent: true }); } catch {}
       render();
     };
     schedulePoll();
@@ -839,8 +2003,8 @@ async function enterApp(user) {
   try {
     const [b, s] = await Promise.all([api('/bancas'), api('/sets')]);
     Object.assign(S, { bancas: b.bancas, materias: b.materias, niveis: b.niveis, sets: s.sets, loaded: true });
-    await refreshStars({ silent: true });
-    if (['provas', 'contribuir', 'gerar'].includes(S.view)) return go(S.view);
+    await Promise.all([refreshStars({ silent: true }), refreshEditais({ silent: true }), refreshCadernos({ silent: true })]);
+    if (['provas', 'contribuir', 'gerar', 'edital'].includes(S.view)) return go(S.view);
   } catch (e) { toast(e.message); }
   render();
 }
@@ -852,6 +2016,12 @@ async function enterApp(user) {
   if (acao) {
     S.authEmail = q.get('email') || ''; S.authCode = (q.get('codigo') || '').replace(/\D/g, '').slice(0, 6);
     history.replaceState(null, '', location.pathname + location.hash);
+    if (acao === 'verificar' && S.authEmail && S.authCode.length === 6) {
+      try {
+        const r = await api('/auth/verify', { method: 'POST', body: { email: S.authEmail, code: S.authCode } });
+        toast('E-mail confirmado. Bem-vindo!'); return await enterApp(r.user);
+      } catch (e) { S.authErr = e.message; }
+    }
     S.screen = 'auth'; S.auth = acao === 'redefinir' ? 'redefinir' : 'verificar'; render(); return;
   }
   try {
