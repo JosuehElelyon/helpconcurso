@@ -18,6 +18,10 @@ services:
       S3_ENDPOINT: ${S3_ENDPOINT_COMPOSE:-http://minio:9000}
     ports:
       - "3000:3000"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./migrations:/app/migrations
     depends_on:
       db: { condition: service_healthy }
       minio: { condition: service_started }
