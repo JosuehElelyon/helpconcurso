@@ -8,32 +8,80 @@ SaaS que gera questões de concurso no estilo de cada banca (FGV, CEBRASPE, FCC,
 a partir do material de estudo do aluno. Princípio do produto: **o conhecimento acumulado (provas da base,
 estilo aprendido, questões avaliadas, erros confirmados) é do HelpConcurso, não do fornecedor de IA.**
 
-## Estado atual: v1.1 (MVP completo, pronto para teste com usuários)
+## Estado atual: v1.4 (editais, cadernos de questões, controle de custo) — em teste com IA real
+Base v1.1:
 - Node 22 + Express + PostgreSQL (SQL puro, migrações em `migrations/`), front sem framework em `public/`
-- Contas com código por e-mail (SMTP/Brevo), recuperação de senha, cadastro só para convidados
+- Contas (SMTP/Brevo), recuperação de senha, cadastro só para convidados
 - Upload de material (PDF inclusive escaneado via OCR por IA, DOCX, DOC, TXT) + identificação da matéria
 - Geração no estilo da banca + **revisor automático** (2ª IA resolve sem gabarito; descarta e refaz)
 - Base compartilhada de provas: envio por todos, checagem por IA, duplicatas, revisão admin, confiança
-- Segurança de upload em camadas (`src/security/`, `docs/SEGURANCA.md`): texto oculto/sobrescrito,
-  prompt injection, macros, JS em PDF, zip bomb etc.
-- IA trocável por tarefa via `.env` (`src/ai/`, `docs/IA.md`), modelo reserva, registro de uso
+- Segurança de upload em camadas (`src/security/`, `docs/SEGURANCA.md`)
+- IA trocável por tarefa via `.env` (`src/ai/`, `docs/IA.md`), modelo reserva, registro de uso (`ai_usage`)
 - Avaliação 👍/👎, reportar erro (verificado por IA), estrelas e níveis (`src/services/stars.js`)
-- 41 testes: `npm test` (precisa de PostgreSQL em `DATABASE_URL`; usa `AI_MOCK=true`)
 
-## Como roda na máquina do Josueh (Windows + Docker Desktop)
-- Pasta: `C:\helpconcurso` (fora do OneDrive). `docker compose up -d --build`
+Novo na v1.2 (migrações `004_editais.sql`, `005_provas_editais_link.sql`):
+- **Edital verticalizado** (`src/services/edital.js`, `src/routes/editais.js`, tela "Meu edital"):
+  aluno envia o edital (arquivo ou texto); a IA (`edital_parse`) extrai disciplinas e tópicos com IDs `D1-T1`.
+  Editais longos são recortados por `extractProgrammaticSample()` (início + anexo de conteúdo programático).
+  Um edital fica "ativo" por aluno (`POST /api/editais/:id/ativar`).
+- **Cruzamento Material × Edital** (`edital_match`): ao enviar material com `editalId` (ou `POST /api/materials/:id/edital`),
+  grava `materials.edital_match` com tópicos cobertos (completo/parcial), faltantes e % da disciplina.
+- **Questões ligadas ao edital**: o prompt de geração recebe os tópicos cobertos e cada questão traz `topico_edital`;
+  `question_sets.edital_id` guarda o vínculo.
+- **Painel de avanço** (`buildEditalDashboard`): por tópico/disciplina — pendente → estudado → praticado → dominado
+  (≥70% de acerto), cobertura %, questões geradas/respondidas/acertos.
+- **Prova ↔ Edital**: ao enviar prova dá para anexar o edital (`edital` no upload) ou vincular depois
+  (`POST /api/provas/:id/edital`); `getKnowledge()` prioriza provas do mesmo edital como exemplos de estilo.
+- Logs padronizados para achar erros: `[ERRO-IA]`, `[ERRO-SMTP]`, `[ERRO-FILA]`, `[ERRO-BANCO]`, `[ERRO-INTERNO]`.
+- SMTP com 2 tentativas e fallback que imprime o e-mail no console.
+- Filtro de injeção ajustado para não marcar "Instrução Normativa" (texto legítimo de legislação).
+- Testes: 46 (`npm test`, IA simulada). Rodam num banco próprio (`<banco>_test`, criado por `test/setup.js`;
+  ou `TEST_DATABASE_URL`), sem sujar o banco de desenvolvimento. Os testes de prova (fila) às vezes falham por tempo; rode de novo.
+
+Novo na v1.3/v1.4 (migração `006_cadernos.sql`):
+- **Caderno de erros** + "revanche IA" no tópico; **incidência real da banca** por tópico do edital; **impressão/PDF** do simulado.
+- **Cadernos de questões** (`src/routes/cadernos.js`): por banca/concurso/edital; reúnem simulados (`question_sets.caderno_id`),
+  materiais, provas antigas (questões reais copiadas em `cadernos.questoes_extras`), favoritas, anotações e "refazer erradas".
+- `getKnowledge()` pontua exemplos reais por subtema e prioriza provas do caderno/edital.
+
+## Segurança — revisão de 02/11/2026 (corrigido)
+- Cadastro nunca sobrescreve conta confirmada (nem de admin/convidado) e só ativa conta com o código do e-mail;
+  se o SMTP falhar, a conta fica pendente e o aluno usa "Reenviar código". Teste cobre a tentativa de tomar a conta do admin.
+- Vínculos prova↔edital checam o dono (`createEditalForUser`, `submitProva`, duplicata em `POST /api/provas`).
+- Tópicos/título do edital entram no prompt de geração via `untrusted()`.
+- Caderno: corrigida consulta a coluna inexistente (`editais.disciplinas`) que quebrava caderno com edital; teto de 3000 favoritas/anotações.
+- Pendente de desenho: `provas.edital_id` é uma coluna só, mas provas são compartilhadas e editais são por aluno
+  (precisa de tabela de ligação — ver `editais_canonicos` em `docs/ARQUITETURA-CONHECIMENTO.md`).
+
+## Custo de IA (conta Anthropic do Josueh, crédito pré-pago de US$ 5)
+- Modelos por tarefa em `src/config.js` (`AI_TASKS`): Sonnet em `generate`, `prova_analysis`, `report_check`;
+  Haiku no resto. Trocar via `AI_MODEL_<TAREFA>` no `.env`. Sonnet custa ~20× o Haiku.
+- Preços e cálculo de custo num lugar só: `src/ai/pricing.js` (painel admin e limite diário usam). Atualize ao trocar de modelo.
+- **Limite diário** `AI_LIMITE_USD_DIA` (hoje 0.50, dia de Brasília): ao atingir, `runText`/`submitBatch` lançam `AiError` com
+  `code='budget'`; a fila adia tarefas por 30 min sem gastar tentativa. Painel admin mostra "Hoje: US$ x de US$ y".
+- **Modo lote** ligado (`AI_TRAINING_MODE=batch`): análise/extração de provas pela Batch API (50% mais barato; a prova leva
+  de minutos a horas para ficar pronta).
+- Custo médio observado: prova ≈ US$ 0,02 (direto) · caderno ≈ US$ 0,07 · edital ≈ US$ 0,003. Maior gasto: `prova_analysis` (Sonnet).
+- O cache de prompt (`cacheSystem` na geração) quase não é reaproveitado com pouco tráfego; a escrita de cache não é registrada.
+- Uso real: tabela `ai_usage` (ou painel admin → IA; o provedor `mock` fica de fora). Para testar sem gastar: `AI_MOCK=true`.
+
+## Como roda na máquina (Windows + Docker Desktop)
+- Pasta: `C:\helpconcursos\helpconcurso` (fora do OneDrive). Repositório git local já criado (branch `main`).
+- Hoje o build da imagem do app falha (`npm ci` dentro do container leva ECONNRESET no registry). Por isso:
+  serviços no Docker: `docker compose up -d db minio mailpit`; app no host: `npm start` (ou `npm run dev`).
 - App: http://localhost:3000 · Mailpit: http://localhost:8025 · MinIO: http://localhost:9001
+- `.env` já tem `JWT_SECRET`, SMTP do Brevo e `ANTHROPIC_API_KEY` (`AI_MOCK=false`). Remetente: `SMTP_FROM`.
 - Acesso público: `docker run --rm cloudflare/cloudflared:latest tunnel --url http://host.docker.internal:3000`
-  e colocar a URL em `APP_URL` no `.env`, depois `docker compose up -d`
-- Logs: `docker compose logs app --tail 50`
+  e colocar a URL em `APP_URL` no `.env`.
 
 ## Pendências
-1. Enviar o código para o GitHub (repositório privado `JosuehElelyon/helpconcurso`): o zip não traz o histórico,
-   então: `git init`, `git add -A`, `git commit -m "HelpConcurso v1.1"`, `git branch -M main`, `git remote add origin ...`, `git push -u origin main`.
-2. Primeiro teste real com a IA (até agora só testado com `AI_MOCK=true`): enviar 2–3 provas por banca,
-   gerar cadernos, avaliar a qualidade e ajustar os prompts em `src/lib/prompts.js`.
-3. V2 (não fazer agora): ver `docs/ROADMAP.md` (chave de IA do próprio aluno, aprendizado com questões
-   avaliadas, desconto por estrelas, consulta de legislação, pagamentos).
+1. `git push -u origin main` (remote `JosuehElelyon/helpconcurso` já configurado).
+2. Arquitetura de conhecimento (`docs/ARQUITETURA-CONHECIMENTO.md`): começar pela Fase 1 — taxonomia própria,
+   editais canônicos (ler cada edital uma vez), extração rotulada de provas, `prompt_versao`.
+3. Teste real com a IA: provas por banca, editais, cadernos; avaliar qualidade e ajustar `src/lib/prompts.js`.
+4. Resolver o build Docker do app (rede do container → registry npm).
+5. Atualizar `docs/ROADMAP.md` e `docs/IA.md` com editais e cadernos.
+6. V2: ver `docs/ROADMAP.md`.
 
 ## Regras
 - Nunca coloque chaves/senhas em código, commits ou mensagens; só no `.env` (que está no `.gitignore`).
