@@ -7,7 +7,7 @@ import { COMANDOS, PEGADINHAS, HABILIDADES } from './cobranca.js';
 // Versão de cada prompt, gravada em ai_usage.prompt_versao. Ao mudar o texto de um prompt de forma relevante, suba a versão:
 // é isso que permite comparar qualidade e custo entre versões e reprocessar só o que foi feito com a versão antiga.
 export const PROMPT_VERSAO = {
-  detect: 'v1', generate: 'v2', generate_dificil: 'v2', ocr: 'v1', prova_check: 'v1', prova_analysis: 'v1', prova_extract: 'v2',
+  detect: 'v1', generate: 'v3', generate_dificil: 'v3', ocr: 'v1', prova_check: 'v1', prova_analysis: 'v1', prova_extract: 'v2',
   review: 'v1', report_check: 'v1', edital_parse: 'v1', edital_match: 'v1', json_repair: 'v1',
 };
 
@@ -42,11 +42,27 @@ ${list(`ESTILO APRENDIDO DE ${k.provas} PROVA(S) ANTERIOR(ES)`, k.caracteristica
 ${list('PADRÕES DE ENUNCIADO OBSERVADOS', k.padroes)}
 ${list('PEGADINHAS RECORRENTES', k.pegadinhas)}
 
+TÉCNICA DE ELABORAÇÃO (é o que separa questão de banca de cópia da lei):
+- Não transcreva o dispositivo: transforme-o — aplique a um caso concreto, use sinônimo técnico, inverta causa e consequência ou combine dois dispositivos.
+- A pegadinha precisa estar CONSTRUÍDA no texto (troca de termo, prazo, exceção, sujeito, quantificador ou ressalva), não apenas descrita no campo "pegadinha".
+- A questão errada deve parecer certa numa leitura apressada; a certa pode ser uma paráfrase menos óbvia do material.
+- Cada questão cobra um ponto DIFERENTE: distribua pelo material inteiro, não só pelo começo.
+- Sem pistas: palavras absolutas (sempre, nunca, apenas) não podem aparecer só nas erradas; alternativas com extensão parecida.
+- Não repita o comando da questão (ex.: "Julgue o item") dentro de cada enunciado.
+
 Use os exemplos abaixo só para imitar estilo, extensão e tipo de raciocínio — NUNCA copie o conteúdo deles.
 ${exemplos}`;
   const formato = ce
     ? 'Formato CEBRASPE: cada questão é um ITEM (assertiva) para julgar CERTO ou ERRADO. Quando fizer sentido, agrupe itens a partir de uma situação hipotética curta repetida no início do enunciado. Distribua os gabaritos de forma equilibrada (cerca de metade C, metade E). "alternativas" deve ser [] e "gabarito" deve ser "C" ou "E".'
     : 'Formato múltipla escolha com EXATAMENTE 5 alternativas (A a E) e apenas UMA correta. "alternativas" é uma lista de 5 textos SEM a letra no início. "gabarito" é a letra correta ("A" a "E"). Varie a posição da alternativa correta.';
+  const NIVEL_GUIA = {
+    'Fácil': 'Nível Fácil: reconhecimento direto de um conceito ou dispositivo por questão, com paráfrase simples.',
+    'Médio': 'Nível Médio: paráfrase e aplicação; pelo menos metade das questões parte de uma situação hipotética curta; pegadinha de troca de termo ou prazo.',
+    'Difícil': 'Nível Difícil: quase todas as questões partem de uma situação hipotética; exija combinar dois dispositivos ou regra e exceção; pegadinhas sutis (ressalva, exceção, quantificador, sujeito). Nenhuma questão pode ser resolvida só por memória literal do texto.',
+    'Misto': 'Nível Misto: cerca de um terço Fácil, um terço Médio e um terço Difícil, seguindo a técnica de cada nível.',
+  };
+  const guiaNivel = NIVEL_GUIA[p.nivel] ? `
+${NIVEL_GUIA[p.nivel]}` : '';
   const repo = p.evitar?.length
     ? `QUESTÕES DE REPOSIÇÃO: algumas questões foram descartadas pelo revisor. Elabore ${p.qtd} questão(ões) NOVA(S), diferentes destas já aprovadas:\n${p.evitar.map((e) => '- ' + e.slice(0, 160)).join('\n')}\nCapriche para que cada uma tenha UMA única resposta inequivocamente sustentada pelo material.\n\n`
     : '';
@@ -54,7 +70,7 @@ ${exemplos}`;
     ? `\n${untrusted('TÓPICOS DO EDITAL VINCULADO', `Edital: ${String(p.editalTitulo || 'Edital do aluno').slice(0, 140)}\n` + p.editalContext.map((t) => `- [${t.id}] ${t.codigo ? t.codigo + ' ' : ''}${t.nome}`).join('\n'))}\nEm cada questão, preencha "topico_edital" com o item da lista de tópicos do edital acima que mais diretamente se relaciona à questão (formato "[ID] código nome").\n`
     : '';
   const prompt = `${repo}TAREFA: elabore ${p.qtd} questões INÉDITAS de ${p.materia}${p.assunto ? ` (foco: ${p.assunto})` : ''}, nível de dificuldade: ${p.nivel}, baseadas EXCLUSIVAMENTE no conteúdo do material do aluno abaixo. Toda questão deve ser respondível com base no material; não invente fatos que o contradigam.
-${formato}${editalBlk}
+${formato}${guiaNivel}${editalBlk}
 
 Para cada questão inclua: comentário explicando o gabarito (e por que as demais estão erradas, se for múltipla escolha), o trecho do material que fundamenta a resposta (citação curta e LITERAL, copiada do material) e, se houver, a pegadinha típica da banca usada.
 
