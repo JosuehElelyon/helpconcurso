@@ -48,8 +48,15 @@ before(async () => {
   srv = spawn(process.execPath, ['src/server.js'], { env: { ...process.env, PORT: String(PORT), APP_URL: URL, AI_MOCK: 'true', AI_TRAINING_MODE: 'direct', S3_DISABLED: 'true', SMTP_HOST: '', REGISTRATION_MODE: 'allowlist', ADMIN_EMAILS: emails.admin, ALLOWED_EMAILS: `${emails.user},${emails.amanda}`, TRUST_AUTO_APPROVE_MIN: '5', BLOCKED_UPLOADS_BEFORE_LOCK: '3' } });
   srv.stdout.on('data', (d) => (log += d)); srv.stderr.on('data', (d) => (log += d));
   for (let i = 0; i < 80; i++) { try { if ((await fetch(URL + '/api/health')).ok) break; } catch {} await sleep(200); }
-  await signup(admin, emails.admin, 'Admin');
-  await signup(user, emails.user, 'Usuário Teste');
+  try {
+    await signup(admin, emails.admin, 'Admin');
+    await signup(user, emails.user, 'Usuário Teste');
+  } catch (err) {
+    console.error('--- SERVER LOG ON FAILURE ---');
+    console.error(log);
+    console.error('--- END SERVER LOG ---');
+    throw err;
+  }
 });
 after(() => srv?.kill());
 

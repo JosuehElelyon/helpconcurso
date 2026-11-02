@@ -66,8 +66,8 @@ Novo na v1.3/v1.4 (migração `006_cadernos.sql`):
 - **Cascata grátis** (`AI_FREE_CASCADE`, desligada por padrão; ligada no .env do Josueh): Groq na triagem/revisão,
   Gemini na geração/análise, Claude de reserva (`routeFor()` em `src/ai/index.js`, catálogo `FREE_AGENT_CATALOG` em `src/config.js`).
   Custo 0 só para o que está em `AI_PROVEDORES_GRATIS`. **Material do aluno só no Claude** (`AI_TASKS[*].dados` +
-  `AI_PROVEDORES_PRIVADOS`); provas/editais (públicos) na cascata grátis. Haiku gera, Sonnet revisa (revisor ≠ gerador por modelo,
-  `avoid`); análise de estilo com Sonnet primeiro (`pagoPrimeiro`). Teto diário bloqueia só modelos pagos. Benchmark: `scripts/benchmark-ia.js`.
+  `AI_PROVEDORES_PRIVADOS`); provas/editais (públicos) na cascata grátis. Fácil/Médio: Haiku gera (`generate`); Difícil/Misto: Sonnet gera (`generate_dificil`); o outro modelo revisa (revisor ≠ gerador por modelo,
+  `avoid`); análise de estilo com Sonnet primeiro (`pagoPrimeiro`). Teto diário bloqueia só modelos pagos. Benchmarks: `npm run benchmark` (velocidade/formato) e `npm run eval` (qualidade, Sonnet como juiz; `EVAL_NIVEL=Médio`).
   Riscos e próximos passos em `docs/PLANO-ACAO.md` (privacidade da cota grátis, modo lote, qualidade por modelo).
 - Uso real: tabela `ai_usage` (ou painel admin → IA; o provedor `mock` fica de fora). Para testar sem gastar: `AI_MOCK=true`.
 

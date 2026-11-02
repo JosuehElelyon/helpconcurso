@@ -10,7 +10,8 @@ function respond(task, req) {
   switch (task) {
     case 'detect':
       return { materia: /licita|ato administrativ|administração pública/i.test(data) ? 'Direito Administrativo' : 'Língua Portuguesa', confianca: 0.9, temas: ['Tema de teste'], resumo: 'Resumo de teste (modo simulado).', outras: [] };
-    case 'generate': {
+    case 'generate':
+    case 'generate_dificil': {
       const n = Number((all.match(/elabore (\d+) quest/i) || [])[1] || 5);
       const ce = /Formato CEBRASPE/.test(all);
       const ss = sentences(untrusted(all, 'MATERIAL DO ALUNO'));

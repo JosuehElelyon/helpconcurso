@@ -155,3 +155,10 @@ test('retry-after fica entre 1 s e 1 h', async () => {
   assert.equal(fromHttp(429, '', null, h('lixo')).retryAfterMs, null);
   assert.equal(fromHttp(429, '', null, h('12')).retryAfterMs, 12000);
 });
+
+test('gerador por nível: Fácil/Médio no Haiku, Difícil/Misto no Sonnet — revisor é sempre o outro modelo', () => {
+  assert.equal(routeFor('generate')[0].model, 'claude-haiku-5-5');
+  const dificil = routeFor('generate_dificil');
+  assert.equal(dificil[0].model, 'claude-sonnet-5-5');
+  assert.ok(dificil.every((r) => r.provider === 'anthropic'), 'material do aluno só no Claude');
+});

@@ -7,7 +7,7 @@ import { COMANDOS, PEGADINHAS, HABILIDADES } from './cobranca.js';
 // Versão de cada prompt, gravada em ai_usage.prompt_versao. Ao mudar o texto de um prompt de forma relevante, suba a versão:
 // é isso que permite comparar qualidade e custo entre versões e reprocessar só o que foi feito com a versão antiga.
 export const PROMPT_VERSAO = {
-  detect: 'v1', generate: 'v2', ocr: 'v1', prova_check: 'v1', prova_analysis: 'v1', prova_extract: 'v2',
+  detect: 'v1', generate: 'v2', generate_dificil: 'v2', ocr: 'v1', prova_check: 'v1', prova_analysis: 'v1', prova_extract: 'v2',
   review: 'v1', report_check: 'v1', edital_parse: 'v1', edital_match: 'v1', json_repair: 'v1',
 };
 

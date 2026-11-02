@@ -28,6 +28,8 @@ export const FREE_AGENT_CATALOG = [
 export const AI_TASKS = {
   detect:         { label: 'Identificar matéria do material',           dados: 'aluno',   tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
   generate:       { label: 'Gerar questões',                            dados: 'aluno',   tier: 'strong', preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  // Nível Difícil/Misto: no benchmark com juiz, Haiku 58 × Sonnet 80 no Difícil (empate no Médio: 68 × 67) — docs/BENCHMARK-*.md
+  generate_dificil: { label: 'Gerar questões (nível Difícil/Misto)',  dados: 'aluno',   tier: 'strong', preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
   ocr:            { label: 'Ler PDF escaneado (OCR)',                   dados: 'aluno',   tier: 'fast',   preferred: [],                               primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
   prova_check:    { label: 'Checagem automática de prova enviada',      dados: 'publico', tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
   prova_analysis: { label: 'Analisar estilo da banca',                  dados: 'publico', tier: 'strong', preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5', pagoPrimeiro: true },

@@ -92,3 +92,13 @@ além das provas. A confirmar com o D5 (benchmark difícil) e com os números re
 
 Valor extra grátis (dados públicos, sem custo de token): reprocessar provas antigas sem rótulo (Fase 1), dupla extração
 com consenso de gabarito, e montar o `perfil_banca` da Fase 2 com os modelos grátis.
+
+### Ajuste após o D5 (02/11/2026)
+Benchmark com juiz (Sonnet): Difícil — Haiku 58 × Sonnet 80 (Gemini Flash 81, mas não recebe material do aluno);
+Médio — Haiku 68 × Sonnet 67. Decisão: **gerador por nível** — `generate` (Haiku) para Fácil/Médio e
+`generate_dificil` (Sonnet → Haiku) para Difícil/Misto; o revisor continua sendo sempre o outro modelo.
+Custo estimado por 10 questões: Fácil/Médio ≈ US$ 0,04 · Difícil/Misto ≈ US$ 0,15.
+
+Próximo ganho sem custo extra: nos dois níveis o juiz deu nota baixa em **dificuldade** (8–14 de 25) — as questões
+copiam a lei. Melhorar `promptGenerate` (situação hipotética, combinar dispositivos, cobrir mais do material, não repetir
+"Julgue o item" no enunciado) e medir de novo com `npm run eval` / `EVAL_NIVEL=Médio npm run eval`.

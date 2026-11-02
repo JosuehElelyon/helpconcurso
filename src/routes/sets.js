@@ -95,9 +95,11 @@ r.post('/', perUser, ah(async (req, res) => {
     // Gera N questões, normaliza e passa pela varredura de segurança
     const editalContext = m.edital_match?.topicos_cobertos || [];
     const editalTitulo = m.edital_match?.edital_titulo || '';
+    // Fácil/Médio: Haiku gera (barato, empatou com o Sonnet no Médio); Difícil/Misto: Sonnet gera (pegadinha mais fina)
+    const genTask = ['Difícil', 'Misto'].includes(b.nivel) ? 'generate_dificil' : 'generate';
     const gen = async (qtd, evitar) => {
       let count = 0;
-      const { data, meta } = await runJSON('generate', {
+      const { data, meta } = await runJSON(genTask, {
         ...promptGenerate({ ...b, qtd, evitar, text: m.text, knowledge, editalContext, editalTitulo }), cacheSystem: true, maxTokens: Math.min(32000, 1300 * qtd + 1500), userId: req.user.id, signal: ctrl.signal,
         onText: (snap) => { const n = (snap.match(/"enunciado"\s*:/g) || []).length; if (n > count) { count = n; send({ type: 'progress', count: Math.min(b.qtd, progressBase + count) }); } },
       }, generateSchema);
