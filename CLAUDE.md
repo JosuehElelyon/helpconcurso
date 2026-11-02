@@ -63,6 +63,10 @@ Novo na v1.3/v1.4 (migração `006_cadernos.sql`):
   de minutos a horas para ficar pronta).
 - Custo médio observado: prova ≈ US$ 0,02 (direto) · caderno ≈ US$ 0,07 · edital ≈ US$ 0,003. Maior gasto: `prova_analysis` (Sonnet).
 - O cache de prompt (`cacheSystem` na geração) quase não é reaproveitado com pouco tráfego; a escrita de cache não é registrada.
+- **Cascata grátis** (`AI_FREE_CASCADE`, desligada por padrão; ligada no .env do Josueh): Groq na triagem/revisão,
+  Gemini na geração/análise, Claude de reserva (`routeFor()` em `src/ai/index.js`, catálogo `FREE_AGENT_CATALOG` em `src/config.js`).
+  Custo 0 só para o que está em `AI_PROVEDORES_GRATIS`. O revisor usa provedor diferente do gerador (`avoidProvider`).
+  Riscos e próximos passos em `docs/PLANO-ACAO.md` (privacidade da cota grátis, modo lote, qualidade por modelo).
 - Uso real: tabela `ai_usage` (ou painel admin → IA; o provedor `mock` fica de fora). Para testar sem gastar: `AI_MOCK=true`.
 
 ## Como roda na máquina (Windows + Docker Desktop)

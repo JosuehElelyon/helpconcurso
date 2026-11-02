@@ -64,13 +64,12 @@ async function checkReport({ feedbackId }) {
   const resp = data.resposta_correta.trim().toUpperCase().charAt(0);
   const confirmed = !data.gabarito_correto || data.ambigua;
   const result = { confirmado: confirmed, respostaCorreta: confirmed && resp && resp !== q.gabarito ? resp : null, ambigua: data.ambigua, explicacao: data.explicacao };
-  await query('UPDATE question_feedback SET report_status=$2, report_result=$3, updated_at=now() WHERE id=$1', [f.id, confirmed ? 'confirmed' : 'rejected', JSON.stringify(result)]);
   if (confirmed) {
     const qs = s.questoes.map((x, k) => (k === f.q_index ? { ...x, contestada: { respostaCorreta: result.respostaCorreta, ambigua: data.ambigua, explicacao: data.explicacao } } : x));
     await query('UPDATE question_sets SET questoes=$2, updated_at=now() WHERE id=$1', [s.id, JSON.stringify(qs)]);
     result.estrelas = await award(f.user_id, 'erro_confirmado', config.stars.erroConfirmado, f.id, 'Encontrou um erro numa questão');
-    await query('UPDATE question_feedback SET report_result=$2 WHERE id=$1', [f.id, JSON.stringify(result)]);
   }
+  await query('UPDATE question_feedback SET report_status=$2, report_result=$3, updated_at=now() WHERE id=$1', [f.id, confirmed ? 'confirmed' : 'rejected', JSON.stringify(result)]);
 }
 registerJob('question.report_check', {
   run: checkReport, maxAttempts: 4,

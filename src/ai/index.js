@@ -24,6 +24,9 @@ function getProvider(name) {
   else if (name === 'anthropic') {
     if (!config.ai.keys.anthropic) throw new AiError('ANTHROPIC_API_KEY não configurada.', { code: 'not_configured', fallback: true });
     p = createAnthropic({ apiKey: config.ai.keys.anthropic, timeoutMs: config.ai.timeoutMs });
+  } else if (name === 'fcc') {
+    if (!config.ai.keys.fcc || !config.ai.baseUrls.fcc) throw new AiError('FCC_API_KEY / FCC_BASE_URL não configurada.', { code: 'not_configured', fallback: true });
+    p = createAnthropic({ name: 'fcc', apiKey: config.ai.keys.fcc, baseUrl: config.ai.baseUrls.fcc, timeoutMs: config.ai.timeoutMs, allowPdf: false });
   } else if (name in config.ai.baseUrls) {
     if (!config.ai.keys[name] || !config.ai.baseUrls[name]) throw new AiError(`${name.toUpperCase()}_API_KEY não configurada.`, { code: 'not_configured', fallback: true });
     p = createOpenAICompat({ name, apiKey: config.ai.keys[name], baseUrl: config.ai.baseUrls[name], timeoutMs: config.ai.timeoutMs });
@@ -32,10 +35,33 @@ function getProvider(name) {
   return p;
 }
 const parseSpec = (spec) => { const i = spec.indexOf(':'); return { provider: spec.slice(0, i), model: spec.slice(i + 1) }; };
+const splitSpecs = (val) => (val ? String(val).split(',').map((s) => s.trim()).filter(Boolean) : []);
+
 export function routeFor(task) {
   const t = config.ai.tasks[task];
   if (!t) throw new AiError(`Tarefa de IA desconhecida: ${task}`, { code: 'not_configured', fallback: false });
-  return [t.primary, t.fallback].filter(Boolean).map(parseSpec);
+  const baseSpecs = [...splitSpecs(t.primary), ...splitSpecs(t.fallback)];
+  // Se AI_FREE_CASCADE estiver ativo e a tarefa não tiver um modelo forçado manualmente no .env,
+  // monta a cadeia multi-agente com todos os provedores gratuitos configurados antes do modelo pago.
+  let specs = baseSpecs;
+  if (config.ai.freeCascade && !t.explicitPrimary && task !== 'ocr') {
+    const useFreeFirst = t.tier === 'fast' || config.ai.freeGenerate || !config.ai.keys.anthropic;
+    if (useFreeFirst) {
+      let available = (config.ai.freeCatalog || []).filter((a) => !!config.ai.keys[a.provider]);
+      if (Array.isArray(t.preferred) && t.preferred.length) {
+        available = [...available].sort((a, b) => {
+          const ia = t.preferred.indexOf(a.provider);
+          const ib = t.preferred.indexOf(b.provider);
+          if (ia !== -1 && ib !== -1) return ia - ib;
+          return 0;
+        });
+      }
+      const freeSpecs = available.map((a) => `${a.provider}:${t.tier === 'strong' ? a.strong : a.fast}`);
+      if (freeSpecs.length) specs = [...freeSpecs, ...baseSpecs];
+    }
+  }
+  const seen = new Set();
+  return specs.filter((s) => { if (seen.has(s)) return false; seen.add(s); return true; }).map(parseSpec);
 }
 
 // ---------- Disjuntor: depois de 5 falhas seguidas, pula o modelo por 60 s ----------
@@ -68,7 +94,7 @@ export const _resetBudgetCache = () => { budget.at = 0; }; // para testes
 
 async function logUsage(row) {
   if (row.ok && row.usage && row.provider !== 'mock' && budget.day === todayBR()) {
-    budget.usd += costUsd(row.model, row.usage.input, row.usage.output, row.usage.cacheRead, row.batch);
+    budget.usd += costUsd(row.model, row.usage.input, row.usage.output, row.usage.cacheRead, row.batch, row.provider);
   }
   try {
     await query(`INSERT INTO ai_usage(task,provider,model,input_tokens,output_tokens,cache_read_tokens,duration_ms,ok,fallback,batch,error,user_id,prompt_versao)
@@ -81,10 +107,12 @@ async function logUsage(row) {
  * Executa uma tarefa de IA e devolve o texto.
  * @param {string} task  chave de AI_TASKS
  * @param {{system?:string, prompt:string, pdf?:string, maxTokens?:number, temperature?:number,
- *          onText?:(s:string)=>void, signal?:AbortSignal, userId?:string, cacheSystem?:boolean}} req
+ *          onText?:(s:string)=>void, signal?:AbortSignal, userId?:string, cacheSystem?:boolean,
+ *          avoidProvider?:string}} req  avoidProvider: joga esse provedor para o fim da fila (revisor ≠ gerador)
  */
 export async function runText(task, req) {
   let routes = routeFor(task);
+  if (req.avoidProvider) routes = [...routes.filter((r) => r.provider !== req.avoidProvider), ...routes.filter((r) => r.provider === req.avoidProvider)];
   if (req.preferFallback && routes.length > 1) routes = [routes[1], routes[0]];
   await assertBudget(task);
   const content = [...(req.pdf ? [{ type: 'pdf', data: req.pdf }] : []), { type: 'text', text: req.prompt }];
@@ -137,6 +165,9 @@ export async function runText(task, req) {
 }
 
 // ---------- JSON ----------
+// Prévia da resposta nos logs de erro: curta, e nenhuma em produção (pode conter trecho do material do aluno)
+const logPreview = (t) => (config.env === 'production' ? '(oculto em produção)' : String(t || '').slice(0, 120).replace(/\s+/g, ' '));
+
 export function extractJSON(text) {
   const s = String(text).replace(/```(?:json)?/gi, '').trim();
   const a = s.indexOf('{'), b = s.lastIndexOf('}');
@@ -159,7 +190,7 @@ export async function runJSON(task, req, schema) {
     try { obj = extractJSON(out.text); }
     catch (e) {
       lastErr = e;
-      const preview = String(out.text || '').slice(0, 300).replace(/\s+/g, ' ');
+      const preview = logPreview(out.text);
       console.warn(`[ERRO-IA] [JSON-INVALIDO] tarefa=${task} modelo=${out.provider}:${out.model} rodada=${round + 1}/2 msg="${e.message}" previa="${preview}"`);
       try {
         const fixed = await runText('json_repair', { prompt: `Corrija o conteúdo abaixo para que seja um JSON válido, sem alterar os dados e sem acrescentar nada. Se estiver cortado no fim, feche as estruturas abertas descartando o item incompleto. Responda só com o JSON.\n\n${out.text.slice(0, 120000)}`, maxTokens: Math.min(16000, (req.maxTokens || 4096) + 500), userId: req.userId, signal: req.signal });
@@ -169,7 +200,7 @@ export async function runJSON(task, req, schema) {
     const v = schema ? schema.safeParse(obj) : { success: true, data: obj };
     if (v.success) return { data: v.data, meta: { provider: out.provider, model: out.model, fallback: out.fallback, truncated: out.truncated } };
     const issues = v.error.issues.slice(0, 3).map((i) => `${i.path.join('.')} ${i.message}`).join('; ');
-    const preview = String(out.text || '').slice(0, 350).replace(/\s+/g, ' ');
+    const preview = logPreview(out.text);
     console.error(`[ERRO-IA] [SCHEMA-INVALIDO] tarefa=${task} modelo=${out.provider}:${out.model} rodada=${round + 1}/2 motivo="${issues}" previa_resposta="${preview}"`);
     logUsage({ task, provider: out.provider, model: out.model, ok: false, fallback: out.fallback, error: `bad_output: ${issues}`, userId: req.userId });
     schemaFeedback = issues;
@@ -201,5 +232,14 @@ export async function pollBatch(task, batchRef) {
 }
 
 export function describeRouting() {
-  return Object.entries(config.ai.tasks).map(([task, t]) => ({ task, label: t.label, primary: config.ai.mock ? 'mock' : t.primary, fallback: config.ai.mock ? null : t.fallback }));
+  return Object.entries(config.ai.tasks).map(([task, t]) => {
+    const chain = config.ai.mock ? ['mock:simulado'] : routeFor(task).map((r) => `${r.provider}:${r.model}`);
+    return {
+      task,
+      label: t.label,
+      primary: config.ai.mock ? 'mock' : chain[0] || t.primary,
+      fallback: config.ai.mock ? null : chain.slice(1).join(' → ') || t.fallback,
+      chain,
+    };
+  });
 }

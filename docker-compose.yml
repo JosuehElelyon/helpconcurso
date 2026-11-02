@@ -16,6 +16,11 @@ services:
       SMTP_PORT: ${SMTP_PORT:-1025}
       # Arquivos: MinIO local (troque por S3_ENDPOINT_COMPOSE=https://... para usar R2/S3 na nuvem)
       S3_ENDPOINT: ${S3_ENDPOINT_COMPOSE:-http://minio:9000}
+      # Só desenvolvimento: proxy Free Claude Code (FCC_ENABLED) e Ollama (OLLAMA_ENABLED) rodando no host Windows
+      FCC_BASE_URL: ${FCC_BASE_URL:-http://host.docker.internal:8082}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "3000:3000"
     volumes:

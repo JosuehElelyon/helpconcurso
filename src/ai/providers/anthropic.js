@@ -1,9 +1,19 @@
-// Adaptador Anthropic (Claude). Suporta PDF nativo (OCR), streaming, cache de prompt e modo lote.
+// Adaptador Anthropic (Claude) e proxy compatível com protocolo Anthropic Messages (ex.: Free Claude Code / fcc-server).
+// Suporta PDF nativo (OCR), streaming, cache de prompt, rotação de múltiplas chaves e modo lote.
 import Anthropic from '@anthropic-ai/sdk';
-import { AiError, AiAbortError, fromHttp } from '../errors.js';
+import { AiError, AiAbortError, AiCapabilityError, fromHttp } from '../errors.js';
 
-export function createAnthropic({ apiKey, timeoutMs }) {
-  const client = new Anthropic({ apiKey, maxRetries: 0, timeout: timeoutMs }); // retries ficam na nossa camada
+export function createAnthropic({ apiKey, baseUrl, timeoutMs, name = 'anthropic', allowPdf = true }) {
+  const keys = String(apiKey || '').split(',').map((k) => k.trim()).filter(Boolean);
+  let keyIndex = 0;
+  const cleanBaseUrl = baseUrl ? String(baseUrl).replace(/\/v1\/?$/, '').replace(/\/$/, '') : undefined;
+  const makeClient = (k) => new Anthropic({ apiKey: k, ...(cleanBaseUrl ? { baseURL: cleanBaseUrl } : {}), maxRetries: 0, timeout: timeoutMs });
+  const clients = keys.map(makeClient);
+  const nextClient = () => {
+    const c = clients[keyIndex % clients.length];
+    keyIndex = (keyIndex + 1) % Math.max(1, clients.length);
+    return c;
+  };
 
   const toParams = ({ model, system, messages, maxTokens, temperature, cacheSystem }) => {
     const p = {
@@ -30,12 +40,17 @@ export function createAnthropic({ apiKey, timeoutMs }) {
     return e instanceof AiError ? e : new AiError(e?.message || 'Erro na IA.', { retryable: true, code: 'network', cause: e });
   };
 
+  const isFcc = name === 'fcc';
   return {
-    name: 'anthropic',
-    capabilities: { pdf: true, batch: true, stream: true, cache: true },
+    name,
+    capabilities: { pdf: allowPdf, batch: !isFcc, stream: true, cache: !isFcc },
 
     async generate(req) {
-      const params = toParams(req);
+      if (!allowPdf && req.messages?.some((m) => m.content?.some((c) => c.type === 'pdf'))) {
+        throw new AiCapabilityError(`O provedor ${name} não lê PDF binário diretamente neste modo; usando fallback.`);
+      }
+      const params = toParams({ ...req, cacheSystem: isFcc ? false : req.cacheSystem });
+      const client = nextClient();
       try {
         if (req.onText) {
           const stream = client.messages.stream(params, { signal: req.signal });
@@ -48,25 +63,29 @@ export function createAnthropic({ apiKey, timeoutMs }) {
       } catch (e) { throw mapErr(e); }
     },
 
-    batch: {
-      async submit(items) { // items: [{id, ...req}]
-        try {
-          const b = await client.messages.batches.create({ requests: items.map((it) => ({ custom_id: it.id, params: toParams(it) })) });
-          return b.id;
-        } catch (e) { throw mapErr(e); }
+    ...(isFcc ? {} : {
+      batch: {
+        async submit(items) { // items: [{id, ...req}]
+          const client = nextClient();
+          try {
+            const b = await client.messages.batches.create({ requests: items.map((it) => ({ custom_id: it.id, params: toParams(it) })) });
+            return b.id;
+          } catch (e) { throw mapErr(e); }
+        },
+        async poll(batchId) {
+          const client = nextClient();
+          try {
+            const b = await client.messages.batches.retrieve(batchId);
+            if (b.processing_status !== 'ended') return { state: 'in_progress' };
+            const results = new Map();
+            for await (const r of await client.messages.batches.results(batchId)) {
+              if (r.result?.type === 'succeeded') results.set(r.custom_id, { text: textOf(r.result.message), usage: usageOf(r.result.message.usage), stopReason: r.result.message.stop_reason });
+              else results.set(r.custom_id, { error: r.result?.type || 'erro' });
+            }
+            return { state: 'ended', results };
+          } catch (e) { throw mapErr(e); }
+        },
       },
-      async poll(batchId) {
-        try {
-          const b = await client.messages.batches.retrieve(batchId);
-          if (b.processing_status !== 'ended') return { state: 'in_progress' };
-          const results = new Map();
-          for await (const r of await client.messages.batches.results(batchId)) {
-            if (r.result?.type === 'succeeded') results.set(r.custom_id, { text: textOf(r.result.message), usage: usageOf(r.result.message.usage), stopReason: r.result.message.stop_reason });
-            else results.set(r.custom_id, { error: r.result?.type || 'erro' });
-          }
-          return { state: 'ended', results };
-        } catch (e) { throw mapErr(e); }
-      },
-    },
+    }),
   };
 }

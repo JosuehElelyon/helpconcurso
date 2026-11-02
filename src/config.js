@@ -5,24 +5,39 @@ const num = (k, d) => { const v = Number(env(k, d)); return Number.isFinite(v) ?
 const list = (k, d = '') => env(k, d).split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 
 // ---------- IA: qual provedor/modelo faz cada tarefa ----------
-// Formato: "provedor:modelo". Troque aqui (ou no .env) para mudar de fornecedor sem mexer no código.
-// Provedores disponíveis: anthropic, openai, gemini, groq, together, deepseek, compat, mock
+// Formato: "provedor:modelo" (no fallback pode listar vários separados por vírgula: "groq:llama-3.3-70b-versatile,gemini:gemini-2.5-flash").
+// Provedores disponíveis: anthropic, fcc, nvidia, openrouter, gemini, groq, cerebras, sambanova, mistral, huggingface, ollama, openai, together, deepseek, compat, mock
+export const FREE_AGENT_CATALOG = [
+  { provider: 'fcc',         fast: env('FCC_FAST_MODEL', 'claude-haiku-4-5'),        strong: env('FCC_STRONG_MODEL', 'claude-sonnet-4-5'),                label: 'Free Claude Code Proxy (FCC)' },
+  { provider: 'nvidia',      fast: 'meta/llama-3.3-70b-instruct',                    strong: 'nvidia/llama-3.3-nemotron-super-49b-v1',                    label: 'NVIDIA NIM (Gratuito)' },
+  { provider: 'gemini',      fast: env('GEMINI_FAST_MODEL', 'gemini-3.5-flash-lite'), strong: env('GEMINI_STRONG_MODEL', 'gemini-3.5-flash'), label: 'Google Gemini AI Studio (Gratuito)' },
+  { provider: 'groq',        fast: env('GROQ_FAST_MODEL', 'openai/gpt-oss-20b'),     strong: env('GROQ_STRONG_MODEL', 'openai/gpt-oss-120b'),             label: 'Groq LPU (Gratuito)' },
+  { provider: 'cerebras',    fast: 'llama-3.3-70b',                                  strong: 'llama-3.3-70b',                                             label: 'Cerebras Wafer-Scale (Gratuito)' },
+  { provider: 'sambanova',   fast: 'Meta-Llama-3.3-70B-Instruct',                    strong: 'DeepSeek-V3-0324',                                          label: 'SambaNova Cloud (Gratuito)' },
+  { provider: 'openrouter',  fast: 'openrouter/free',                                strong: 'openrouter/free',                                           label: 'OpenRouter Free (Gratuito)' },
+  { provider: 'mistral',     fast: 'mistral-small-latest',                           strong: 'mistral-small-latest',                                      label: 'Mistral (Gratuito)' },
+  { provider: 'huggingface', fast: 'Qwen/Qwen2.5-72B-Instruct',                      strong: 'Qwen/Qwen2.5-72B-Instruct',                                 label: 'Hugging Face (Gratuito)' },
+  { provider: 'ollama',      fast: env('OLLAMA_MODEL', 'qwen2.5:14b'),               strong: env('OLLAMA_MODEL', 'qwen2.5:14b'),                          label: 'Ollama Local (Gratuito)' },
+];
+
 export const AI_TASKS = {
-  detect:         { label: 'Identificar matéria do material',     primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  generate:       { label: 'Gerar questões',                      primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
-  ocr:            { label: 'Ler PDF escaneado (OCR)',             primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  prova_check:    { label: 'Checagem automática de prova enviada', primary: 'anthropic:claude-haiku-5-5', fallback: 'anthropic:claude-sonnet-5-5' },
-  prova_analysis: { label: 'Analisar estilo da banca',            primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
-  prova_extract:  { label: 'Extrair questões reais da prova',     primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  review:         { label: 'Revisor: resolver questões sem o gabarito', primary: 'anthropic:claude-haiku-5-5', fallback: 'anthropic:claude-sonnet-5-5' },
-  report_check:   { label: 'Verificar erro reportado por aluno',  primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
-  edital_parse:   { label: 'Extrair conteúdo programático do edital', primary: 'anthropic:claude-haiku-5-5', fallback: 'anthropic:claude-sonnet-5-5' },
-  edital_match:   { label: 'Cruzar material de estudo com o edital',  primary: 'anthropic:claude-haiku-5-5', fallback: 'anthropic:claude-sonnet-5-5' },
-  json_repair:    { label: 'Corrigir JSON malformado',            primary: 'anthropic:claude-haiku-5-5',  fallback: null },
+  detect:         { label: 'Identificar matéria do material',           tier: 'fast',   preferred: ['groq', 'gemini'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  generate:       { label: 'Gerar questões',                            tier: 'strong', preferred: ['gemini', 'groq'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
+  ocr:            { label: 'Ler PDF escaneado (OCR)',                   tier: 'fast',   preferred: ['gemini', 'groq'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  prova_check:    { label: 'Checagem automática de prova enviada',      tier: 'fast',   preferred: ['groq', 'gemini'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  prova_analysis: { label: 'Analisar estilo da banca',                  tier: 'strong', preferred: ['gemini', 'groq'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
+  prova_extract:  { label: 'Extrair questões reais da prova',           tier: 'strong', preferred: ['gemini', 'groq'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  review:         { label: 'Revisor: resolver questões sem o gabarito', tier: 'strong',   preferred: ['groq', 'gemini'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  report_check:   { label: 'Verificar erro reportado por aluno',        tier: 'strong', preferred: ['groq', 'gemini'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
+  edital_parse:   { label: 'Extrair conteúdo programático do edital',   tier: 'fast',   preferred: ['gemini', 'groq'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  edital_match:   { label: 'Cruzar material de estudo com o edital',    tier: 'fast',   preferred: ['gemini', 'groq'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  json_repair:    { label: 'Corrigir JSON malformado',                  tier: 'fast',   preferred: ['groq', 'gemini'], primary: 'anthropic:claude-haiku-5-5',  fallback: null },
 };
 const taskEnv = (t) => t.toUpperCase();
 for (const [t, v] of Object.entries(AI_TASKS)) {
-  v.primary = env(`AI_MODEL_${taskEnv(t)}`, v.primary);
+  const customPrimary = env(`AI_MODEL_${taskEnv(t)}`);
+  v.explicitPrimary = customPrimary !== undefined;
+  if (customPrimary !== undefined) v.primary = customPrimary;
   const fb = env(`AI_FALLBACK_${taskEnv(t)}`);
   if (fb !== undefined) v.fallback = fb === 'none' ? null : fb;
 }
@@ -61,6 +76,15 @@ export const config = {
   ai: {
     mock: bool('AI_MOCK', false),
     tasks: AI_TASKS,
+    freeCatalog: FREE_AGENT_CATALOG,
+    // Quando true, prioriza provedores gratuitos configurados (FCC, NVIDIA NIM, Gemini, Groq, Cerebras, SambaNova, OpenRouter...)
+    // em cascata multi-agente antes de acionar modelos pagos (Anthropic/OpenAI).
+    // Desligado por padrão: ligar é uma decisão explícita (os dados vão para provedores de cota grátis).
+    freeCascade: bool('AI_FREE_CASCADE', false),
+    // Quando true, também usa a cascata gratuita nas tarefas pesadas (geração/análise) antes de cair para o modelo pago.
+    freeGenerate: bool('AI_FREE_GENERATE', false),
+    // Provedores cuja conta é de cota grátis (custo 0 no painel e no limite diário). Ex.: AI_PROVEDORES_GRATIS=groq,gemini
+    freeProviders: list('AI_PROVEDORES_GRATIS'),
     // "direct" = treino imediato; "batch" = modo lote (mais barato, resposta em minutos/horas). Cai para direct se o provedor não suportar.
     trainingMode: env('AI_TRAINING_MODE', 'direct'),
     maxRetries: num('AI_MAX_RETRIES', 3),
@@ -69,13 +93,34 @@ export const config = {
     limiteUsdDia: num('AI_LIMITE_USD_DIA', 0),
     keys: {
       anthropic: env('ANTHROPIC_API_KEY'),
-      openai: env('OPENAI_API_KEY'), gemini: env('GEMINI_API_KEY'), groq: env('GROQ_API_KEY'),
-      together: env('TOGETHER_API_KEY'), deepseek: env('DEEPSEEK_API_KEY'), compat: env('COMPAT_API_KEY'),
+      // FCC depende de um programa aberto no Windows: só em desenvolvimento, e só se ligado
+      fcc: bool('FCC_ENABLED', false) && env('NODE_ENV', 'development') !== 'production' ? env('FCC_API_KEY', 'freecc') : undefined,
+      nvidia: env('NVIDIA_API_KEY') || env('NVIDIA_NIM_API_KEY'),
+      openrouter: env('OPENROUTER_API_KEY'),
+      gemini: env('GEMINI_API_KEY'),
+      groq: env('GROQ_API_KEY'),
+      cerebras: env('CEREBRAS_API_KEY'),
+      sambanova: env('SAMBANOVA_API_KEY'),
+      mistral: env('MISTRAL_API_KEY'),
+      huggingface: env('HUGGINGFACE_API_KEY'),
+      ollama: env('OLLAMA_API_KEY', bool('OLLAMA_ENABLED', false) ? 'ollama' : undefined),
+      openai: env('OPENAI_API_KEY'),
+      together: env('TOGETHER_API_KEY'),
+      deepseek: env('DEEPSEEK_API_KEY'),
+      compat: env('COMPAT_API_KEY'),
     },
     baseUrls: {
-      openai: env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+      fcc: env('FCC_BASE_URL', 'http://localhost:8082'),
+      nvidia: env('NVIDIA_BASE_URL', 'https://integrate.api.nvidia.com/v1'),
+      openrouter: env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
       gemini: env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai'),
       groq: env('GROQ_BASE_URL', 'https://api.groq.com/openai/v1'),
+      cerebras: env('CEREBRAS_BASE_URL', 'https://api.cerebras.ai/v1'),
+      sambanova: env('SAMBANOVA_BASE_URL', 'https://api.sambanova.ai/v1'),
+      mistral: env('MISTRAL_BASE_URL', 'https://api.mistral.ai/v1'),
+      huggingface: env('HUGGINGFACE_BASE_URL', 'https://router.huggingface.co/v1'),
+      ollama: env('OLLAMA_BASE_URL', 'http://localhost:11434/v1'),
+      openai: env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
       together: env('TOGETHER_BASE_URL', 'https://api.together.xyz/v1'),
       deepseek: env('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1'),
       compat: env('COMPAT_BASE_URL'),
@@ -123,11 +168,19 @@ export function assertConfig() {
   if (!['open', 'allowlist'].includes(config.registrationMode)) missing.push('REGISTRATION_MODE (open | allowlist)');
   if (!['direct', 'batch'].includes(config.ai.trainingMode)) missing.push('AI_TRAINING_MODE (direct | batch)');
   if (!config.ai.mock) {
-    const used = new Set(Object.values(AI_TASKS).flatMap((t) => [t.primary, t.fallback]).filter(Boolean).map((s) => s.split(':')[0]));
+    const splitSpecs = (s) => (s ? String(s).split(',').map((x) => x.trim()).filter(Boolean) : []);
+    const used = new Set(Object.values(AI_TASKS).flatMap((t) => [...splitSpecs(t.primary), ...splitSpecs(t.fallback)]).map((s) => s.split(':')[0]));
+    const anyFreeConfigured = FREE_AGENT_CATALOG.some((a) => !!config.ai.keys[a.provider]);
     for (const p of used) {
       if (p === 'mock') continue;
       if (!(p in config.ai.keys)) missing.push(`provedor de IA desconhecido: "${p}"`);
-      else if (!config.ai.keys[p] && AI_TASKS && Object.values(AI_TASKS).some((t) => t.primary.startsWith(p + ':'))) missing.push(`${p.toUpperCase()}_API_KEY (ou AI_MOCK=true)`);
+      else if (!config.ai.keys[p]) {
+        const explicitlyPrimary = Object.values(AI_TASKS).some((t) => t.explicitPrimary && t.primary.startsWith(p + ':'));
+        const defaultPrimary = Object.values(AI_TASKS).some((t) => !t.explicitPrimary && t.primary.startsWith(p + ':'));
+        if (explicitlyPrimary || (defaultPrimary && !(config.ai.freeCascade && anyFreeConfigured))) {
+          missing.push(`${p.toUpperCase()}_API_KEY (ou configure um provedor gratuito / AI_MOCK=true)`);
+        }
+      }
     }
     if (config.ai.keys.compat === undefined && [...used].includes('compat') && !config.ai.baseUrls.compat) missing.push('COMPAT_BASE_URL');
   }

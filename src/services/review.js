@@ -9,14 +9,15 @@ const GROUP = 10;
 
 /**
  * @returns {{ available: boolean, verdicts: Array<{ok:boolean, motivo?:string}> }}
+ * geradoPor: provedor que gerou as questões — o revisor usa outro, se houver (revisão independente)
  *   available=false quando o revisor falhou (as questões seguem sem o selo, em vez de travar o aluno)
  */
-export async function reviewQuestions({ questoes, formato, text, userId, signal }) {
+export async function reviewQuestions({ questoes, formato, text, userId, signal, geradoPor }) {
   const verdicts = [];
   try {
     for (let g = 0; g < questoes.length; g += GROUP) {
       const group = questoes.slice(g, g + GROUP);
-      const { data } = await runJSON('review', { ...promptReview({ questoes: group, formato, text }), maxTokens: 300 * group.length + 400, userId, signal }, reviewSchema);
+      const { data } = await runJSON('review', { ...promptReview({ questoes: group, formato, text }), maxTokens: 300 * group.length + 400, userId, signal, avoidProvider: geradoPor }, reviewSchema);
       group.forEach((q, i) => {
         const r = data.respostas.find((x) => x.indice === i + 1) || data.respostas[i];
         if (!r) return verdicts.push({ ok: false, motivo: 'O revisor não conseguiu resolver a questão.' });

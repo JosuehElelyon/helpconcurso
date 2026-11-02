@@ -118,7 +118,7 @@ r.post('/', perUser, ah(async (req, res) => {
     const review = async (list) => {
       if (!config.review.enabled || !list.length) return list.map((q) => ({ ...q, verificada: null }));
       send({ type: 'stage', stage: 'revisando' });
-      const r = await reviewQuestions({ questoes: list, formato, text: m.text, userId: req.user.id, signal: ctrl.signal });
+      const r = await reviewQuestions({ questoes: list, formato, text: m.text, userId: req.user.id, signal: ctrl.signal, geradoPor: lastMeta?.provider });
       if (!r.available) { stats.revisor = 'indisponivel'; return list.map((q) => ({ ...q, verificada: null })); }
       const kept = [];
       list.forEach((q, i) => { if (r.verdicts[i].ok) kept.push({ ...q, verificada: true }); else { stats.descartadas++; stats.motivos.push(r.verdicts[i].motivo); } });
