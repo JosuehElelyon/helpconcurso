@@ -6,6 +6,7 @@ import { requireAuth } from '../lib/auth.js';
 import { uploader, fileOf } from '../lib/upload.js';
 import { deleteFile } from '../lib/storage.js';
 import { linkOficialDeclarado } from '../lib/bancas.js';
+import { baixarDaFonteOficial } from '../lib/fonte-oficial.js';
 import { assertCanUpload } from '../services/quota.js';
 import { createEditalForUser, buildEditalDashboard } from '../services/edital.js';
 
@@ -60,10 +61,16 @@ r.get('/:id', ah(async (req, res) => {
 
 r.post('/', perUser, uploader([{ name: 'file', maxCount: 1 }]), ah(async (req, res) => {
   await assertCanUpload(req.user, 'material');
-  const f = fileOf(req, 'file');
+  let f = fileOf(req, 'file');
   const ctrl = new AbortController();
   res.on('close', () => { if (!res.writableFinished) ctrl.abort(); });
-  const link = linkOficialDeclarado(req.body?.banca, req.body?.officialUrl);
+  let link = linkOficialDeclarado(req.body?.banca, req.body?.officialUrl);
+  if (!f && !String(req.body?.text || '').trim() && req.body?.officialUrl) {
+    // Sem arquivo nem texto + link: baixa da fonte oficial (Diário Oficial, banca, órgão) — origem confirmada
+    const d = await baixarDaFonteOficial(req.body?.banca, req.body.officialUrl);
+    f = { buffer: d.buffer, name: d.name, mime: d.mime };
+    link = { campos: { officialUrl: d.url, oficialConfirmado: true, officialUrlTipo: d.tipo }, aviso: null };
+  }
   const { editalRow, warnings, reaproveitado } = await createEditalForUser({
     user: req.user,
     file: f,

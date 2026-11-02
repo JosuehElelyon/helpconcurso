@@ -6,7 +6,7 @@ import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
 import { requireAdmin } from '../lib/auth.js';
 import { BANCA } from '../lib/bancas.js';
 import { getFile, deleteFile } from '../lib/storage.js';
-import { approveProva, rejectProva, reprocessProva, publicStatus } from '../services/provas.js';
+import { approveProva, rejectProva, reprocessProva, enqueueRelabel, publicStatus } from '../services/provas.js';
 import { describeRouting } from '../ai/index.js';
 import { costUsd, USD_TO_BRL, spentTodayUsd } from '../ai/pricing.js';
 import { config } from '../config.js';
@@ -46,6 +46,8 @@ r.post('/provas/:id/recusar', ah(async (req, res) => {
   res.json({ prova: view(await rejectProva(req.params.id, req.user, b.motivo)) });
 }));
 r.post('/provas/:id/reprocessar', ah(async (req, res) => res.json({ prova: view(await reprocessProva(req.params.id)) })));
+// F5: rotula questões de provas antigas (cascata grátis — provas são documentos públicos)
+r.post('/provas/rotular', ah(async (_req, res) => res.json({ provas: await enqueueRelabel() })));
 r.get('/provas/:id/questoes', ah(async (req, res) => {
   const rows = await many('SELECT numero, materia, materia_id, topico, topico_id, comando, pegadinha_tipo, habilidade, dispositivos, enunciado, alternativas, gabarito, flagged FROM prova_questoes WHERE prova_id=$1 ORDER BY numero NULLS LAST, created_at', [req.params.id]);
   res.json({ questoes: rows });

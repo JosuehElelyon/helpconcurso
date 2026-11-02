@@ -7,6 +7,7 @@ import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
 import { requireAuth } from '../lib/auth.js';
 import { uploader, fileOf } from '../lib/upload.js';
 import { BANCA, linkOficialDeclarado } from '../lib/bancas.js';
+import { baixarDaFonteOficial } from '../lib/fonte-oficial.js';
 import { submitProva, publicStatus } from '../services/provas.js';
 import { createEditalForUser } from '../services/edital.js';
 import { assertCanUpload } from '../services/quota.js';
@@ -27,10 +28,15 @@ r.post('/', perUser, uploader([{ name: 'prova', maxCount: 1 }, { name: 'gabarito
     officialUrl: z.string().trim().max(500, 'Link oficial muito longo.').optional().default(''),
   }), req.body);
   for (const v of [b.orgao, b.cargo]) if (SEV[scanText(v).severity] >= SEV.medium) throw new HttpError(422, 'Órgão/cargo com conteúdo não permitido.');
-  const file = fileOf(req, 'prova');
-  if (!file) throw new HttpError(400, 'Envie o arquivo da prova (PDF, DOCX, DOC ou TXT).');
-
-  const link = linkOficialDeclarado(b.banca, b.officialUrl);
+  let file = fileOf(req, 'prova');
+  let link = linkOficialDeclarado(b.banca, b.officialUrl);
+  if (!file && b.officialUrl) {
+    // Sem arquivo + link: o servidor baixa da fonte oficial — aí a origem é confirmada
+    const d = await baixarDaFonteOficial(b.banca, b.officialUrl);
+    file = { buffer: d.buffer, name: d.name, mime: d.mime };
+    link = { campos: { officialUrl: d.url, oficialConfirmado: true, officialUrlTipo: d.tipo }, aviso: null };
+  }
+  if (!file) throw new HttpError(400, 'Envie o arquivo da prova (PDF, DOCX, DOC ou TXT) ou cole o link direto do arquivo no site oficial.');
   const avisos = link.aviso ? [link.aviso] : [];
 
   let editalId = b.editalId;

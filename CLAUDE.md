@@ -50,6 +50,8 @@ Novo na v1.3/v1.4 (migração `006_cadernos.sql`):
 - Vínculos prova↔edital checam o dono (`createEditalForUser`, `submitProva`, duplicata em `POST /api/provas`).
 - Tópicos/título do edital entram no prompt de geração via `untrusted()`.
 - Caderno: corrigida consulta a coluna inexistente (`editais.disciplinas`) que quebrava caderno com edital; teto de 3000 favoritas/anotações.
+- Fonte oficial: link digitado = **declarado**; **confirmado** só quando o servidor baixa o arquivo da fonte (`src/lib/fonte-oficial.js`,
+  defesas SSRF: https, catálogo de domínios em cada redirecionamento, IP público checado na conexão, 25 MB/20 s).
 - Pendente de desenho: `provas.edital_id` é uma coluna só, mas provas são compartilhadas e editais são por aluno
   (precisa de tabela de ligação — ver `editais_canonicos` em `docs/ARQUITETURA-CONHECIMENTO.md`).
 

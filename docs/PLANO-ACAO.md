@@ -197,3 +197,15 @@ Com a técnica de elaboração no prompt, o Haiku alcançou o Sonnet também no 
   prova_analysis; desligado no resto (Haiku `disabled`, Sonnet `between_tools`). Testado contra a API real.
 - **Q2** eval ampliado (`scripts/eval-amplo.js`, 3 matérias × 3 bancas, nível Difícil, configuração da produção): Haiku 65 × Sonnet 70.
   **Q1 não confirmado** — Difícil continua no Sonnet. Ponto fraco comum: dupla resposta defensável → prompt v4 com autoconferência.
+
+## Sprint 2 — concluída (02/11/2026)
+- **V3 importar pelo link oficial** (`src/lib/fonte-oficial.js`): sem arquivo + link → o servidor baixa da fonte e marca
+  `oficial_confirmado=true` (prova e edital; no edital, a fonte confirmada vai para o edital canônico). Defesas SSRF: só https,
+  só domínios do catálogo (inclusive em cada redirecionamento, máx. 3), IP checado na conexão (`lookupSeguro`: só endereços
+  públicos; trata NAT64 `64:ff9b::/96`), 25 MB, 20 s, página HTML recusada. O arquivo segue pelo `secureUpload` normal.
+  Testado contra a rede real (gov.br com redirecionamento, cebraspe.org.br). Obs.: planalto.gov.br derruba conexões desta rede.
+- **V5 front**: campo "Link oficial" em Enviar provas e Meu edital, botão "Importar do link", avisos do servidor nos resultados e
+  selo `✔ Fonte oficial` (baixado da fonte) ou `Link informado` (declarado) na lista de provas, no edital e na base do admin.
+- **F5 rotular provas antigas**: botão no admin (`POST /api/admin/provas/rotular`) enfileira `prova.relabel` para provas prontas com
+  questões sem rótulo. Usa a cascata grátis (dado público); só completa tópico/comando/pegadinha/habilidade/leis — não cria nem apaga
+  questões e não mexe em gabarito.

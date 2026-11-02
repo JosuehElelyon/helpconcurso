@@ -965,10 +965,14 @@ const ST_CLASS = {
   FAILED: 'FAILED',
 };
 const stBadge = (p) => `<span class="st ${ST_CLASS[p.status] || 'PENDING'}">${PENDING_ST.includes(p.status) ? '<span class="spinner sm" style="width:12px;height:12px"></span>' : ''}${esc(p.statusLabel || p.status)}</span>`;
+// Selo da fonte: confirmada = arquivo baixado pelo servidor do site oficial; informada = link digitado no envio (não verificado)
+const fonteBadge = (x) => x.oficialConfirmado
+  ? `<span class="badge" style="background:#047857;color:#fff" title="Arquivo baixado direto da fonte oficial">✔ Fonte oficial</span>`
+  : x.officialUrl ? `<a class="badge" href="${esc(x.officialUrl)}" target="_blank" rel="noopener noreferrer" title="Link informado no envio — ainda não verificado">Link informado</a>` : '';
 const SEV_LABEL = { critical: 'Crítico', high: 'Alto', medium: 'Médio', low: 'Baixo', info: 'Info' };
 
 function viewContribuir() {
-  const f = S.cform || (S.cform = { banca: '', orgao: '', cargo: '', ano: '', files: [], gabarito: null, editalId: '', editalFile: null });
+  const f = S.cform || (S.cform = { banca: '', orgao: '', cargo: '', ano: '', files: [], gabarito: null, editalId: '', editalFile: null, link: '' });
   const mine = S.minhas || [];
   const editais = S.editais || [];
   const editaisForBanca = f.banca ? editais.filter((e) => !e.banca || e.banca === f.banca) : editais;
@@ -989,6 +993,7 @@ function viewContribuir() {
               <div class="li-title" style="white-space:normal;line-height:1.35">${esc(p.titulo)}</div>
               <div class="li-meta" style="margin-top:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 ${b ? `<span class="badge" style="background:${b.cor};color:#fff">${esc(b.nome)}</span>` : ''}
+                ${fonteBadge(p)}
                 <span>${fmtDate(p.createdAt)}${p.numQuestoes ? ` · <b>${p.numQuestoes} questões na base</b>` : ''}</span>
                 ${p.editalTitulo ? `<button type="button" class="badge edital-tag" data-open-edital="${p.editalId}" style="cursor:pointer" title="Abrir edital vinculado">${ic('target', 'sm')} Edital: ${esc(p.editalTitulo)}</button>` : ''}
                 <button type="button" class="link-btn" style="font-size:12.5px" data-toggle-link-edital="${p.id}">${p.editalId ? 'Trocar edital' : '+ Vincular edital a esta prova'}</button>
@@ -1046,6 +1051,9 @@ function viewContribuir() {
           <div class="big" style="width:44px;height:44px">${ic('upload')}</div><strong style="font-size:15px">Arraste os arquivos das provas aqui ou clique para escolher</strong><span class="hint">PDF (inclusive escaneado), DOCX, DOC ou TXT · até 10 arquivos por vez</span></label>
         ${f.files.length ? `<div class="file-list">${f.files.map((x, i) => `<span class="chip"><span>📄 ${esc(x.name)}</span><button type="button" class="link-btn" data-rmc="${i}">remover</button></span>`).join('')}</div>` : ''}
         <div class="field" style="margin:14px 0 0"><label for="cGab">Gabarito separado <span class="hint">(opcional, disponível ao enviar 1 prova)</span></label><input type="file" id="cGab" class="input" accept=".pdf,.doc,.docx,.txt" ${f.files.length > 1 ? 'disabled' : ''}>${f.gabarito ? `<span class="hint">Selecionado: ${esc(f.gabarito.name)}</span>` : ''}</div>
+        <div class="field" style="margin:14px 0 0"><label for="cLink">Link oficial da prova <span class="hint">(opcional — site da banca ou Diário Oficial)</span></label>
+          <input class="input" id="cLink" maxlength="500" placeholder="https://conhecimento.fgv.br/.../prova.pdf" value="${esc(f.link)}">
+          <span class="hint">Sem arquivo? Cole o link direto do PDF da prova: nós baixamos da fonte oficial e ela ganha o selo <b>✔ Fonte oficial</b>. Com arquivo, o link fica registrado como fonte informada.</span></div>
       </div>
 
       <div class="form-sec">
@@ -1071,7 +1079,7 @@ function viewContribuir() {
 
       ${(S.cResults || []).length ? `<div class="file-list" style="margin:16px 0">${S.cResults.map((r) => `<div class="banner ${r.ok ? 'info' : r.dup ? 'warn' : 'bad'}" style="margin:0">${ic(r.ok ? 'check' : 'alert', 'sm')}<div><b>${esc(r.name)}</b>: ${esc(r.msg)}</div></div>`).join('')}</div>` : ''}
       <div style="margin-top:20px">
-        <button class="btn btn-primary btn-block" type="submit" ${S.cBusy || !f.files.length || !f.banca ? 'disabled' : ''}>${S.cBusy ? `<span class="spinner sm"></span> Enviando ${S.cBusy}${f.editalFile ? ' e verticalizando edital' : ''}…` : `${ic('upload', 'sm')} Enviar ${f.files.length > 1 ? f.files.length + ' provas' : 'prova'}${f.editalFile ? ' + Edital' : f.editalId ? ' (vinculada ao Edital)' : ''}`}</button>
+        <button class="btn btn-primary btn-block" type="submit" ${S.cBusy || (!f.files.length && !f.link) || !f.banca ? 'disabled' : ''}>${S.cBusy ? `<span class="spinner sm"></span> Enviando ${S.cBusy}${f.editalFile ? ' e verticalizando edital' : ''}…` : !f.files.length && f.link ? `${ic('upload', 'sm')} Importar prova do link oficial` : `${ic('upload', 'sm')} Enviar ${f.files.length > 1 ? f.files.length + ' provas' : 'prova'}${f.editalFile ? ' + Edital' : f.editalId ? ' (vinculada ao Edital)' : ''}`}</button>
         <p class="hint" style="margin:10px 0 0;text-align:center">Arquivos com scripts, macros, anexos ou texto escondido com instruções são recusados automaticamente. Envios maliciosos repetidos pausam a conta.</p>
       </div>
     </form>
@@ -1098,7 +1106,7 @@ function viewProvas() {
     <div class="card">${list.length ? list.map((p) => `<div class="prova">
       <div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start"><div style="min-width:0">
         <div class="li-title">${esc(p.titulo || p.fileName)}</div>
-        <div class="li-meta">${[p.ano, (p.materias || []).slice(0, 3).join(', '), p.numQuestoes != null ? p.numQuestoes + ' questões' : '', p.source === 'user' && p.uploader ? 'enviada por ' + p.uploader.name : 'admin', p.autoApproved ? 'aprovação automática' : ''].filter(Boolean).map(esc).join(' · ')}</div></div>${stBadge(p)}</div>
+        <div class="li-meta">${[p.ano, (p.materias || []).slice(0, 3).join(', '), p.numQuestoes != null ? p.numQuestoes + ' questões' : '', p.source === 'user' && p.uploader ? 'enviada por ' + p.uploader.name : 'admin', p.autoApproved ? 'aprovação automática' : ''].filter(Boolean).map(esc).join(' · ')} ${fonteBadge(p)}</div></div>${stBadge(p)}</div>
       ${p.error ? `<div class="hint" style="color:var(--bad);margin-top:6px">${esc(p.error)}</div>` : p.reviewNote && ['REJECTED', 'DUPLICATE'].includes(p.status) ? `<div class="hint" style="margin-top:6px">${esc(p.reviewNote)}</div>` : ''}
       <div class="row" style="margin-top:8px;gap:4px">
         <button class="btn btn-quiet" data-analisar="${p.id}">${ic('eye', 'sm')} Detalhes</button>
@@ -1127,7 +1135,7 @@ function viewProvas() {
       ${m.sec.blockedUsers.length ? `<div class="banner warn">${ic('alert', 'sm')}<div>Envios pausados: ${m.sec.blockedUsers.map((u) => esc(u.name) + ' (' + esc(u.email) + ')').join(', ')}</div></div>` : ''}
       ${m.sec.events.length ? `<table class="tbl"><thead><tr><th>Quando</th><th>Tipo</th><th>Nível</th><th>Usuário</th><th>Arquivo</th><th>Motivos</th></tr></thead><tbody>${m.sec.events.slice(0, 80).map((e) => `<tr><td>${new Date(e.created_at).toLocaleString('pt-BR')}</td><td>${esc(e.kind)}</td><td><span class="sev ${e.severity}">${SEV_LABEL[e.severity] || esc(e.severity)}</span></td><td>${esc(e.name || '—')}</td><td>${esc(e.file_name || '—')}</td><td class="hint">${esc(((e.details?.findings || []).filter((f) => !['info', 'low'].includes(f.severity)).map((f) => f.message).concat(e.details?.reasons || [], e.details?.alertas || [])).slice(0, 3).join(' · '))}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Nenhum evento.</p>'}</div>`;
   }
-  return `<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h1 class="page-title">Base de provas</h1><p class="page-sub">Revise as provas enviadas, acompanhe o treino da IA e monitore segurança e custos.</p></div><button class="btn btn-primary" data-go="contribuir">${ic('upload', 'sm')} Enviar provas</button></div>
+  return `<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h1 class="page-title">Base de provas</h1><p class="page-sub">Revise as provas enviadas, acompanhe o treino da IA e monitore segurança e custos.</p></div><div class="row" style="gap:8px"><button class="btn btn-ghost" id="admRotular" title="Completa tópico, comando e pegadinha das questões de provas antigas usando as IAs grátis (provas são públicas)">${ic('brain', 'sm')} Rotular provas antigas</button><button class="btn btn-primary" data-go="contribuir">${ic('upload', 'sm')} Enviar provas</button></div></div>
   <div class="tabs" style="max-width:520px">${tabs.map(([k, l]) => `<button type="button" class="${tab === k ? 'on' : ''}" data-atab="${k}">${l}</button>`).join('')}</div>${body}`;
 }
 
@@ -1304,6 +1312,10 @@ function viewEdital() {
           <div class="field" style="margin-bottom:0"><label for="edCargo">Cargo foco <span class="hint">(opcional)</span></label><input class="input" id="edCargo" maxlength="120" placeholder="Ex.: Agente de Tecnologia" value="${esc(efm.cargo)}"></div>
           <div class="field" style="margin-bottom:0"><label for="edAno">Ano <span class="hint">(opcional)</span></label><input class="input" id="edAno" inputmode="numeric" maxlength="4" placeholder="Ex.: 2024" value="${esc(efm.ano)}"></div>
         </div>
+        <div class="field" style="margin-bottom:12px"><label for="edLink">Link oficial do edital <span class="hint">(opcional — Diário Oficial, site da banca ou do órgão)</span></label>
+          <div class="row" style="gap:8px"><input class="input" id="edLink" maxlength="500" style="flex:1" placeholder="https://www.in.gov.br/... ou link direto do PDF no site da banca" value="${esc(efm.link || '')}">
+          <button type="button" class="btn btn-ghost" id="edImportLink">${ic('upload', 'sm')} Importar do link</button></div>
+          <span class="hint">Com o link direto do arquivo, nós baixamos da fonte oficial e o edital ganha o selo <b>✔ Fonte oficial</b>. Se você enviar o arquivo ou colar o texto, o link fica registrado como fonte informada.</span></div>
         ${mine.length ? `<div class="field" style="margin-bottom:4px">
           <label for="edProvaSel">Vincular a uma prova já enviada <span class="hint">(opcional — conecta as questões reais da prova ao edital)</span></label>
           <select class="select" id="edProvaSel">
@@ -1341,6 +1353,7 @@ function viewEdital() {
         ${ed.orgao ? `<span class="badge">${esc(ed.orgao)}</span>` : ''}
         ${ed.cargo ? `<span class="badge">${esc(ed.cargo)}</span>` : ''}
         ${ed.ano ? `<span class="badge">${esc(ed.ano)}</span>` : ''}
+        ${fonteBadge(ed)}
       </div>
       <h1 class="page-title">${esc(ed.titulo)}</h1>
       <p class="page-sub" style="margin-bottom:0">${rs.totalDisciplinas} disciplina(s) · ${rs.totalTopicos} tópicos mapeados pela IA · ${provasVinc.length} prova(s) e ${matVinc.length} material(is) vinculado(s)</p>
@@ -1637,13 +1650,15 @@ function bindApp() {
           if (efm.cargo) payload.append('cargo', efm.cargo);
           if (efm.ano) payload.append('ano', efm.ano);
           if (efm.provaId) payload.append('provaId', efm.provaId);
+          if (efm.link) payload.append('officialUrl', efm.link);
         } else if (payload && typeof payload === 'object') {
-          Object.assign(payload, { banca: efm.banca, orgao: efm.orgao, cargo: efm.cargo, ano: efm.ano, provaId: efm.provaId });
+          Object.assign(payload, { banca: efm.banca, orgao: efm.orgao, cargo: efm.cargo, ano: efm.ano, provaId: efm.provaId, officialUrl: efm.link || '' });
         }
         const r = payload instanceof FormData ? await api('/editais', { method: 'POST', form: payload }) : await api('/editais', { method: 'POST', body: payload });
         S.editalShowForm = false; S.edForm = null;
         await refreshEditais({ silent: true });
-        toast(`Edital verticalizado: ${r.edital.resumo.totalDisciplinas} disciplinas e ${r.edital.resumo.totalTopicos} tópicos!`);
+        const avisoLink = (r.warnings || []).find((w) => /link/i.test(w));
+        toast(`Edital verticalizado: ${r.edital.resumo.totalDisciplinas} disciplinas e ${r.edital.resumo.totalTopicos} tópicos!${r.edital.oficialConfirmado ? ' Baixado da fonte oficial ✔' : ''}${avisoLink ? ' ' + avisoLink : ''}`);
       } catch (e) { S.editalErr = e.message; }
       S.editalUploading = false; render();
     };
@@ -1657,6 +1672,8 @@ function bindApp() {
     on('#edModePaste', 'click', () => { S.editalMode = 'paste'; S.editalErr = ''; render(); });
     on('#edModeFile', 'click', () => { S.editalMode = 'file'; render(); });
     on('#edUsePaste', 'click', () => submitEdital({ text: $('#edPasteIn')?.value || '' }));
+    const edl = $('#edLink'); if (edl) edl.oninput = () => { efm.link = edl.value.trim(); };
+    on('#edImportLink', 'click', () => (efm.link ? submitEdital({ text: '' }) : toast('Cole o link direto do edital no site oficial.')));
     on('#edNewBtn', 'click', () => { S.editalShowForm = true; S.editalErr = ''; render(); });
     on('#edCancelForm', 'click', () => { S.editalShowForm = false; S.editalErr = ''; render(); });
     on('#edSendProva', 'click', () => {
@@ -1891,6 +1908,9 @@ function bindApp() {
       cd.addEventListener('drop', (e) => addFiles(e.dataTransfer.files));
     }
     const cg = $('#cGab'); if (cg) cg.onchange = () => { f.gabarito = cg.files[0] || null; render(); };
+    const cl = $('#cLink');
+    if (cl) cl.oninput = () => { f.link = cl.value.trim(); const btn = $('#cForm button[type=submit]'); if (btn && !S.cBusy) btn.disabled = (!f.files.length && !f.link) || !f.banca; };
+    if (cl) cl.onchange = () => render();
     const ces = $('#cEditalSel'); if (ces) ces.onchange = () => { f.editalId = ces.value; render(); };
     const cef = $('#cEditalFile'); if (cef) cef.onchange = () => { f.editalFile = cef.files[0] || null; if (f.editalFile) f.editalId = ''; render(); };
     on('#cRmEdital', 'click', () => { f.editalFile = null; render(); });
@@ -1938,29 +1958,34 @@ function bindApp() {
       if (!f.banca) return toast('Escolha a banca.');
       if (f.ano && !/^\d{4}$/.test(f.ano)) return toast('Ano inválido.');
       S.cResults = [];
-      const files = [...f.files];
+      // Sem arquivo + link: um envio só, o servidor baixa a prova da fonte oficial
+      const files = f.files.length ? [...f.files] : [null];
       let sharedEditalId = f.editalId || '';
       for (let i = 0; i < files.length; i++) {
-        S.cBusy = `${i + 1}/${files.length}`; render();
+        S.cBusy = files[i] ? `${i + 1}/${files.length}` : 'do link oficial'; render();
+        const nome = files[i] ? files[i].name : 'Link oficial';
         const fd = new FormData();
         fd.append('banca', f.banca); fd.append('orgao', f.orgao); fd.append('cargo', f.cargo); fd.append('ano', f.ano);
-        fd.append('prova', files[i]);
+        if (files[i]) fd.append('prova', files[i]);
+        if (f.link && files.length === 1) fd.append('officialUrl', f.link);
         if (f.gabarito && files.length === 1) fd.append('gabarito', f.gabarito);
         if (f.editalFile && i === 0) fd.append('edital', f.editalFile);
         else if (sharedEditalId) fd.append('editalId', sharedEditalId);
         try {
           const r = await api('/provas', { method: 'POST', form: fd });
           if (r.editalId && !sharedEditalId) sharedEditalId = r.editalId;
-          S.cResults.push(r.duplicate ? { name: files[i].name, dup: true, msg: r.message } : { name: files[i].name, ok: true, msg: `Recebida. Em verificação.${r.editalId ? ' Edital vinculado!' : ''}` });
-        } catch (e) { S.cResults.push({ name: files[i].name, msg: e.message }); if (e.status === 429) break; }
+          const aviso = (r.avisos || []).length ? ` Aviso: ${r.avisos.join(' ')}` : '';
+          S.cResults.push(r.duplicate ? { name: nome, dup: true, msg: r.message + aviso } : { name: nome, ok: true, msg: `Recebida. Em verificação.${r.prova?.oficialConfirmado ? ' Baixada da fonte oficial ✔' : ''}${r.editalId ? ' Edital vinculado!' : ''}${aviso}` });
+        } catch (e) { S.cResults.push({ name: nome, msg: e.message }); if (e.status === 429) break; }
       }
-      S.cBusy = false; f.files = []; f.gabarito = null; f.editalFile = null;
+      S.cBusy = false; f.files = []; f.gabarito = null; f.editalFile = null; f.link = '';
       try { S.minhas = (await api('/provas/minhas')).provas; await refreshEditais({ silent: true }); } catch {}
       render();
     };
     schedulePoll();
   }
   if (S.view === 'provas' && isAdmin()) {
+    on('#admRotular', 'click', async () => { try { const r = await api('/admin/provas/rotular', { method: 'POST' }); toast(r.provas ? `${r.provas} prova(s) na fila para rotular (IAs grátis). Acompanhe em Monitor → Fila de tarefas.` : 'Todas as provas já estão rotuladas.'); } catch (e) { toast(e.message); } });
     on('[data-atab]', 'click', async (e) => { S.adminTab = e.currentTarget.dataset.atab; render(); if (S.adminTab === 'monitor') { try { await loadAdmin(true); } catch (err) { toast(err.message); } render(); } });
     on('[data-pb]', 'click', (e) => { S.provaBanca = e.currentTarget.dataset.pb; render(); });
     on('[data-analisar]', 'click', async (e) => {

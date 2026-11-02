@@ -6,7 +6,7 @@
 //   Saídas: DUPLICATE, REJECTED, FAILED (pode reprocessar)
 // =====================================================================
 import { one, many, query } from '../db.js';
-import { materiaId, topicoId } from './taxonomia.js';
+import { materiaId, topicoId, normNome } from './taxonomia.js';
 import { config } from '../config.js';
 import { BANCA } from '../lib/bancas.js';
 import { HttpError } from '../lib/http.js';
@@ -345,6 +345,51 @@ const failTo = (status) => async ({ provaId }, err) => {
 registerJob('prova.check', { run: checkProva, onDead: failTo('FAILED'), maxAttempts: 4 });
 registerJob('prova.train', { run: trainProva, onDead: failTo('FAILED'), maxAttempts: 4 });
 registerJob('prova.batch_poll', { run: pollProvaBatch, onDead: failTo('FAILED'), maxAttempts: 6 });
+
+// ---------------------------------------------------------------------
+// F5) Rotular provas antigas (tópico, comando, pegadinha, habilidade, leis) — feitas antes do prova_extract v2.
+// Só completa os rótulos das questões já gravadas: não mexe em enunciado, gabarito nem alertas, e não refaz a análise.
+// Prova é documento público → roda na cascata grátis (dados='publico'); o Claude só entra como reserva.
+// ---------------------------------------------------------------------
+const chaveQuestao = (enun) => normNome(enun).slice(0, 80);
+
+async function relabelProva({ provaId }) {
+  const p = await one("SELECT * FROM provas WHERE id=$1 AND status='READY'", [provaId]);
+  if (!p?.text) return;
+  const pendentes = await many('SELECT id, numero, enunciado FROM prova_questoes WHERE prova_id=$1 AND comando IS NULL AND NOT flagged', [p.id]);
+  if (!pendentes.length) return;
+  const porChave = new Map(pendentes.map((r) => [chaveQuestao(r.enunciado), r]));
+  const porNumero = new Map(pendentes.filter((r) => r.numero != null).map((r) => [r.numero, r]));
+  const clean = (arr) => arr.filter((s) => SEV[scanText(s).severity] < SEV.medium);
+  const parts = chunks(p.text);
+  let rotuladas = 0;
+  for (let i = 0; i < parts.length; i++) {
+    let data;
+    try { ({ data } = await runJSON('prova_extract', { ...promptProvaExtract({ banca: p.banca, chunk: parts[i], gabarito: p.gabarito_text, part: i + 1, total: parts.length }), maxTokens: 16000 }, provaExtractSchema)); }
+    catch (e) { if (e?.code === 'budget') throw e; console.warn(`[rotular] parte ${i + 1} da prova ${p.id} falhou: ${e.message}`); continue; }
+    for (const q of data.questoes) {
+      const alvo = porChave.get(chaveQuestao(q.enunciado)) || (q.numero != null ? porNumero.get(q.numero) : null);
+      if (!alvo || alvo.feito) continue;
+      const topico = clean([q.topico || ''])[0] || null;
+      const matId = await materiaId(q.materia);
+      const topId = topico ? await topicoId(matId, topico) : null;
+      await query(`UPDATE prova_questoes SET topico=$2, materia_id=$3, topico_id=$4, comando=$5, pegadinha_tipo=$6, habilidade=$7, dispositivos=$8
+                   WHERE id=$1 AND comando IS NULL`,
+        [alvo.id, topico, matId, topId, q.comando || null, q.pegadinha || null, q.habilidade || null, JSON.stringify(clean(q.dispositivos || []))]);
+      alvo.feito = true; rotuladas++;
+    }
+  }
+  console.log(`[rotular] prova ${p.id}: ${rotuladas}/${pendentes.length} questões rotuladas`);
+}
+registerJob('prova.relabel', { run: relabelProva, maxAttempts: 3 });
+
+/** Enfileira a rotulagem de todas as provas prontas que ainda têm questões sem rótulo. Devolve quantas provas entraram na fila. */
+export async function enqueueRelabel() {
+  const rows = await many(`SELECT DISTINCT q.prova_id AS id FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
+                           WHERE p.status='READY' AND q.comando IS NULL AND NOT q.flagged`);
+  for (const r of rows) await enqueue('prova.relabel', { provaId: r.id });
+  return rows.length;
+}
 
 export async function reprocessProva(id) {
   const p = await one('SELECT * FROM provas WHERE id=$1', [id]);

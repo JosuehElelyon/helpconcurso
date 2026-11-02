@@ -437,3 +437,25 @@ test('P1/P2: link oficial é só declarado, nunca bloqueia o envio e não vai pa
   assert.equal(edSemBanca.status, 201, JSON.stringify(edSemBanca.data));
   assert.equal(edSemBanca.data.edital.officialUrlTipo, 'banca');
 });
+
+test('F5: rotular provas antigas completa tópico/comando/pegadinha sem mexer no gabarito', async () => {
+  const alvo = await one(`SELECT q.prova_id FROM prova_questoes q JOIN provas p ON p.id=q.prova_id
+                          WHERE p.status='READY' AND NOT q.flagged AND p.text IS NOT NULL LIMIT 1`);
+  assert.ok(alvo, 'precisa de uma prova pronta na base de teste');
+  const antes = await one('SELECT count(*)::int AS n, string_agg(coalesce(gabarito, \'\'), \',\' ORDER BY id) AS gabs FROM prova_questoes WHERE prova_id=$1', [alvo.prova_id]);
+  // Simula prova antiga (antes do prova_extract v2): sem rótulos
+  await pool.query('UPDATE prova_questoes SET topico=NULL, topico_id=NULL, comando=NULL, pegadinha_tipo=NULL, habilidade=NULL WHERE prova_id=$1', [alvo.prova_id]);
+  assert.equal((await user('/api/admin/provas/rotular', { method: 'POST' })).status, 403);
+  const r = await admin('/api/admin/provas/rotular', { method: 'POST' });
+  assert.equal(r.status, 200);
+  assert.ok(r.data.provas >= 1);
+  let depois;
+  for (let i = 0; i < 60; i++) {
+    depois = await one('SELECT count(*) FILTER (WHERE comando IS NOT NULL)::int AS rotuladas, count(*)::int AS n, string_agg(coalesce(gabarito, \'\'), \',\' ORDER BY id) AS gabs FROM prova_questoes WHERE prova_id=$1', [alvo.prova_id]);
+    if (depois.rotuladas > 0) break;
+    await sleep(250);
+  }
+  assert.ok(depois.rotuladas > 0, 'nenhuma questão foi rotulada');
+  assert.equal(depois.n, antes.n, 'não pode criar nem apagar questões');
+  assert.equal(depois.gabs, antes.gabs, 'não pode mexer no gabarito');
+});
