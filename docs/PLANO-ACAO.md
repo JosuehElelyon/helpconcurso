@@ -224,3 +224,53 @@ Com a técnica de elaboração no prompt, o Haiku alcançou o Sonnet também no 
   - `promptGenerate` injeta essas evidências no system prompt de forma compacta e estável, aproveitando o cache dos modelos e ensinando a IA a elaborar com a identidade exata da banca.
 - **Testes**: 77 testes passando com 100% de sucesso (`npm test`).
 
+
+---
+
+# Revisão do Sprint 3 e plano ajustado — 02/11/2026
+
+## O que está bom
+- Revisão espaçada (Leitner 1→3→7→15 dias → dominada) em módulo próprio e testado; o gabarito é conferido no servidor.
+- Questões reais por tópico com custo zero de IA, origem gravada (`question_sets.origem='prova_real'`), migração nova (009).
+- O DNA da banca (pegadinhas, comandos e leis rotulados) entra no prompt de geração — é a direção certa da Fase 2.
+
+## Problemas encontrados
+
+| # | Gravidade | Problema | Correção |
+|---|---|---|---|
+| C1 | **Alta (segurança)** | `POST /api/editais/:id/topicos/:topicoId/praticar-reais` usa o `cadernoId` do corpo **sem conferir o dono** (IDOR): dá para pendurar um simulado no caderno de outro aluno | Conferir `cadernos.user_id`; caderno alheio → 404 |
+| C2 | **Alta (questão errada)** | Se o edital é CEBRASPE (ou há prova vinculada de outro formato), questões de **múltipla escolha viram Certo/Errado**: as alternativas são apagadas e o gabarito continua "B" — questão impossível de responder | Formato por questão; o simulado só reúne questões do mesmo formato |
+| C3 | Média (honestidade) | "Reais (X)" conta qualquer questão da **disciplina** (`materia ILIKE`) e ainda rotula como sendo do tópico; com edital sem banca, mistura bancas | Separar "X do tópico · Y da disciplina"; nunca rotular questão da disciplina como do tópico; sem banca, só provas vinculadas |
+| C4 | Média (produto) | A revisão espaçada só conta respostas dadas **dentro do caderno**. Errou no simulado normal → a questão não entra no ciclo | Ligar a resposta do simulado (`sets.js`) ao ciclo; agenda por **dia** (fuso de Brasília), não por hora exata |
+| C5 | Média (qualidade) | O DNA da banca sorteia 60 questões (`random()`), **não filtra pela matéria** (pegadinhas de Português entram na geração de Constitucional) e manda **códigos crus** (`troca_conceito`) misturados com texto livre | Agregar por banca + matéria com `GROUP BY`/contagem (determinístico); traduzir códigos pelas descrições de `src/lib/cobranca.js`; filtrar por tópico quando houver |
+| C6 | Média (custo) | A afirmação "fica no system e aproveita o cache" não vale: os exemplos já eram sorteados e agora o DNA também → o system muda a cada pedido e o cache nunca acerta | Exemplos e DNA determinísticos por (banca, matéria, dia) → mesmo system para todos os alunos da banca no dia; medir `cache_read_tokens` |
+| C7 | Baixa (UX) | O comentário da questão real mostra o código cru (`[assinale_correta]`) | Mostrar a descrição |
+| C8 | Baixa (processo) | 3ª vez que uma migração aplicada fica com alteração não commitada (linha em branco no fim: 008, 009) | Descartar (`git checkout migrations/`) e criar as próximas já com a linha final |
+
+## Dependência que define a prioridade
+F1 (questões reais por tópico) e o DNA da banca **só rendem com base rotulada e grande**. Hoje a base é pequena e as provas
+antigas ainda não foram rotuladas (falta clicar em "Rotular provas antigas"). Crescer a base é o que mais aumenta o valor agora.
+
+## Plano ajustado
+
+### Sprint 3.1 — correções (curta, antes de abrir para mais alunos)
+C1, C2, C3, C4, C5, C6, C7 + testes de cada um (inclusive IDOR e mistura de formatos).
+
+### Sprint 4 — base maior e mais confiável
+| # | Item | Valor |
+|---|---|---|
+| B1 | **Importação em lote pelo admin**: colar uma lista de links oficiais (provas + gabaritos) e o sistema baixa, checa e treina (usa V3) | Base cresce rápido, toda com selo de fonte oficial |
+| F7 | **Gabarito definitivo e anulações** pelo link oficial: marca questões anuladas/alteradas | Questão real com gabarito oficial final |
+| F6 | Dupla extração com consenso de gabarito (dois modelos grátis; divergência → revisão) | Base confiável sem custo |
+| F5 | Rodar a rotulagem das provas antigas (botão já existe) | Destrava F1 e o DNA da banca |
+
+### Sprint 5 — hábito e retenção
+| # | Item | Valor |
+|---|---|---|
+| N1 | **"Hoje" na tela inicial**: revisões pendentes de todos os cadernos + tópicos fracos do edital; e-mail diário opcional (Brevo) | Volta diária do aluno |
+| F3 | Simulado no formato da prova real: cronômetro, distribuição de matérias pelo peso do edital, misturando questões reais e geradas | Treino de prova |
+| F4 | "Por que errei?" sob demanda, guardado e reaproveitado por questão | Explicação sem custo fixo |
+
+### Sprint 6 — medir qualidade de verdade
+Q4/D4/D9: `prompt_versao` e modelo em cada simulado; painel admin com % descartada pelo revisor, 👍/👎, erros confirmados e
+chamadas/429 por provedor; cache de prompt medido. Decisões de modelo e prompt passam a usar dado real dos alunos.
