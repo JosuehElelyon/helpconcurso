@@ -309,3 +309,31 @@ chamadas/429 por provedor; cache de prompt medido. Decisões de modelo e prompt 
   - Badges visuais: `✔ Gabarito definitivo`, `ANULADA`, `Alterada (A → B)`, `⚠ Divergência no gabarito`.
   - Botão e modal "Gabarito definitivo" e "Importar em lote" integrados na tela Base de Provas do Admin.
 - Testes: 86 testes automatizados passando (100% de sucesso).
+
+---
+
+# Revisão do Sprint 4 — 02/11/2026
+
+## O que está bom
+- Importação em lote reaproveita o download seguro (V3): SSRF, catálogo de domínios, selo de fonte confirmada.
+- Gabarito definitivo sem custo de IA; anulada/alterada ficam registradas por questão (migração 010 nova).
+- Consenso usa `avoid` (outro modelo confere) e grava os palpites divergentes para auditoria.
+- Simulados de questões reais e o mapa de incidência já excluem questões anuladas/divergentes. 86 testes passando.
+
+## Problemas encontrados
+
+| # | Gravidade | Problema | Correção |
+|---|---|---|---|
+| G1 | **Alta (dado errado marcado como definitivo)** | O parser lê texto comum como gabarito: "questões 1 e 2" → Q1=**E**; "Questões 10 a 20" → Q10=**A**. Gabarito com **dois cargos** ou **tipos de prova** (comum em FGV/FCC): o último bloco vence sem aviso. Tudo é gravado como "definitivo" e marcado como "alterada" | Só aceitar letra em contexto de gabarito (maiúscula, separador ou tabela); **conflito no mesmo número → 422** pedindo o bloco do cargo/tipo; letra válida para o formato (C/E ou A–E dentro das alternativas); cobertura mínima (≥ 60% das questões da prova); **prévia antes de aplicar** (admin confere e confirma); "alterada pela banca" só quando o texto diz; diferença em relação à extração da IA = "corrigida" |
+| G2 | **Alta (custo)** | A 2ª extração do consenso não olha se o modelo é grátis. Sem provedores grátis (ou com eles fora do ar), ela cai no Claude — `avoid` joga o Haiku para o fim e o **Sonnet** extrai 16 mil tokens por parte: ~US$ 1 por prova, ligado por padrão | Consenso **só com modelo grátis** (`isFreeModel`); sem grátis disponível, pula e registra "consenso não verificado" |
+| G3 | Média (aluno vê questão anulada) | Filtro incompleto: "Alimentar caderno com provas antigas" (`cadernos.js`) não exclui anuladas nem divergentes; exemplos do prompt e o DNA da banca não excluem divergentes | Um filtro único de "questão válida para aluno" usado em todas as consultas |
+| G4 | Média | O lote **não roda em segundo plano** (o relatório diz que sim): baixa e processa tudo dentro da requisição, **sem limite** de itens → requisição de minutos/horas e timeout | Cada item vira uma tarefa na fila (`prova.importar`); limite de 50 links por envio; tela acompanha o progresso |
+| G5 | Média | Questão com gabarito divergente fica escondida, mas **não há como o admin resolver** (só aplicando gabarito definitivo da prova inteira) | Lista de divergências no admin com os dois palpites e botão para escolher/confirmar |
+| G6 | Baixa | Simulados já criados com uma questão depois anulada continuam com o gabarito antigo | Marcar "anulada" ao exibir o simulado/caderno e não contar no acerto |
+| G7 | Baixa | O mock de produção tem gancho de teste (`MOCK_CONSENSUS_DIVERGE`) | Mover para o teste |
+
+## Plano ajustado
+1. **Sprint 4.1 (correções, antes de usar com provas reais):** G1, G2, G3, G4 — com testes do parser usando gabaritos reais
+   (cargos, tipos de prova, CEBRASPE C/E, anulações, texto corrido) e do consenso sem provedor grátis.
+2. **Sprint 4.2:** G5, G6, G7.
+3. Depois: Sprint 5 (retenção: "Hoje" na tela inicial, simulado de prova real, "por que errei?") e Sprint 6 (medir qualidade e cache).
