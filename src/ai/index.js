@@ -49,12 +49,9 @@ export function routeFor(task) {
     if (useFreeFirst) {
       let available = (config.ai.freeCatalog || []).filter((a) => !!config.ai.keys[a.provider]);
       if (Array.isArray(t.preferred) && t.preferred.length) {
-        available = [...available].sort((a, b) => {
-          const ia = t.preferred.indexOf(a.provider);
-          const ib = t.preferred.indexOf(b.provider);
-          if (ia !== -1 && ib !== -1) return ia - ib;
-          return 0;
-        });
+        // Preferidos na ordem da lista; os demais depois, na ordem do catálogo (sort estável)
+        const pos = (p) => { const i = t.preferred.indexOf(p); return i === -1 ? 99 : i; };
+        available = [...available].sort((a, b) => pos(a.provider) - pos(b.provider));
       }
       const freeSpecs = available.map((a) => `${a.provider}:${t.tier === 'strong' ? a.strong : a.fast}`);
       if (freeSpecs.length) specs = [...freeSpecs, ...baseSpecs];

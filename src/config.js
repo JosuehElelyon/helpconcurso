@@ -21,17 +21,17 @@ export const FREE_AGENT_CATALOG = [
 ];
 
 export const AI_TASKS = {
-  detect:         { label: 'Identificar matéria do material',           tier: 'fast',   preferred: ['groq', 'gemini'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  generate:       { label: 'Gerar questões',                            tier: 'strong', preferred: ['gemini', 'groq'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
-  ocr:            { label: 'Ler PDF escaneado (OCR)',                   tier: 'fast',   preferred: ['gemini', 'groq'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  prova_check:    { label: 'Checagem automática de prova enviada',      tier: 'fast',   preferred: ['groq', 'gemini'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  prova_analysis: { label: 'Analisar estilo da banca',                  tier: 'strong', preferred: ['gemini', 'groq'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
-  prova_extract:  { label: 'Extrair questões reais da prova',           tier: 'strong', preferred: ['gemini', 'groq'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  review:         { label: 'Revisor: resolver questões sem o gabarito', tier: 'strong',   preferred: ['groq', 'gemini'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  report_check:   { label: 'Verificar erro reportado por aluno',        tier: 'strong', preferred: ['groq', 'gemini'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
-  edital_parse:   { label: 'Extrair conteúdo programático do edital',   tier: 'fast',   preferred: ['gemini', 'groq'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  edital_match:   { label: 'Cruzar material de estudo com o edital',    tier: 'fast',   preferred: ['gemini', 'groq'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  json_repair:    { label: 'Corrigir JSON malformado',                  tier: 'fast',   preferred: ['groq', 'gemini'], primary: 'anthropic:claude-haiku-5-5',  fallback: null },
+  detect:         { label: 'Identificar matéria do material',           tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  generate:       { label: 'Gerar questões',                            tier: 'strong', preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
+  ocr:            { label: 'Ler PDF escaneado (OCR)',                   tier: 'fast',   preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  prova_check:    { label: 'Checagem automática de prova enviada',      tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  prova_analysis: { label: 'Analisar estilo da banca',                  tier: 'strong', preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
+  prova_extract:  { label: 'Extrair questões reais da prova',           tier: 'strong', preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  review:         { label: 'Revisor: resolver questões sem o gabarito', tier: 'strong',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  report_check:   { label: 'Verificar erro reportado por aluno',        tier: 'strong', preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
+  edital_parse:   { label: 'Extrair conteúdo programático do edital',   tier: 'fast',   preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  edital_match:   { label: 'Cruzar material de estudo com o edital',    tier: 'fast',   preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  json_repair:    { label: 'Corrigir JSON malformado',                  tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: null },
 };
 const taskEnv = (t) => t.toUpperCase();
 for (const [t, v] of Object.entries(AI_TASKS)) {

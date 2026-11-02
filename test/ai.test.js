@@ -28,11 +28,14 @@ test('cascata multi-agente gratuita prioriza provedores gratuitos configurados e
   config.ai.keys.fcc = 'token-fcc-local';
   config.ai.keys.nvidia = 'nvapi-1,nvapi-2';
   config.ai.keys.groq = 'gsk-1';
+  const prevOr = config.ai.keys.openrouter;
+  config.ai.keys.openrouter = undefined;
   try {
+    // edital_parse prefere gemini → groq → openrouter; os demais grátis vêm depois, na ordem do catálogo
     const chain = routeFor('edital_parse');
-    assert.equal(chain[0].provider, 'fcc');
-    assert.equal(chain[1].provider, 'nvidia');
-    assert.equal(chain[2].provider, 'groq');
+    assert.equal(chain[0].provider, 'groq');
+    assert.equal(chain[1].provider, 'fcc');
+    assert.equal(chain[2].provider, 'nvidia');
     assert.equal(isFreeModel(chain[0].model, chain[0].provider), true);
     assert.equal(costUsd(chain[1].model, 500_000, 100_000, 0, false, chain[1].provider), 0);
     assert.equal(costUsd('openrouter/free', 500_000, 100_000, 0, false, 'openrouter'), 0);
@@ -42,6 +45,7 @@ test('cascata multi-agente gratuita prioriza provedores gratuitos configurados e
     config.ai.keys.nvidia = undefined;
     config.ai.keys.groq = undefined;
     config.ai.keys.gemini = prevGemini;
+    config.ai.keys.openrouter = prevOr;
   }
 });
 
