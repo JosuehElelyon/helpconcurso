@@ -120,3 +120,68 @@ Garante a integridade do acervo contra falsificações, materiais de cursinhos c
   - Na checagem em segundo plano (`checkProva`), provas com fonte oficial confirmada recebem marcação explícita de alta veracidade.
   - Painel do aluno e painel do administrador exibem se a prova/edital possui fonte oficial primária validada.
   - 61/61 testes passando com cobertura completa em `test/veracidade.test.js` e `test/v1.test.js`.
+
+---
+
+# Revisão crítica da Veracidade (P1/P2) e plano de evolução — 02/11/2026
+
+## O que está bom
+- Catálogo de domínios bem feito: casa por domínio exato ou subdomínio (`x.cebraspe.org.br`), então
+  `cebraspe.org.br.evil.com` e `fgv.br@evil.com` são recusados. Só aceita http/https. Tem testes dedicados.
+- Migração nova (008) em vez de editar as anteriores; colunas também no edital canônico (a fonte vale para todos).
+
+## Problemas encontrados
+
+| # | Gravidade | Problema | Correção |
+|---|---|---|---|
+| V1 | **Alta (conceito)** | `oficial_confirmado` não confirma nada: é a URL **digitada** pelo usuário. Qualquer um informa `cebraspe.org.br/...` e anexa qualquer PDF → ganha "selo de alta confiabilidade". No edital canônico, a 1ª URL informada passa a valer para todos os alunos | Até haver confirmação real, tratar como **fonte declarada** (nome e texto do selo). Confirmação de verdade = V3 |
+| V2 | Média (bug) | Edital enviado **sem banca** + link do site de uma banca → 422 "divergindo da banca informada ''" | Sem banca informada, aceitar qualquer banca do catálogo |
+| V3 | Valor alto | — | **Importar pelo link oficial**: o servidor baixa o arquivo do domínio do catálogo e passa pelo `secureUpload` → aí sim `oficial_confirmado`. Proteções obrigatórias contra SSRF: só https, só domínios do catálogo, redirecionamento só para domínio do catálogo, IP de destino público, 25 MB, 20 s. Se o aluno também anexou o arquivo, comparar sha256/texto |
+| V4 | Média (UX) | Link desconhecido (banca fora do catálogo: Objetiva, Fundep, Ibade, Legalle...) ou de cursinho **bloqueia o envio inteiro** (422). A prova continua útil — provas são públicas | Aceitar o envio, descartar o link e avisar ("link não oficial, ignorado") |
+| V5 | Média (produto) | Nada no front: sem campo de link e sem selo. A funcionalidade está invisível para a Amanda | Campo "Link oficial (opcional)" nos envios; selo "Fonte oficial" na prova, no edital e nas questões reais do caderno |
+| V6 | Baixa | `officialUrl` sem tamanho máximo; nomes misturados (`official_url` × `oficial_confirmado`); há uma alteração não commitada (só uma linha em branco) na migração 008 já aplicada | `max(500)`; próximas colunas em pt-BR; descartar a alteração da 008 (`git checkout migrations/008_veracidade_url_oficial.sql`) |
+| V7 | Baixa | Sufixos governamentais: confirmar no registro.br se `.tc.br` existe como domínio oficial (tribunais de contas usam em geral `*.gov.br`) | Ajustar a lista |
+
+## Resultado da melhoria do prompt de geração (v3, commit 22cc0dc)
+
+| Nível | Haiku antes → depois | Sonnet antes → depois |
+|---|---|---|
+| Difícil | 58 → **78** | 80 → 76 |
+| Médio | 68 → **77** | 67 → 72 |
+
+Com a técnica de elaboração no prompt, o Haiku alcançou o Sonnet também no Difícil. Amostra pequena (1 material,
+3 questões): **antes de voltar o Difícil para o Haiku** (economia de ~70% nesse nível), confirmar com Q2.
+
+## Plano de evolução
+
+### Qualidade da IA
+| # | Item | Valor |
+|---|---|---|
+| Q1 | Se Q2 confirmar, `generate_dificil` volta para Haiku → Sonnet | ~US$ 0,15 → ~US$ 0,04 por simulado difícil |
+| Q2 | Eval com 3 materiais (Português, Constitucional, Raciocínio) × 2 formatos (CEBRASPE C/E e FGV múltipla escolha) × 2 rodadas | Decisão com dado, não com 1 amostra |
+| Q3 | "Dificuldade" ainda é o critério mais fraco (12–14/25). Próximo salto: pôr no prompt as **pegadinhas reais desta banca neste tópico** (rótulos da Fase 1) — é o pacote de contexto da Fase 2 | Questão com a cara da banca, sem modelo mais caro |
+| Q4 | Gravar `prompt_versao` em `question_sets` e mostrar no admin: % descartada pelo revisor e 👍/👎 por modelo e versão de prompt (D4/D9) | Medir qualidade real dos alunos |
+
+### Novas funcionalidades (do maior valor por custo para o menor)
+| # | Funcionalidade | Custo de IA | Valor |
+|---|---|---|---|
+| F5 | Reprocessar provas antigas sem rótulo pela cascata grátis (dado público) | US$ 0 | Destrava F1 e Q3 |
+| F1 | **Questões reais por tópico do edital**: o aluno treina com questões reais da banca filtradas pelo tópico do edital ativo | US$ 0 por uso | Diferencial forte; usa a base que já existe |
+| F2 | **Revisão espaçada do caderno de erros** (volta a questão errada em 1, 3, 7 e 15 dias) | US$ 0 | Retenção e hábito diário |
+| F7 | **Gabarito definitivo e anulações** pelo link oficial (V3): marca questões anuladas/alteradas na base | Baixo (grátis: dado público) | Confiança: "questão conferida com o gabarito definitivo" |
+| F6 | Dupla extração com consenso de gabarito (dois modelos grátis; divergência vai para revisão) | US$ 0 | Base mais confiável |
+| F3 | Simulado no formato da prova real: cronômetro e distribuição de matérias pelo edital/incidência | ~US$ 0 com questões reais | Treino de prova |
+| F4 | "Por que errei?" sob demanda, com resposta guardada e reaproveitada para todos que errarem a mesma questão | Haiku, só quando pedido | Explicação sem custo fixo |
+
+### Processo
+| # | Item |
+|---|---|
+| O1 | Uma sessão de IA por vez no projeto (ou uma branch por funcionalidade): já houve commit misturado e testes quebrando por rodarem ao mesmo tempo |
+| O2 | `git push` (≈16 commits locais) e CI no GitHub rodando `npm test` a cada push |
+| O3 | Trocar a chave do OpenRouter que foi colada no chat |
+
+## Ordem sugerida
+1. **Sprint 1 (curta):** V1, V2, V4, V6, V7, O2, O3 e Q2.
+2. **Sprint 2:** V3 (importar por link, com proteção SSRF), V5 (front), F5 (reprocessar grátis), Q1 se Q2 confirmar.
+3. **Sprint 3:** F1 (questões reais por tópico), F2 (revisão espaçada), Q3 (Fase 2: pacote de contexto).
+4. **Sprint 4:** F7, F6, F3, F4, Q4.
