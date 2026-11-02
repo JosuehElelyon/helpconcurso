@@ -15,6 +15,7 @@ import { BANCA } from '../lib/bancas.js';
 import { submitProva, publicStatus } from '../services/provas.js';
 import { assertCanUpload } from '../services/quota.js';
 import { scanText, SEV } from '../security/index.js';
+import { calcularRevisao, paraRevisarHoje, rotuloFase, resumoRevisao } from '../lib/revisao-espacada.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -140,6 +141,7 @@ function summarizeCaderno(c, setsForCaderno = [], editalTitulo = null) {
   const taxaAcerto = respondidas > 0 ? Math.round((acertos / respondidas) * 100) : null;
   const favoritasCount = Object.values(favs).filter(Boolean).length;
   const anotacoesCount = Object.values(notes).filter((v) => String(v || '').trim().length > 0).length;
+  const revResumo = resumoRevisao(c.revisao_espacada || {});
 
   return {
     id: c.id,
@@ -163,6 +165,9 @@ function summarizeCaderno(c, setsForCaderno = [], editalTitulo = null) {
     taxaAcerto,
     favoritasCount,
     anotacoesCount,
+    revisaoHojeCount: revResumo.hoje,
+    revisaoAtivasCount: revResumo.ativas,
+    dominadasCount: revResumo.dominadas,
     createdAt: c.created_at,
     updatedAt: c.updated_at,
   };
@@ -190,6 +195,7 @@ async function buildCadernoDetail(rawCaderno, userId) {
   const favs = c.favoritas && typeof c.favoritas === 'object' ? c.favoritas : {};
   const notes = c.anotacoes && typeof c.anotacoes === 'object' ? c.anotacoes : {};
   const respExtras = c.respostas_extras && typeof c.respostas_extras === 'object' ? c.respostas_extras : {};
+  const revisaoMap = c.revisao_espacada && typeof c.revisao_espacada === 'object' ? c.revisao_espacada : {};
   const extras = Array.isArray(c.questoes_extras) ? c.questoes_extras : [];
 
   const questoes = [];
@@ -213,6 +219,7 @@ async function buildCadernoDetail(rawCaderno, userId) {
       const ans = r[idx] ?? null;
       const isOk = ans != null && ans === q.gabarito;
       const mat = s.materia || 'Geral';
+      const rev = revisaoMap[key] || null;
       bumpMat(mat, ans != null, isOk);
       questoes.push({
         key,
@@ -239,6 +246,15 @@ async function buildCadernoDetail(rawCaderno, userId) {
         ans,
         favorita: Boolean(favs[key]),
         anotacao: String(notes[key] || ''),
+        revisao: rev ? {
+          fase: rev.fase,
+          intervaloDias: rev.intervaloDias,
+          rotulo: rotuloFase(rev.fase, rev.intervaloDias),
+          proximaRevisao: rev.proximaRevisao,
+          paraRevisarHoje: paraRevisarHoje(rev),
+          dominada: Boolean(rev.dominada),
+          acertosSeguidos: rev.acertosSeguidos || 0,
+        } : null,
         createdAt: s.created_at,
       });
     });
@@ -249,6 +265,7 @@ async function buildCadernoDetail(rawCaderno, userId) {
     const ans = respExtras[q.id] ?? null;
     const isOk = ans != null && ans === q.gabarito;
     const mat = q.materia || 'Conhecimentos Gerais';
+    const rev = revisaoMap[key] || null;
     bumpMat(mat, ans != null, isOk);
     questoes.push({
       key,
@@ -274,6 +291,15 @@ async function buildCadernoDetail(rawCaderno, userId) {
       ans,
       favorita: Boolean(favs[key]),
       anotacao: String(notes[key] || ''),
+      revisao: rev ? {
+        fase: rev.fase,
+        intervaloDias: rev.intervaloDias,
+        rotulo: rotuloFase(rev.fase, rev.intervaloDias),
+        proximaRevisao: rev.proximaRevisao,
+        paraRevisarHoje: paraRevisarHoje(rev),
+        dominada: Boolean(rev.dominada),
+        acertosSeguidos: rev.acertosSeguidos || 0,
+      } : null,
       createdAt: q.addedAt || c.created_at,
     });
   }
@@ -572,9 +598,11 @@ r.patch('/:id/interagir', ah(async (req, res) => {
   let favs = c.favoritas && typeof c.favoritas === 'object' ? { ...c.favoritas } : {};
   let notes = c.anotacoes && typeof c.anotacoes === 'object' ? { ...c.anotacoes } : {};
   let respExtras = c.respostas_extras && typeof c.respostas_extras === 'object' ? { ...c.respostas_extras } : {};
+  let revisaoMap = c.revisao_espacada && typeof c.revisao_espacada === 'object' ? { ...c.revisao_espacada } : {};
 
   if (b.reset === 'all') {
     respExtras = {};
+    revisaoMap = {};
     await query("UPDATE question_sets SET respostas='{}'::jsonb, finalizado=false, updated_at=now() WHERE user_id=$1 AND caderno_id=$2", [req.user.id, c.id]);
   } else if (b.reset === 'erros') {
     const extras = Array.isArray(c.questoes_extras) ? c.questoes_extras : [];
@@ -607,29 +635,44 @@ r.patch('/:id/interagir', ah(async (req, res) => {
       else delete notes[b.key];
     }
     if (b.resposta !== undefined) {
+      let gabarito = null;
       if (b.key.startsWith('set:')) {
         const [, setId, idxStr] = b.key.split(':');
         const idx = Number(idxStr);
         if (/^[0-9a-f-]{36}$/i.test(setId) && Number.isInteger(idx)) {
-          const s = await one('SELECT id, respostas FROM question_sets WHERE id=$1 AND user_id=$2', [setId, req.user.id]);
+          const s = await one('SELECT id, questoes, respostas FROM question_sets WHERE id=$1 AND user_id=$2', [setId, req.user.id]);
           if (s) {
             const r = { ...(s.respostas || {}) };
             if (b.resposta === null) delete r[idx];
             else r[idx] = b.resposta;
             await query('UPDATE question_sets SET respostas=$2, updated_at=now() WHERE id=$1', [s.id, JSON.stringify(r)]);
+            const q = (s.questoes || [])[idx];
+            if (q?.gabarito) gabarito = q.gabarito;
           }
         }
       } else if (b.key.startsWith('extra:')) {
         const qId = b.key.slice(6);
         if (b.resposta === null) delete respExtras[qId];
         else respExtras[qId] = b.resposta;
+        const extras = Array.isArray(c.questoes_extras) ? c.questoes_extras : [];
+        const q = extras.find((item) => String(item.id) === String(qId));
+        if (q?.gabarito) gabarito = q.gabarito;
+      }
+
+      if (b.resposta !== null && gabarito) {
+        const acerto = (b.resposta === gabarito);
+        const estadoAnterior = revisaoMap[b.key] || null;
+        const novo = calcularRevisao({ estadoAnterior, acerto });
+        if (novo) {
+          revisaoMap[b.key] = novo;
+        }
       }
     }
   }
 
   const updated = await one(
-    'UPDATE cadernos SET respostas_extras=$2, favoritas=$3, anotacoes=$4, updated_at=now() WHERE id=$1 RETURNING *',
-    [c.id, JSON.stringify(respExtras), JSON.stringify(favs), JSON.stringify(notes)]
+    'UPDATE cadernos SET respostas_extras=$2, favoritas=$3, anotacoes=$4, revisao_espacada=$5, updated_at=now() WHERE id=$1 RETURNING *',
+    [c.id, JSON.stringify(respExtras), JSON.stringify(favs), JSON.stringify(notes), JSON.stringify(revisaoMap)]
   );
   res.json({ caderno: await buildCadernoDetail(updated, req.user.id) });
 }));

@@ -209,3 +209,18 @@ Com a técnica de elaboração no prompt, o Haiku alcançou o Sonnet também no 
 - **F5 rotular provas antigas**: botão no admin (`POST /api/admin/provas/rotular`) enfileira `prova.relabel` para provas prontas com
   questões sem rótulo. Usa a cascata grátis (dado público); só completa tópico/comando/pegadinha/habilidade/leis — não cria nem apaga
   questões e não mexe em gabarito.
+
+## Sprint 3 — concluída (02/11/2026)
+- **F2 Revisão espaçada do caderno de erros** (`src/lib/revisao-espacada.js`, migration `009_sprint3_revisao_espacada_questoes_reais.sql`):
+  - Algoritmo de Leitner com intervalos calibrados para concursos: 1 dia → 3 dias → 7 dias → 15 dias → Dominada.
+  - Erro inicial coloca a questão na Fase 1 (1d). Acertos consecutivos na revisão avançam de fase. Qualquer recaída reinicia para a Fase 1.
+  - No front (`public/app.js`): resumo no cabeçalho do caderno ("🔔 X revisar hoje · ✔ Y dominadas"), filtro "Revisar hoje" e badges dinâmicos de fase em cada questão (`Fase 1 (1d)`, `Fase 2 (3d)`, `✔ Dominada`).
+- **F1 Treinar com questões reais da banca por tópico do edital** (`src/services/edital.js`, `src/routes/editais.js`):
+  - Endpoints: `GET /api/editais/:id/topicos/:topicoId/questoes-reais` e `POST /api/editais/:id/topicos/:topicoId/praticar-reais`.
+  - O aluno treina com questões oficiais de provas anteriores da banca mapeadas para o tópico do edital verticalizado, com **custo US$ 0 de IA** (`origem='prova_real'`, `model='prova_real'`).
+  - No front: botão "Reais (X)" direto no edital verticalizado ao lado de cada tópico com questões disponíveis na banca, abrindo o simulado instantaneamente.
+- **Q3 Pacote de contexto da Fase 2** (`src/services/knowledge.js`, `src/lib/prompts.js`):
+  - `getKnowledge` agora agrega e extrai pegadinhas reais (`pegadinhasReais`), comandos típicos (`comandosReais`) e leis/dispositivos mais cobrados (`dispositivosReais`) a partir das questões rotuladas em `prova_questoes`.
+  - `promptGenerate` injeta essas evidências no system prompt de forma compacta e estável, aproveitando o cache dos modelos e ensinando a IA a elaborar com a identidade exata da banca.
+- **Testes**: 77 testes passando com 100% de sucesso (`npm test`).
+

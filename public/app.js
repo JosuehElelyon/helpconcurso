@@ -731,6 +731,8 @@ function viewCaderno() {
     if (f.status === 'unanswered' && q.ans != null) return false;
     if (f.status === 'wrong' && (q.ans == null || q.ans === q.gabarito)) return false;
     if (f.status === 'correct' && (q.ans == null || q.ans !== q.gabarito)) return false;
+    if (f.status === 'revisao_hoje' && (!q.revisao || !q.revisao.paraRevisarHoje)) return false;
+    if (f.status === 'dominadas' && (!q.revisao || !q.revisao.dominada)) return false;
     if (f.status === 'fav' && !q.favorita) return false;
     if (f.status === 'notes' && !q.anotacao) return false;
     if (qNorm && !`${q.enunciado} ${q.materia} ${q.assunto} ${q.topico_edital} ${q.anotacao}`.toLowerCase().includes(qNorm)) return false;
@@ -763,6 +765,8 @@ function viewCaderno() {
       <div><b>${c.respondidas}/${c.totalQuestoes}</b><span>Resolvidas</span></div>
       <div><b style="color:var(--ok)">${c.acertos}${c.taxaAcerto != null ? ` (${c.taxaAcerto}%)` : ''}</b><span>Acertos</span></div>
       <div><b style="color:var(--bad)">${c.erros}</b><span>Para revisar</span></div>
+      <div><b style="color:var(--brand)">🔔 ${c.revisaoHojeCount || 0}</b><span>Revisar hoje</span></div>
+      <div><b style="color:var(--ok)">✔ ${c.dominadasCount || 0}</b><span>Dominadas</span></div>
       <div><b style="color:#8A5A12">★ ${c.favoritasCount}</b><span>Favoritas</span></div>
     </div>
   </div>
@@ -859,9 +863,11 @@ function viewCaderno() {
     <div class="row" style="gap:8px;flex:1">
       <select class="select" id="cadFStatus" style="width:auto;min-width:190px;padding:8px 11px;font-size:13px">
         <option value="all" ${f.status === 'all' ? 'selected' : ''}>Todas as questões (${(c.questoes || []).length})</option>
+        <option value="revisao_hoje" ${f.status === 'revisao_hoje' ? 'selected' : ''}>🔔 Revisar hoje (${c.revisaoHojeCount || 0})</option>
         <option value="unanswered" ${f.status === 'unanswered' ? 'selected' : ''}>Não respondidas (${c.totalQuestoes - c.respondidas})</option>
         <option value="wrong" ${f.status === 'wrong' ? 'selected' : ''}>Erradas para revisar (${c.erros})</option>
         <option value="correct" ${f.status === 'correct' ? 'selected' : ''}>Acertadas (${c.acertos})</option>
+        <option value="dominadas" ${f.status === 'dominadas' ? 'selected' : ''}>✔ Dominadas (${c.dominadasCount || 0})</option>
         <option value="fav" ${f.status === 'fav' ? 'selected' : ''}>★ Favoritas / Marcadas (${c.favoritasCount})</option>
         <option value="notes" ${f.status === 'notes' ? 'selected' : ''}>📝 Com anotações (${c.anotacoesCount})</option>
       </select>
@@ -905,6 +911,7 @@ function viewCadernoQ(q, idx) {
         <span class="badge">${esc(q.materia)}</span>
         ${q.assunto ? `<span class="badge">${esc(q.assunto)}</span>` : ''}
         ${q.topico_edital ? `<span class="badge edital-tag">${ic('target', 'sm')} Edital: ${esc(q.topico_edital)}</span>` : ''}
+        ${q.revisao ? `<span class="badge ${q.revisao.dominada ? 'brand' : q.revisao.paraRevisarHoje ? 'accent' : ''}" title="Repetição Espaçada: ${q.revisao.rotulo}${q.revisao.paraRevisarHoje ? ' · Pendente para revisão hoje!' : ''}">${q.revisao.dominada ? '✔ Dominada' : q.revisao.paraRevisarHoje ? '🔔 Revisar hoje (' + q.revisao.rotulo + ')' : '⏳ ' + q.revisao.rotulo}</span>` : ''}
       </div>
       <div class="row no-print" style="gap:6px">
         <button type="button" class="fav-btn ${q.favorita ? 'on' : ''}" data-cad-fav="${esc(q.key)}" title="Marcar para revisão">${q.favorita ? '★ Favorita' : '☆ Favoritar'}</button>
@@ -1456,7 +1463,8 @@ function viewEdital() {
               ${t.questoesNaBanca ? `<span class="badge ${t.incidenciaBanca === 'alta' ? 'accent' : ''}" title="Questões reais das provas da banca neste tópico">${t.incidenciaBanca === 'alta' ? '🔥 ' : '📌 '}${t.questoesNaBanca} na banca</span>` : ''}
               ${t.questoesGeradas ? `<span class="badge" title="Questões resolvidas / geradas neste tópico">${t.questoesRespondidas}/${t.questoesGeradas} q.${t.taxaAcerto != null ? ` · ${t.taxaAcerto}%` : ''}</span>` : ''}
               <span class="st ${st.cls}">${st.label}</span>
-              <button class="btn btn-quiet" data-train-topic="${esc(d.materia)}||${esc(t.nome)}" title="Gerar questões focadas neste tópico">${ic('spark', 'sm')} Treinar</button>
+              ${t.questoesNaBanca ? `<button type="button" class="btn btn-ghost" data-treinar-reais="${t.id}" title="Treinar com questões reais da banca neste tópico (custo US$ 0)">${ic('book', 'sm')} Reais (${t.questoesNaBanca})</button>` : ''}
+              <button class="btn btn-quiet" data-train-topic="${esc(d.materia)}||${esc(t.nome)}" title="Gerar questões com IA focadas neste tópico">${ic('spark', 'sm')} Gerar</button>
             </div>
           </div>`;
         }).join('')}
@@ -1701,6 +1709,27 @@ function bindApp() {
       S.wiz.assunto = top.slice(0, 100);
       go('gerar');
       toast(`Envie seu resumo sobre "${top.slice(0, 50)}" para gerar questões focadas!`);
+    });
+    on('[data-treinar-reais]', 'click', async (e) => {
+      const topicoId = e.currentTarget.dataset.treinarReais;
+      const ed = S.activeEdital;
+      if (!ed) return;
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner sm"></span>';
+      try {
+        const r = await api(`/editais/${ed.id}/topicos/${topicoId}/praticar-reais`, { method: 'POST', body: { limite: 10 } });
+        if (r.set) {
+          S.sets.unshift(r.set);
+          S.active = r.set.id;
+          go('simulado');
+          toast(`Simulado criado com ${r.count} questão(ões) reais da banca (${r.topico?.nome || 'tópico'})! Custo US$ 0.`);
+        }
+      } catch (err) {
+        toast(err.message);
+        btn.disabled = false;
+        btn.innerHTML = `${ic('book', 'sm')} Reais`;
+      }
     });
   }
   if (S.view === 'estrelas') {

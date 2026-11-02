@@ -8,7 +8,7 @@ import { deleteFile } from '../lib/storage.js';
 import { linkOficialDeclarado } from '../lib/bancas.js';
 import { baixarDaFonteOficial } from '../lib/fonte-oficial.js';
 import { assertCanUpload } from '../services/quota.js';
-import { createEditalForUser, buildEditalDashboard } from '../services/edital.js';
+import { createEditalForUser, buildEditalDashboard, getQuestoesReaisDoTopico, criarSimuladoQuestoesReais } from '../services/edital.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -94,6 +94,32 @@ r.post('/:id/ativar', ah(async (req, res) => {
   await query('UPDATE editais SET active = (id = $2), updated_at=now() WHERE user_id=$1', [req.user.id, e.id]);
   e.active = true;
   res.json({ edital: await buildEditalDashboard(e, req.user.id) });
+}));
+
+r.get('/:id/topicos/:topicoId/questoes-reais', ah(async (req, res) => {
+  const e = await one('SELECT * FROM editais WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
+  if (!e) throw new HttpError(404, 'Edital não encontrado.');
+  const limite = Math.min(50, Math.max(1, Number(req.query.limite) || 10));
+  const result = await getQuestoesReaisDoTopico(e, req.params.topicoId, limite);
+  if (!result) throw new HttpError(404, 'Tópico não encontrado no edital.');
+  res.json(result);
+}));
+
+r.post('/:id/topicos/:topicoId/praticar-reais', ah(async (req, res) => {
+  const e = await one('SELECT * FROM editais WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
+  if (!e) throw new HttpError(404, 'Edital não encontrado.');
+  const limite = Math.min(25, Math.max(1, Number(req.body?.limite) || 10));
+  const out = await criarSimuladoQuestoesReais({
+    user: req.user,
+    edital: e,
+    topicoIdOrCode: req.params.topicoId,
+    limite,
+    cadernoId: req.body?.cadernoId || null,
+  });
+  if (!out.created) {
+    throw new HttpError(404, out.message || 'Nenhuma questão encontrada para este tópico.');
+  }
+  res.status(201).json(out);
 }));
 
 r.delete('/:id', ah(async (req, res) => {

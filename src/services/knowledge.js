@@ -47,11 +47,53 @@ export async function getKnowledge(banca, materia, nExemplos = 6, editalId = nul
     }
     exemplos = pool.slice(0, nExemplos).map(({ id, materia: mat, enunciado, alternativas, gabarito }) => ({ id, materia: mat, enunciado, alternativas, gabarito }));
   }
+
+  let pegadinhasRotuladas = [];
+  let comandosRotulados = [];
+  let dispositivosRotulados = [];
+
+  try {
+    const rotulos = await many(
+      `SELECT q.comando, q.pegadinha_tipo, q.dispositivos, q.habilidade
+       FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
+       WHERE q.banca = $1 AND p.status = 'READY' AND NOT q.flagged
+         AND (q.pegadinha_tipo IS NOT NULL OR q.comando IS NOT NULL OR (q.dispositivos IS NOT NULL AND jsonb_array_length(q.dispositivos) > 0))
+       ORDER BY (p.id = ANY($3::uuid[])) DESC, (p.edital_id = $2) DESC NULLS LAST, random() LIMIT 60`,
+      [banca, editalId || null, pIds]
+    );
+    if (rotulos.length) {
+      const pTally = new Map();
+      const cTally = new Map();
+      const dArr = [];
+      for (const r of rotulos) {
+        if (r.pegadinha_tipo) {
+          const k = String(r.pegadinha_tipo).trim();
+          if (k) pTally.set(k, (pTally.get(k) || 0) + 1);
+        }
+        if (r.comando) {
+          const k = String(r.comando).trim();
+          if (k) cTally.set(k, (cTally.get(k) || 0) + 1);
+        }
+        if (Array.isArray(r.dispositivos)) {
+          dArr.push(r.dispositivos);
+        }
+      }
+      pegadinhasRotuladas = [...pTally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map((e) => e[0]);
+      comandosRotulados = [...cTally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map((e) => e[0]);
+      dispositivosRotulados = tally(dArr, 6);
+    }
+  } catch {
+    // degrada suavemente caso a base ainda não tenha dados rotulados
+  }
+
   return {
     provas: provas.length,
     caracteristicas: tally(an.map((a) => a.caracteristicas), 10),
     padroes: tally(an.map((a) => a.padroes_enunciado), 8),
-    pegadinhas: tally(an.map((a) => a.pegadinhas), 8),
+    pegadinhas: tally([...an.map((a) => a.pegadinhas), pegadinhasRotuladas], 8),
+    pegadinhasReais: pegadinhasRotuladas,
+    comandosReais: comandosRotulados,
+    dispositivosReais: dispositivosRotulados,
     exemplos,
   };
 }

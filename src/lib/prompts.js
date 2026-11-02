@@ -38,9 +38,12 @@ export function promptGenerate(p) {
 PERFIL DA BANCA ${b.nome}:
 - ${b.resumo}
 ${b.estilo.map((s) => '- ' + s).join('\n')}
-${list(`ESTILO APRENDIDO DE ${k.provas} PROVA(S) ANTERIOR(ES)`, k.caracteristicas)}
-${list('PADRÕES DE ENUNCIADO OBSERVADOS', k.padroes)}
-${list('PEGADINHAS RECORRENTES', k.pegadinhas)}
+${list(`ESTILO APRENDIDO DE ${k.provas} PROVA(S) ANTERIOR(ES)`, k.caracteristicas || [])}
+${list('PADRÕES DE ENUNCIADO OBSERVADOS', k.padroes || [])}
+${list('PEGADINHAS RECORRENTES', k.pegadinhas || [])}
+${list('PEGADINHAS REAIS IDENTIFICADAS NA BASE', k.pegadinhasReais || [])}
+${list('COMANDOS TÍPICOS DA BANCA', k.comandosReais || [])}
+${list('LEIS/DISPOSITIVOS DE MAIOR INCIDÊNCIA', k.dispositivosReais || [])}
 
 TÉCNICA DE ELABORAÇÃO (é o que separa questão de banca de cópia da lei):
 - Não transcreva o dispositivo: transforme-o — aplique a um caso concreto, use sinônimo técnico, inverta causa e consequência ou combine dois dispositivos.
