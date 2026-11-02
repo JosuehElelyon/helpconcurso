@@ -127,10 +127,28 @@ test('Q3: promptGenerate injeta pegadinhas, comandos e leis reais da base no sys
     text: 'Art. 5º Todos são iguais perante a lei...',
   });
 
-  assert.ok(p.system.includes('PEGADINHAS REAIS IDENTIFICADAS NA BASE'));
+  assert.ok(p.system.includes('COMO A BANCA ARMA AS PEGADINHAS NESTA MATÉRIA'));
   assert.ok(p.system.includes('inversao_sujeito'));
-  assert.ok(p.system.includes('COMANDOS TÍPICOS DA BANCA'));
+  assert.ok(p.system.includes('COMANDOS DE QUESTÃO MAIS USADOS PELA BANCA'));
   assert.ok(p.system.includes('Julgue o item a seguir'));
-  assert.ok(p.system.includes('LEIS/DISPOSITIVOS DE MAIOR INCIDÊNCIA'));
+  assert.ok(p.system.includes('LEIS E DISPOSITIVOS MAIS COBRADOS'));
   assert.ok(p.system.includes('CF art. 5º'));
+  // Texto extraído de provas enviadas por usuários entra isolado por untrusted() (regra do projeto)
+  assert.match(p.system, /LEIS E DISPOSITIVOS MAIS COBRADOS[^\n]*\n<<INICIO-[a-f0-9]+>>[\s\S]*CF art\. 5º[\s\S]*<<FIM-[a-f0-9]+>>/);
+});
+
+test('C4: revisão vence por dia (Brasília) e erro antigo sem ciclo entra na Fase 1', async () => {
+  const { estadoEfetivo } = await import('../src/lib/revisao-espacada.js');
+  // Errou às 20h (Brasília) de 02/11 → revisão 03/11 às 20h; às 08h do dia 03 já aparece (conta por dia)
+  const e1 = calcularRevisao({ estadoAnterior: null, acerto: false, data: new Date('2026-11-02T23:00:00Z') });
+  assert.equal(paraRevisarHoje(e1, new Date('2026-11-03T11:00:00Z')), true);
+  assert.equal(paraRevisarHoje(e1, new Date('2026-11-02T23:30:00Z')), false);
+  // Erro antigo, sem estado gravado
+  const ef = estadoEfetivo(null, 'B', 'A');
+  assert.equal(ef.fase, 1);
+  assert.equal(paraRevisarHoje(ef), true);
+  assert.equal(estadoEfetivo(null, 'A', 'A'), null);
+  assert.equal(estadoEfetivo(null, null, 'A'), null);
+  // Acertar na revisão uma questão que vinha de erro antigo avança para a Fase 2
+  assert.equal(calcularRevisao({ estadoAnterior: ef, acerto: true }).fase, 2);
 });

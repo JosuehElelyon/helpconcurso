@@ -274,3 +274,19 @@ C1, C2, C3, C4, C5, C6, C7 + testes de cada um (inclusive IDOR e mistura de form
 ### Sprint 6 — medir qualidade de verdade
 Q4/D4/D9: `prompt_versao` e modelo em cada simulado; painel admin com % descartada pelo revisor, 👍/👎, erros confirmados e
 chamadas/429 por provedor; cache de prompt medido. Decisões de modelo e prompt passam a usar dado real dos alunos.
+
+## Sprint 3.1 — concluída (02/11/2026)
+- **C1** caderno do simulado de questões reais só do próprio aluno (404 para caderno alheio).
+- **C2** formato por questão: o simulado tem um formato só (o da banca; sem banca, o mais comum); questão incoerente
+  (sem alternativas e gabarito de letra) fica de fora. Antes, ME virava C/E com gabarito "B".
+- **C3** "do tópico" × "da disciplina": a questão da disciplina não é atribuída ao tópico; edital sem banca usa só provas
+  vinculadas; o front diz quantas são de cada.
+- **Bug achado no caminho:** o simulado de questões reais gravava em colunas inexistentes (`tokens_in`, `tokens_out`,
+  `custo_estimado_usd`) → o botão "Reais" dava erro 500 sempre. O teste original passava sem exercitar (sem questões na base);
+  agora o teste cria a base e cobre o fluxo inteiro.
+- **C4** resposta dada no simulado de um caderno entra no ciclo (merge atômico no jsonb); erro antigo sem ciclo vira Fase 1;
+  revisão vence por dia no fuso de Brasília.
+- **C5/C6** DNA da banca agregado por banca + matéria com contagem (sem sorteio), códigos traduzidos; exemplos com ordem fixa
+  por dia → system estável para todos os alunos da banca no dia (cache). Leis extraídas entram por `untrusted()`. Prompt v5.
+- **C7** comentário mostra a descrição do comando, não o código.
+- Testes: 80.

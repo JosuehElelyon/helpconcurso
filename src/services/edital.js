@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import { promptEditalParse, promptEditalMatch, PROMPT_VERSAO } from '../lib/prompts.js';
 import { normNome, materiaId, topicoId } from './taxonomia.js';
 import { BANCA, MATERIAS } from '../lib/bancas.js';
+import { COMANDOS, PEGADINHAS } from '../lib/cobranca.js';
 import { secureUpload, scanText, SEV, logSecurityEvent } from '../security/index.js';
 import { sanitizeText } from '../security/text-scan.js';
 import { decide } from '../security/policy.js';
@@ -501,26 +502,30 @@ export async function createEditalForUser({ user, file, text: rawText, banca, or
 }
 
 const STOP_WORDS = new Set(['para', 'como', 'mais', 'pelo', 'pela', 'seus', 'suas', 'sobre', 'entre', 'apos', 'ante', 'cada', 'qual', 'quais', 'quando', 'onde', 'porque', 'este', 'esta', 'esse', 'essa', 'isso', 'aquilo', 'todo', 'toda', 'todos', 'todas', 'outro', 'outra', 'nocoes']);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Formato de uma questão real, pelo que ela é (não pelo edital): C/E sem alternativas e gabarito C/E; ME com 2+ alternativas e letra
+const formatoDaQuestao = (q) => {
+  const alts = Array.isArray(q.alternativas) ? q.alternativas : [];
+  const g = String(q.gabarito || '').trim().toUpperCase();
+  if (!alts.length && /^[CE]$/.test(g)) return 'ce';
+  if (alts.length >= 2 && /^[A-E]$/.test(g) && 'ABCDE'.indexOf(g) < alts.length) return 'me';
+  return null; // inconsistente (ex.: sem alternativas e gabarito "B") — fica de fora
+};
 
 /**
- * Busca questões reais de provas anteriores para um tópico específico do edital verticalizado.
+ * Questões reais de provas anteriores para um tópico do edital verticalizado.
+ * nivel = 'topico' (rótulo/tópico da taxonomia ou palavras do tópico no enunciado) ou 'disciplina' (só a matéria bate).
+ * Sem banca no edital, só entram provas vinculadas a ele (não mistura bancas).
  */
-export async function getQuestoesReaisDoTopico(edital, topicoIdOrCode, limite = 20) {
+export async function getQuestoesReaisDoTopico(edital, topicoIdOrCode, limite = 20, { formato = null } = {}) {
   const vert = edital?.verticalizado || [];
   let targetTopico = null;
   let targetDisciplina = null;
-
   for (const d of vert) {
-    for (const t of d.topicos || []) {
-      if (t.id === topicoIdOrCode || t.codigo === topicoIdOrCode || norm(t.nome) === norm(topicoIdOrCode)) {
-        targetTopico = t;
-        targetDisciplina = d;
-        break;
-      }
-    }
-    if (targetTopico) break;
+    targetTopico = (d.topicos || []).find((t) => t.id === topicoIdOrCode || t.codigo === topicoIdOrCode || norm(t.nome) === norm(topicoIdOrCode)) || null;
+    if (targetTopico) { targetDisciplina = d; break; }
   }
-
   if (!targetTopico || !targetDisciplina) return null;
 
   const kw = norm(targetTopico.nome).split(' ').filter((w) => w.length >= 4 && !STOP_WORDS.has(w));
@@ -532,56 +537,23 @@ export async function getQuestoesReaisDoTopico(edital, topicoIdOrCode, limite = 
      FROM prova_questoes q
      JOIN provas p ON p.id = q.prova_id
      WHERE p.status = 'READY' AND NOT q.flagged AND q.gabarito IS NOT NULL AND length(trim(q.gabarito)) > 0
-       AND ($3::text IS NULL OR q.banca = $3 OR p.edital_id = $1 OR p.id = $2)
-       AND (
-         ($4::text IS NOT NULL AND q.topico_id = $4)
-         OR ($5::text IS NOT NULL AND q.topico ILIKE $5)
-         OR (q.materia ILIKE $6)
-         OR ($7::text IS NOT NULL AND q.enunciado ILIKE $7)
-       )
-     LIMIT 100`,
-    [
-      edital.id,
-      edital.prova_id || null,
-      edital.banca || null,
-      targetTopico.topicoId || null,
-      `%${targetTopico.nome}%`,
-      `%${targetDisciplina.materia}%`,
-      kw[0] ? `%${kw[0]}%` : null,
-    ]
+       AND (($3::text IS NOT NULL AND q.banca = $3) OR p.edital_id = $1 OR p.id = $2)
+       AND (($4::text IS NOT NULL AND q.topico_id = $4) OR q.topico ILIKE $5 OR q.materia ILIKE $6)
+     ORDER BY q.id
+     LIMIT 400`,
+    [edital.id, edital.prova_id || null, edital.banca || null, targetTopico.topicoId || null, `%${targetTopico.nome}%`, `%${targetDisciplina.materia}%`]
   );
 
-  let questoes = [...pool];
-  if (!questoes.length) {
-    questoes = await many(
-      `SELECT q.id, q.numero, q.materia, q.topico, q.topico_id, q.comando, q.pegadinha_tipo,
-              q.dispositivos, q.habilidade, q.enunciado, q.alternativas, q.gabarito,
-              p.id AS prova_id, p.titulo AS prova_titulo, p.file_name, p.ano AS prova_ano, p.banca,
-              false AS vinculada
-       FROM prova_questoes q
-       JOIN provas p ON p.id = q.prova_id
-       WHERE p.status = 'READY' AND NOT q.flagged AND q.gabarito IS NOT NULL AND length(trim(q.gabarito)) > 0
-         AND ($1::text IS NULL OR q.banca = $1)
-         AND (q.materia ILIKE $2)
-       ORDER BY random() LIMIT $3`,
-      [edital.banca || null, `%${targetDisciplina.materia}%`, limite]
-    );
-  }
+  const avaliadas = pool.map((q) => {
+    const texto = norm(`${q.topico || ''} ${q.enunciado || ''}`);
+    const hits = kw.filter((w) => texto.includes(w)).length;
+    const doTopico = (targetTopico.topicoId && q.topico_id === targetTopico.topicoId) || (q.topico && norm(q.topico).includes(norm(targetTopico.nome))) || hits >= Math.min(2, kw.length || 1);
+    return { ...q, nivel: doTopico ? 'topico' : 'disciplina', formato: formatoDaQuestao(q), _score: (doTopico ? 100 : 0) + (q.vinculada ? 10 : 0) + hits * 3 };
+  }).filter((q) => q.formato && (!formato || q.formato === formato));
+  // Ordem determinística (sem sorteio): mais aderentes primeiro; empate pelo id
+  avaliadas.sort((a, b) => b._score - a._score || String(a.id).localeCompare(String(b.id)));
 
-  questoes.forEach((q) => {
-    let score = 0;
-    if (q.vinculada) score += 10;
-    if (targetTopico.topicoId && q.topico_id === targetTopico.topicoId) score += 20;
-    if (q.topico && norm(q.topico).includes(norm(targetTopico.nome))) score += 15;
-    const textNorm = norm(`${q.materia || ''} ${q.topico || ''} ${q.enunciado || ''}`);
-    for (const w of kw) {
-      if (textNorm.includes(w)) score += 3;
-    }
-    q._score = score + Math.random() * 0.5;
-  });
-
-  questoes.sort((a, b) => b._score - a._score);
-  const selecionadas = questoes.slice(0, limite).map((q) => ({
+  const selecionadas = avaliadas.slice(0, limite).map((q) => ({
     id: q.id,
     numero: q.numero || null,
     provaId: q.prova_id,
@@ -591,8 +563,9 @@ export async function getQuestoesReaisDoTopico(edital, topicoIdOrCode, limite = 
     materia: q.materia,
     enunciado: q.enunciado,
     alternativas: Array.isArray(q.alternativas) ? q.alternativas : [],
-    gabarito: q.gabarito,
-    formato: (Array.isArray(q.alternativas) && q.alternativas.length > 0) ? 'me' : 'ce',
+    gabarito: String(q.gabarito).trim().toUpperCase(),
+    formato: q.formato,
+    nivel: q.nivel,
     comando: q.comando || null,
     pegadinha: q.pegadinha_tipo || null,
     habilidade: q.habilidade || null,
@@ -600,110 +573,77 @@ export async function getQuestoesReaisDoTopico(edital, topicoIdOrCode, limite = 
   }));
 
   return {
-    topico: {
-      id: targetTopico.id,
-      codigo: targetTopico.codigo,
-      nome: targetTopico.nome,
-      topicoId: targetTopico.topicoId || null,
-    },
-    disciplina: {
-      id: targetDisciplina.id,
-      materia: targetDisciplina.materia,
-      materiaId: targetDisciplina.materiaId || null,
-    },
+    topico: { id: targetTopico.id, codigo: targetTopico.codigo, nome: targetTopico.nome, topicoId: targetTopico.topicoId || null },
+    disciplina: { id: targetDisciplina.id, materia: targetDisciplina.materia, materiaId: targetDisciplina.materiaId || null },
     total: selecionadas.length,
+    doTopico: avaliadas.filter((q) => q.nivel === 'topico').length,
+    daDisciplina: avaliadas.filter((q) => q.nivel === 'disciplina').length,
     questoes: selecionadas,
   };
 }
 
 /**
- * Cria um question_set a partir de questões reais da banca filtradas pelo tópico (custo US$ 0 de IA).
+ * Cria um question_set com questões reais da banca filtradas pelo tópico (custo US$ 0 de IA).
+ * Um simulado tem um formato só: o da banca do edital; sem banca, o formato mais comum entre as questões encontradas.
  */
 export async function criarSimuladoQuestoesReais({ user, edital, topicoIdOrCode, limite = 10, cadernoId = null }) {
-  const result = await getQuestoesReaisDoTopico(edital, topicoIdOrCode, limite);
+  // Caderno só do próprio aluno (C1)
+  let targetCadernoId = null;
+  if (cadernoId) {
+    const cad = UUID_RE.test(String(cadernoId)) ? await one('SELECT id FROM cadernos WHERE id=$1 AND user_id=$2', [cadernoId, user.id]) : null;
+    if (!cad) throw new HttpError(404, 'Caderno não encontrado.');
+    targetCadernoId = cad.id;
+  }
+
+  let formato = BANCA[edital.banca]?.formato || null;
+  if (!formato) {
+    const amostra = await getQuestoesReaisDoTopico(edital, topicoIdOrCode, 400);
+    const ce = (amostra?.questoes || []).filter((q) => q.formato === 'ce').length;
+    formato = ce > (amostra?.questoes || []).length / 2 ? 'ce' : 'me';
+  }
+  const result = await getQuestoesReaisDoTopico(edital, topicoIdOrCode, limite, { formato });
   if (!result || !result.questoes.length) {
-    return {
-      created: false,
-      count: 0,
-      message: 'Nenhuma questão real da banca encontrada para este tópico no momento.',
-      topico: result?.topico || null,
-    };
+    return { created: false, count: 0, message: 'Nenhuma questão real da banca encontrada para este tópico no momento.', topico: result?.topico || null };
   }
 
   const { topico, disciplina, questoes } = result;
-  const isCe = edital.banca === 'cebraspe' || questoes.every((q) => (q.alternativas || []).length === 0);
-  const formato = isCe ? 'ce' : 'me';
-
   const formattedQuestoes = questoes.map((q) => ({
     id: q.id,
     provaId: q.provaId,
     provaTitulo: q.provaTitulo,
     provaAno: q.provaAno,
     enunciado: q.enunciado,
-    alternativas: isCe ? [] : (q.alternativas || []),
+    alternativas: formato === 'ce' ? [] : q.alternativas,
     gabarito: q.gabarito,
-    comentario: q.comando
-      ? `[${q.comando}] Questão real de ${q.provaTitulo}${q.provaAno ? ' (' + q.provaAno + ')' : ''}.`
-      : `Questão real da banca ${(edital.banca || '').toUpperCase()} extraída de prova anterior (${q.provaTitulo}).`,
-    tema: topico.nome,
-    topico_edital: `${topico.codigo ? topico.codigo + ' ' : ''}${topico.nome}`,
+    comentario: `Questão real de ${q.provaTitulo}${q.provaAno ? ' (' + q.provaAno + ')' : ''}.${q.comando && COMANDOS[q.comando] ? ' Comando: ' + COMANDOS[q.comando] + '.' : ''}${q.nivel === 'disciplina' ? ' Questão da disciplina, não necessariamente deste tópico.' : ''}`,
+    tema: q.nivel === 'topico' ? topico.nome : disciplina.materia,
+    // Só atribui ao tópico do edital o que é do tópico (C3)
+    topico_edital: q.nivel === 'topico' ? `${topico.codigo ? topico.codigo + ' ' : ''}${topico.nome}` : '',
     nivel: 'Prova real',
-    pegadinha: q.pegadinha || '',
+    pegadinha: q.pegadinha && PEGADINHAS[q.pegadinha] ? PEGADINHAS[q.pegadinha] : '',
     dispositivos: q.dispositivos || [],
     verificada: true,
     ancorada: true,
   }));
 
-  let targetCadernoId = cadernoId || null;
   if (!targetCadernoId) {
     const cad = await one('SELECT id FROM cadernos WHERE user_id=$1 AND edital_id=$2 ORDER BY updated_at DESC LIMIT 1', [user.id, edital.id]);
     if (cad) targetCadernoId = cad.id;
   }
-
   const taxTopicoId = topico.topicoId || (disciplina.materiaId ? await topicoId(disciplina.materiaId, topico.nome) : null);
 
   const setRow = await one(
     `INSERT INTO question_sets (
        user_id, caderno_id, edital_id, banca, materia, assunto, nivel, formato,
-       arquivo, questoes, respostas, finalizado, model, tokens_in, tokens_out,
-       custo_estimado_usd, origem, topico_id, topico_codigo
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       arquivo, questoes, respostas, finalizado, model, origem, topico_id, topico_codigo
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      RETURNING *`,
-    [
-      user.id,
-      targetCadernoId,
-      edital.id,
-      edital.banca || 'cebraspe',
-      disciplina.materia,
-      topico.nome,
-      'Prova real',
-      formato,
-      `${edital.titulo || 'Edital'} · Questões reais da banca`,
-      JSON.stringify(formattedQuestoes),
-      JSON.stringify({}),
-      false,
-      'prova_real',
-      0,
-      0,
-      0,
-      'prova_real',
-      taxTopicoId,
-      topico.codigo || topico.id,
-    ]
+    [user.id, targetCadernoId, edital.id, edital.banca || 'cebraspe', disciplina.materia, topico.nome, 'Prova real', formato,
+      `${edital.titulo || 'Edital'} · Questões reais da banca`, JSON.stringify(formattedQuestoes), JSON.stringify({}), false,
+      'prova_real', 'prova_real', taxTopicoId, topico.codigo || topico.id]
   );
+  if (targetCadernoId) await query('UPDATE cadernos SET updated_at=now() WHERE id=$1', [targetCadernoId]);
 
-  if (targetCadernoId) {
-    await query('UPDATE cadernos SET updated_at=now() WHERE id=$1', [targetCadernoId]);
-  }
-
-  return {
-    created: true,
-    set: setRow,
-    count: formattedQuestoes.length,
-    topico,
-    disciplina,
-    cadernoId: targetCadernoId,
-  };
+  const doTopico = formattedQuestoes.filter((q) => q.topico_edital).length;
+  return { created: true, set: setRow, count: formattedQuestoes.length, doTopico, daDisciplina: formattedQuestoes.length - doTopico, topico, disciplina, cadernoId: targetCadernoId };
 }
-
-

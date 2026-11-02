@@ -1723,7 +1723,7 @@ function bindApp() {
           S.sets.unshift(r.set);
           S.active = r.set.id;
           go('simulado');
-          toast(`Simulado criado com ${r.count} questão(ões) reais da banca (${r.topico?.nome || 'tópico'})! Custo US$ 0.`);
+          toast(`Simulado com ${r.count} questão(ões) reais da banca: ${r.doTopico} deste tópico${r.daDisciplina ? ` e ${r.daDisciplina} da disciplina (${r.disciplina?.materia || 'mesma matéria'})` : ''}. Custo US$ 0.`);
         }
       } catch (err) {
         toast(err.message);

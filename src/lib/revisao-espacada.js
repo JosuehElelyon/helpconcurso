@@ -77,14 +77,25 @@ export function calcularRevisao({ estadoAnterior = null, acerto, data = new Date
   };
 }
 
+const diaBR = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(d);
+
 /**
- * Retorna se uma questão está pendente para revisão hoje.
+ * Retorna se uma questão está pendente para revisão hoje. Conta por DIA no fuso de Brasília: a revisão marcada para
+ * amanhã aparece desde a meia-noite (não 24 h exatas depois da resposta).
  */
 export function paraRevisarHoje(estado, agora = new Date()) {
   if (!estado || estado.dominada || !estado.proximaRevisao) return false;
-  const tAgora = agora instanceof Date ? agora.getTime() : new Date(agora).getTime();
-  const tRev = new Date(estado.proximaRevisao).getTime();
-  return tRev <= tAgora;
+  return diaBR(new Date(estado.proximaRevisao)) <= diaBR(agora instanceof Date ? agora : new Date(agora));
+}
+
+/**
+ * Estado efetivo da questão: o gravado; ou, se a última resposta foi errada e não há estado (erro feito antes da revisão
+ * espaçada existir, ou num simulado fora de caderno), entra na Fase 1 vencendo hoje.
+ */
+export function estadoEfetivo(estado, resposta, gabarito, agora = new Date()) {
+  if (estado) return estado;
+  if (resposta == null || !gabarito || resposta === gabarito) return null;
+  return { fase: 1, intervaloDias: 1, proximaRevisao: agora.toISOString(), acertosSeguidos: 0, vezesAcertada: 0, vezesErrada: 1, dominada: false, derivado: true };
 }
 
 /**

@@ -15,7 +15,7 @@ import { BANCA } from '../lib/bancas.js';
 import { submitProva, publicStatus } from '../services/provas.js';
 import { assertCanUpload } from '../services/quota.js';
 import { scanText, SEV } from '../security/index.js';
-import { calcularRevisao, paraRevisarHoje, rotuloFase, resumoRevisao } from '../lib/revisao-espacada.js';
+import { calcularRevisao, paraRevisarHoje, rotuloFase, resumoRevisao, estadoEfetivo } from '../lib/revisao-espacada.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -112,6 +112,9 @@ function summarizeCaderno(c, setsForCaderno = [], editalTitulo = null) {
   let respondidas = 0;
   let acertos = 0;
   const matSet = new Set(uniq(c.materiais_ids));
+  // Estado efetivo da revisão espaçada (inclui erros antigos ainda sem ciclo gravado)
+  const revMap = c.revisao_espacada && typeof c.revisao_espacada === 'object' ? c.revisao_espacada : {};
+  const revEfetiva = { ...revMap };
 
   for (const s of setsForCaderno) {
     if (s.material_id) matSet.add(s.material_id);
@@ -124,6 +127,9 @@ function summarizeCaderno(c, setsForCaderno = [], editalTitulo = null) {
         respondidas++;
         if (a === q.gabarito) acertos++;
       }
+      const key = `set:${s.id}:${idx}`;
+      const ef = estadoEfetivo(revMap[key], a ?? null, q.gabarito);
+      if (ef) revEfetiva[key] = ef;
     });
   }
 
@@ -133,6 +139,8 @@ function summarizeCaderno(c, setsForCaderno = [], editalTitulo = null) {
       respondidas++;
       if (a === q.gabarito) acertos++;
     }
+    const ef = estadoEfetivo(revMap[`extra:${q.id}`], a ?? null, q.gabarito);
+    if (ef) revEfetiva[`extra:${q.id}`] = ef;
   }
 
   const questoesProvas = extras.length;
@@ -141,7 +149,7 @@ function summarizeCaderno(c, setsForCaderno = [], editalTitulo = null) {
   const taxaAcerto = respondidas > 0 ? Math.round((acertos / respondidas) * 100) : null;
   const favoritasCount = Object.values(favs).filter(Boolean).length;
   const anotacoesCount = Object.values(notes).filter((v) => String(v || '').trim().length > 0).length;
-  const revResumo = resumoRevisao(c.revisao_espacada || {});
+  const revResumo = resumoRevisao(revEfetiva);
 
   return {
     id: c.id,
@@ -219,7 +227,7 @@ async function buildCadernoDetail(rawCaderno, userId) {
       const ans = r[idx] ?? null;
       const isOk = ans != null && ans === q.gabarito;
       const mat = s.materia || 'Geral';
-      const rev = revisaoMap[key] || null;
+      const rev = estadoEfetivo(revisaoMap[key], ans, q.gabarito);
       bumpMat(mat, ans != null, isOk);
       questoes.push({
         key,
@@ -265,7 +273,7 @@ async function buildCadernoDetail(rawCaderno, userId) {
     const ans = respExtras[q.id] ?? null;
     const isOk = ans != null && ans === q.gabarito;
     const mat = q.materia || 'Conhecimentos Gerais';
-    const rev = revisaoMap[key] || null;
+    const rev = estadoEfetivo(revisaoMap[key], ans, q.gabarito);
     bumpMat(mat, ans != null, isOk);
     questoes.push({
       key,
@@ -636,6 +644,7 @@ r.patch('/:id/interagir', ah(async (req, res) => {
     }
     if (b.resposta !== undefined) {
       let gabarito = null;
+      let respostaAnterior = null;
       if (b.key.startsWith('set:')) {
         const [, setId, idxStr] = b.key.split(':');
         const idx = Number(idxStr);
@@ -643,6 +652,7 @@ r.patch('/:id/interagir', ah(async (req, res) => {
           const s = await one('SELECT id, questoes, respostas FROM question_sets WHERE id=$1 AND user_id=$2', [setId, req.user.id]);
           if (s) {
             const r = { ...(s.respostas || {}) };
+            respostaAnterior = r[idx] ?? null;
             if (b.resposta === null) delete r[idx];
             else r[idx] = b.resposta;
             await query('UPDATE question_sets SET respostas=$2, updated_at=now() WHERE id=$1', [s.id, JSON.stringify(r)]);
@@ -652,6 +662,7 @@ r.patch('/:id/interagir', ah(async (req, res) => {
         }
       } else if (b.key.startsWith('extra:')) {
         const qId = b.key.slice(6);
+        respostaAnterior = respExtras[qId] ?? null;
         if (b.resposta === null) delete respExtras[qId];
         else respExtras[qId] = b.resposta;
         const extras = Array.isArray(c.questoes_extras) ? c.questoes_extras : [];
@@ -661,7 +672,7 @@ r.patch('/:id/interagir', ah(async (req, res) => {
 
       if (b.resposta !== null && gabarito) {
         const acerto = (b.resposta === gabarito);
-        const estadoAnterior = revisaoMap[b.key] || null;
+        const estadoAnterior = estadoEfetivo(revisaoMap[b.key], respostaAnterior, gabarito);
         const novo = calcularRevisao({ estadoAnterior, acerto });
         if (novo) {
           revisaoMap[b.key] = novo;

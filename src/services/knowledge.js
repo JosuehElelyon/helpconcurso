@@ -1,6 +1,12 @@
 // "Conhecimento" de uma banca = perfil base + estilo agregado das provas + questões reais de exemplo.
 // Só entram provas READY e questões que passaram na varredura de segurança (flagged = false).
+import crypto from 'node:crypto';
 import { many } from '../db.js';
+import { COMANDOS, PEGADINHAS } from '../lib/cobranca.js';
+
+// Ordem dos exemplos: varia por dia, mas é a mesma para todos os alunos no dia (system estável → cache do provedor)
+const diaBR = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+const desempate = (id, dia) => parseInt(crypto.createHash('md5').update(String(id) + dia).digest('hex').slice(0, 6), 16) / 0xffffff;
 
 const tally = (lists, max) => {
   const m = new Map();
@@ -21,6 +27,7 @@ export async function getKnowledge(banca, materia, nExemplos = 6, editalId = nul
   );
   const an = provas.map((p) => p.analysis || {});
   let exemplos = [];
+  const dia = diaBR();
   if (nExemplos > 0) {
     const base = `SELECT q.id, q.materia, q.enunciado, q.alternativas, q.gabarito,
                          (p.edital_id = $3) AS from_edital, (p.id = ANY($4::uuid[])) AS from_caderno
@@ -28,11 +35,11 @@ export async function getKnowledge(banca, materia, nExemplos = 6, editalId = nul
                   WHERE q.banca=$1 AND p.status='READY' AND NOT q.flagged`;
     let pool = [];
     if (materia) {
-      pool = await many(`${base} AND q.materia ILIKE $2 ORDER BY (p.id = ANY($4::uuid[])) DESC, (p.edital_id = $3) DESC NULLS LAST, random() LIMIT 40`, [banca, `%${materia}%`, editalId || null, pIds]);
+      pool = await many(`${base} AND q.materia ILIKE $2 ORDER BY (p.id = ANY($4::uuid[])) DESC, (p.edital_id = $3) DESC NULLS LAST, md5(q.id::text || $5) LIMIT 40`, [banca, `%${materia}%`, editalId || null, pIds, dia]);
     }
     if (pool.length < nExemplos) {
       const ids = pool.map((e) => e.id);
-      const extra = await many(`${base} AND NOT (q.id = ANY($2::uuid[])) ORDER BY (p.id = ANY($4::uuid[])) DESC, (p.edital_id = $3) DESC NULLS LAST, random() LIMIT $5`, [banca, ids, editalId || null, pIds, 30]);
+      const extra = await many(`${base} AND NOT (q.id = ANY($2::uuid[])) ORDER BY (p.id = ANY($4::uuid[])) DESC, (p.edital_id = $3) DESC NULLS LAST, md5(q.id::text || $6) LIMIT $5`, [banca, ids, editalId || null, pIds, 30, dia]);
       pool = pool.concat(extra);
     }
     const kw = tokenize(`${materia || ''} ${assunto || ''}`);
@@ -41,56 +48,47 @@ export async function getKnowledge(banca, materia, nExemplos = 6, editalId = nul
         const textNorm = String(`${q.materia || ''} ${q.enunciado || ''}`).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         let hits = 0;
         for (const w of kw) if (textNorm.includes(w)) hits++;
-        q._score = (q.from_caderno ? 8 : 0) + (q.from_edital ? 5 : 0) + hits * 2 + Math.random() * 0.5;
+        q._score = (q.from_caderno ? 8 : 0) + (q.from_edital ? 5 : 0) + hits * 2 + desempate(q.id, dia) * 0.5;
       });
       pool.sort((a, b) => (b._score || 0) - (a._score || 0));
     }
     exemplos = pool.slice(0, nExemplos).map(({ id, materia: mat, enunciado, alternativas, gabarito }) => ({ id, materia: mat, enunciado, alternativas, gabarito }));
   }
 
+  // DNA da banca (Fase 2): como a banca cobra, contado sobre TODAS as questões rotuladas (sem sorteio → o system do prompt
+  // fica igual para todos os alunos da banca/matéria e o cache do provedor funciona). Pegadinhas e leis: só da matéria pedida;
+  // comandos: da banca inteira (é estilo de enunciado). Códigos do vocabulário fechado viram descrição legível.
   let pegadinhasRotuladas = [];
   let comandosRotulados = [];
   let dispositivosRotulados = [];
-
   try {
-    const rotulos = await many(
-      `SELECT q.comando, q.pegadinha_tipo, q.dispositivos, q.habilidade
-       FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
-       WHERE q.banca = $1 AND p.status = 'READY' AND NOT q.flagged
-         AND (q.pegadinha_tipo IS NOT NULL OR q.comando IS NOT NULL OR (q.dispositivos IS NOT NULL AND jsonb_array_length(q.dispositivos) > 0))
-       ORDER BY (p.id = ANY($3::uuid[])) DESC, (p.edital_id = $2) DESC NULLS LAST, random() LIMIT 60`,
-      [banca, editalId || null, pIds]
-    );
-    if (rotulos.length) {
-      const pTally = new Map();
-      const cTally = new Map();
-      const dArr = [];
-      for (const r of rotulos) {
-        if (r.pegadinha_tipo) {
-          const k = String(r.pegadinha_tipo).trim();
-          if (k) pTally.set(k, (pTally.get(k) || 0) + 1);
-        }
-        if (r.comando) {
-          const k = String(r.comando).trim();
-          if (k) cTally.set(k, (cTally.get(k) || 0) + 1);
-        }
-        if (Array.isArray(r.dispositivos)) {
-          dArr.push(r.dispositivos);
-        }
-      }
-      pegadinhasRotuladas = [...pTally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map((e) => e[0]);
-      comandosRotulados = [...cTally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map((e) => e[0]);
-      dispositivosRotulados = tally(dArr, 6);
-    }
-  } catch {
-    // degrada suavemente caso a base ainda não tenha dados rotulados
+    const filtroMateria = materia ? `%${materia}%` : null;
+    const fmt = (rows, vocab) => rows.map((r) => `${vocab ? vocab[r.k] || r.k : r.k} (${r.n} questões)`);
+    const [pegs, cmds, disps] = await Promise.all([
+      many(`SELECT q.pegadinha_tipo AS k, count(*)::int AS n FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
+            WHERE q.banca=$1 AND p.status='READY' AND NOT q.flagged AND q.pegadinha_tipo IS NOT NULL AND q.pegadinha_tipo <> 'nenhuma'
+              AND ($2::text IS NULL OR q.materia ILIKE $2)
+            GROUP BY 1 ORDER BY n DESC, k LIMIT 6`, [banca, filtroMateria]),
+      many(`SELECT q.comando AS k, count(*)::int AS n FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
+            WHERE q.banca=$1 AND p.status='READY' AND NOT q.flagged AND q.comando IS NOT NULL AND q.comando <> 'outro'
+            GROUP BY 1 ORDER BY n DESC, k LIMIT 5`, [banca]),
+      many(`SELECT d AS k, count(*)::int AS n FROM prova_questoes q JOIN provas p ON p.id = q.prova_id,
+                   jsonb_array_elements_text(coalesce(q.dispositivos, '[]'::jsonb)) AS d
+            WHERE q.banca=$1 AND p.status='READY' AND NOT q.flagged AND ($2::text IS NULL OR q.materia ILIKE $2)
+            GROUP BY 1 HAVING count(*) >= 2 ORDER BY n DESC, k LIMIT 6`, [banca, filtroMateria]),
+    ]);
+    pegadinhasRotuladas = fmt(pegs, PEGADINHAS);
+    comandosRotulados = fmt(cmds, COMANDOS);
+    dispositivosRotulados = fmt(disps, null);
+  } catch (e) {
+    console.warn('[conhecimento] DNA da banca indisponível:', e.message);
   }
 
   return {
     provas: provas.length,
     caracteristicas: tally(an.map((a) => a.caracteristicas), 10),
     padroes: tally(an.map((a) => a.padroes_enunciado), 8),
-    pegadinhas: tally([...an.map((a) => a.pegadinhas), pegadinhasRotuladas], 8),
+    pegadinhas: tally(an.map((a) => a.pegadinhas), 8),
     pegadinhasReais: pegadinhasRotuladas,
     comandosReais: comandosRotulados,
     dispositivosReais: dispositivosRotulados,

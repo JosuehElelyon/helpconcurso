@@ -384,13 +384,68 @@ test('F1: questões reais por tópico do edital e criação de simulado a custo 
     method: 'POST',
     body: { limite: 3 },
   });
+  // Sem questões reais na base o simulado não é criado (404); com questões, é criado sem IA (ver teste do Sprint 3.1, que cria a base)
   if (rReais.data.questoes.length > 0) {
     assert.equal(rSim.status, 201, JSON.stringify(rSim.data));
     assert.equal(rSim.data.created, true);
     assert.equal(rSim.data.set.origem, 'prova_real');
     assert.equal(rSim.data.set.model, 'prova_real');
-    assert.equal(Number(rSim.data.set.custo_estimado_usd), 0);
+  } else assert.equal(rSim.status, 404);
+});
+
+test('Sprint 3.1: questões reais — caderno alheio é recusado, formato não mistura, tópico × disciplina honesto', async () => {
+  const { active } = (await user('/api/editais')).data;
+  const d = active.disciplinas[0];
+  const t = d.topicos[0];
+  const banca = active.banca || 'fgv';
+  const formatoBanca = banca === 'cebraspe' ? 'ce' : 'me';
+  // Prova real da banca com questões dos DOIS formatos e uma inconsistente (sem alternativas e gabarito "B")
+  const prova = await one(`INSERT INTO provas(banca, banca_informada, file_name, file_key, status, titulo, text)
+                           VALUES ($1,$1,'fixture.pdf','fixture/x','READY','Prova fixture ${RUN}','texto') RETURNING id`, [banca]);
+  const ins = (enun, alts, gab, topico) => pool.query(`INSERT INTO prova_questoes(prova_id, banca, materia, enunciado, alternativas, gabarito, topico)
+                                                        VALUES ($1,$2,$3,$4,$5,$6,$7)`, [prova.id, banca, d.materia, enun, JSON.stringify(alts), gab, topico]);
+  await ins(`${t.nome} — assertiva para julgar ${RUN}`, [], 'C', t.nome);
+  await ins(`${t.nome} — questão de múltipla escolha ${RUN}`, ['a', 'b', 'c', 'd', 'e'], 'B', t.nome);
+  await ins(`Questão só da disciplina ${RUN}`, formatoBanca === 'ce' ? [] : ['a', 'b', 'c', 'd', 'e'], formatoBanca === 'ce' ? 'E' : 'A', 'Outro assunto');
+  await ins(`${t.nome} — inconsistente ${RUN}`, [], 'B', t.nome);
+
+  // C1: caderno de outro aluno → 404, sem criar simulado
+  const cadAdmin = await admin('/api/cadernos', { method: 'POST', body: { banca } });
+  assert.equal(cadAdmin.status, 201, JSON.stringify(cadAdmin.data));
+  const idor = await user(`/api/editais/${active.id}/topicos/${t.id}/praticar-reais`, { method: 'POST', body: { limite: 10, cadernoId: cadAdmin.data.caderno.id } });
+  assert.equal(idor.status, 404);
+  assert.match(idor.data.error, /Caderno/);
+
+  // C2 + C3: um formato só, coerente com a banca; questão inconsistente fica de fora; disciplina não vira tópico
+  const sim = await user(`/api/editais/${active.id}/topicos/${t.id}/praticar-reais`, { method: 'POST', body: { limite: 25 } });
+  assert.equal(sim.status, 201, JSON.stringify(sim.data));
+  const qs = sim.data.set.questoes;
+  assert.equal(sim.data.set.formato, formatoBanca);
+  for (const q of qs) {
+    if (formatoBanca === 'ce') { assert.deepEqual(q.alternativas, []); assert.match(q.gabarito, /^[CE]$/); }
+    else { assert.ok(q.alternativas.length >= 2); assert.match(q.gabarito, /^[A-E]$/); }
   }
+  assert.ok(!qs.some((q) => q.enunciado.includes(`inconsistente ${RUN}`)), 'questão sem alternativas com gabarito de letra não pode entrar');
+  const daDisciplina = qs.find((q) => q.enunciado.includes(`Questão só da disciplina ${RUN}`));
+  if (daDisciplina) assert.equal(daDisciplina.topico_edital, '', 'questão da disciplina não pode ser atribuída ao tópico');
+  assert.ok(!JSON.stringify(qs).match(/\[(assinale_|julgue_)/), 'comentário não mostra código interno');
+});
+
+test('C4: erro no simulado de um caderno entra no ciclo de revisão espaçada', async () => {
+  const cads = (await user('/api/cadernos')).data.cadernos;
+  const cadId = cads.find((c) => c.questoesIa > 0)?.id;
+  assert.ok(cadId);
+  const cad = (await user(`/api/cadernos/${cadId}`)).data.caderno;
+  const q = cad.questoes.find((x) => x.origem === 'ia' && x.key.startsWith('set:'));
+  const [, setId, idx] = q.key.split(':');
+  const errada = ['A', 'B', 'C', 'D', 'E'].find((l) => l !== q.gabarito && l !== q.ans);
+  const set = (await user(`/api/sets/${setId}`)).data.set;
+  const r = await user(`/api/sets/${setId}`, { method: 'PATCH', body: { respostas: { ...set.respostas, [idx]: errada } } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const depois = (await user(`/api/cadernos/${cadId}`)).data.caderno;
+  const q2 = depois.questoes.find((x) => x.key === q.key);
+  assert.equal(q2.revisao?.fase, 1, 'o erro feito no simulado precisa entrar na Fase 1');
+  assert.ok(depois.revisaoAtivasCount >= 1);
 });
 
 test('edital canônico: o mesmo edital enviado por outro aluno é reaproveitado sem chamar a IA', async () => {

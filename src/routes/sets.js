@@ -14,6 +14,7 @@ import { consumeGeneration, refundGeneration, generationQuota } from '../service
 import { scanText, SEV, logSecurityEvent } from '../security/index.js';
 import { reviewQuestions } from '../services/review.js';
 import { rate, report, listFeedback } from '../services/feedback.js';
+import { registrarRespostasNaRevisao } from '../services/revisao.js';
 import { config } from '../config.js';
 
 const r = Router();
@@ -179,8 +180,11 @@ r.get('/:id', ah(async (req, res) => {
 
 r.patch('/:id', ah(async (req, res) => {
   const b = parseBody(z.object({ respostas: z.record(z.string().regex(/^\d{1,2}$/), z.enum(LET)).optional(), finalizado: z.boolean().optional() }), req.body);
+  const antes = b.respostas ? await one('SELECT respostas, questoes, caderno_id FROM question_sets WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]) : null;
   const s = await one(`UPDATE question_sets SET respostas=COALESCE($3, respostas), finalizado=COALESCE($4, finalizado), updated_at=now()
                        WHERE id=$1 AND user_id=$2 RETURNING *`, [req.params.id, req.user.id, b.respostas ? JSON.stringify(b.respostas) : null, b.finalizado ?? null]);
+  // Erro/acerto no simulado de um caderno entra no ciclo de revisão espaçada (C4)
+  if (s && antes?.caderno_id) await registrarRespostasNaRevisao({ cadernoId: antes.caderno_id, userId: req.user.id, setId: s.id, questoes: antes.questoes || [], antes: antes.respostas || {}, depois: b.respostas });
   if (!s) throw new HttpError(404, 'Simulado não encontrado.');
   res.json({ set: view(s) });
 }));
