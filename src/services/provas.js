@@ -118,16 +118,25 @@ async function checkProva({ provaId }) {
   if (!p.ano && /^\d{4}$/.test(c.ano)) extra.ano = c.ano;
   const notes = [];
 
-  if (!c.e_prova && c.confianca >= 0.7) {
+  // S6: só recusa automaticamente com 90% ou mais de certeza; abaixo disso, vai para revisão humana (IN_REVIEW)
+  if (!c.e_prova && c.confianca >= 0.90) {
     await setStatus(p.id, 'REJECTED', { ...extra, review_note: 'O arquivo não parece ser uma prova de concurso (pode ser resumo, apostila, edital ou gabarito isolado).' });
     return notify(p.id);
+  }
+  if (!c.e_prova) {
+    findings.push({ code: 'ia_duvida_se_e_prova', severity: 'medium', where: 'classificacao', message: `A IA suspeita que o arquivo pode não ser prova (${Math.round(c.confianca * 100)}% de certeza). Requer validação humana.` });
+    notes.push(`A IA suspeitou que o arquivo pode não ser prova (${Math.round(c.confianca * 100)}% de certeza), mas a certeza foi inferior a 90%: encaminhada para revisão humana.`);
   }
   let banca = p.banca;
   const det = norm(c.banca);
   if (BANCA[det] && det !== p.banca && c.banca_confianca >= 0.75) { banca = det; notes.push(`Banca corrigida de ${BANCA[p.banca].nome} para ${BANCA[det].nome} pelo conteúdo do documento.`); }
-  else if (!BANCA[det] && det && det !== 'desconhecida' && c.banca_confianca >= 0.85) {
+  else if (!BANCA[det] && det && det !== 'desconhecida' && c.banca_confianca >= 0.90) {
     await setStatus(p.id, 'REJECTED', { ...extra, review_note: `A prova parece ser da banca "${c.banca}", que ainda não está entre as suportadas.` });
     return notify(p.id);
+  }
+  else if (!BANCA[det] && det && det !== 'desconhecida') {
+    findings.push({ code: 'ia_duvida_banca_desconhecida', severity: 'medium', where: 'classificacao', message: `A IA sugeriu a banca não suportada "${c.banca}" (${Math.round(c.banca_confianca * 100)}% de certeza). Requer validação humana.` });
+    notes.push(`A IA sugeriu a banca não suportada "${c.banca}" com confiança inferior a 90%: encaminhada para revisão humana.`);
   }
   extra.banca = banca;
 

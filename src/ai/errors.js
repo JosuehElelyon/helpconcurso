@@ -1,7 +1,7 @@
 // Erros da camada de IA. "retryable" = vale tentar de novo; "fallback" = vale tentar outro modelo/provedor.
 export class AiError extends Error {
-  constructor(message, { status, retryable = false, fallback = true, code = 'ai_error', cause } = {}) {
-    super(message); this.name = 'AiError'; this.status = status; this.retryable = retryable; this.fallback = fallback; this.code = code; this.cause = cause;
+  constructor(message, { status, retryable = false, fallback = true, code = 'ai_error', cause, retryAfterMs } = {}) {
+    super(message); this.name = 'AiError'; this.status = status; this.retryable = retryable; this.fallback = fallback; this.code = code; this.cause = cause; this.retryAfterMs = retryAfterMs;
   }
 }
 export class AiCapabilityError extends AiError {
@@ -15,12 +15,20 @@ export class AiOutputError extends AiError {
 }
 
 // Classifica erros HTTP/rede de qualquer provedor
-export function fromHttp(status, message, cause) {
+export function fromHttp(status, message, cause, headers) {
+  let retryAfterMs = null;
+  if (headers) {
+    const ra = typeof headers.get === 'function' ? headers.get('retry-after') : (headers['retry-after'] || headers['Retry-After']);
+    if (ra) {
+      const sec = Number(ra);
+      retryAfterMs = Number.isFinite(sec) ? sec * 1000 : Math.max(1000, new Date(ra).getTime() - Date.now());
+    }
+  }
   if (status === 401 || status === 403) return new AiError(`Chave de API inválida ou sem permissão (${status}).`, { status, retryable: false, fallback: true, code: 'auth', cause });
   if (status === 404) return new AiError(`Modelo não encontrado (${status}).`, { status, retryable: false, fallback: true, code: 'model', cause });
   if (status === 400 || status === 413 || status === 422) return new AiError(`Requisição recusada pelo provedor: ${message}`, { status, retryable: false, fallback: true, code: 'bad_request', cause });
-  if (status === 429) return new AiError('Limite de uso do provedor atingido.', { status, retryable: true, code: 'rate_limit', cause });
-  if (status >= 500 || status === 408 || status === 409) return new AiError(`Provedor indisponível (${status}).`, { status, retryable: true, code: 'unavailable', cause });
+  if (status === 429) return new AiError('Limite de uso do provedor atingido.', { status, retryable: true, code: 'rate_limit', cause, retryAfterMs });
+  if (status >= 500 || status === 408 || status === 409) return new AiError(`Provedor indisponível (${status}).`, { status, retryable: true, code: 'unavailable', cause, retryAfterMs });
   return new AiError(message || 'Erro desconhecido do provedor.', { status, retryable: !status, code: status ? 'http' : 'network', cause });
 }
 

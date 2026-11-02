@@ -68,11 +68,24 @@ export function routeFor(task, opts = {}) {
   return specs.filter((s) => { if (seen.has(s)) return false; seen.add(s); return true; }).map(parseSpec);
 }
 
-// ---------- Disjuntor: depois de 5 falhas seguidas, pula o modelo por 60 s ----------
+// ---------- Disjuntor: depois de 5 falhas seguidas ou rate-limit, pula o modelo ----------
 const breaker = new Map();
-const isOpen = (k) => { const b = breaker.get(k); return b && b.failures >= 5 && Date.now() - b.since < 60000; };
+export const isOpen = (k) => {
+  const b = breaker.get(k);
+  if (!b) return false;
+  if (b.openUntil && Date.now() < b.openUntil) return true;
+  return b.failures >= 5 && Date.now() - b.since < 60000;
+};
+export const tripBreaker = (k, durationMs = 60000) => {
+  const b = breaker.get(k) || { failures: 5, since: Date.now() };
+  b.failures = Math.max(b.failures, 5);
+  b.since = Date.now();
+  b.openUntil = Date.now() + durationMs;
+  breaker.set(k, b);
+};
 const fail = (k) => { const b = breaker.get(k) || { failures: 0, since: 0 }; b.failures++; if (b.failures === 5) b.since = Date.now(); breaker.set(k, b); };
 const succeed = (k) => breaker.delete(k);
+export const _resetBreakers = () => breaker.clear();
 
 const sleep = (ms, signal) => new Promise((res, rej) => { const t = setTimeout(res, ms); signal?.addEventListener('abort', () => { clearTimeout(t); rej(new AiAbortError()); }, { once: true }); });
 
@@ -163,6 +176,16 @@ export async function runText(task, req) {
         if (err instanceof AiAbortError || req.signal?.aborted) throw new AiAbortError();
         lastErr = err;
         fail(key);
+        // D2: se o provedor atingiu limite de uso (rate limit / 429), pausa o modelo pelo tempo indicado
+        // (ou 30 s padrão) e, se houver próximo modelo na fila, avança imediatamente sem gastar retentativas.
+        if (err.code === 'rate_limit') {
+          const pauseMs = err.retryAfterMs || 30000;
+          tripBreaker(key, pauseMs);
+          if (r < routes.length - 1) {
+            console.warn(`[ERRO-IA] [LIMITE-ATINGIDO] modelo=${key} pausado por ${Math.round(pauseMs / 1000)}s — pulando retentativas e avançando para modelo reserva`);
+            break;
+          }
+        }
         if (!err.retryable || attempt === config.ai.maxRetries) break;
         const wait = Math.min(20000, 800 * 2 ** (attempt - 1)) + Math.random() * 400; // espera exponencial + jitter
         console.warn(`[ERRO-IA] [RETRY] tarefa=${task} modelo=${key} aguardando ${Math.round(wait)}ms para nova tentativa`);

@@ -58,7 +58,7 @@ export function createOpenAICompat({ name, apiKey, baseUrl, timeoutMs }) {
           if (res.ok) { lastHttpErr = null; break; }
           let msg = '';
           try { msg = (await res.json())?.error?.message || ''; } catch {}
-          lastHttpErr = fromHttp(res.status, msg);
+          lastHttpErr = fromHttp(res.status, msg, null, res.headers);
           // Se houver mais chaves cadastradas e o erro for cota/rate-limit (429) ou chave (401/402/403), tenta a próxima chave imediatamente
           if (kTry < maxKeyAttempts - 1 && [401, 402, 403, 429].includes(res.status)) continue;
           break;

@@ -9,7 +9,7 @@ process.env.AI_MAX_RETRIES = '1';
 process.env.AI_FREE_CASCADE = 'true';                       // desligada por padrão; aqui ligamos de propósito
 process.env.AI_FREE_GENERATE = 'true';
 process.env.AI_PROVEDORES_GRATIS = 'nvidia,groq,gemini';
-const { runJSON, runText, routeFor } = await import('../src/ai/index.js');
+const { runJSON, runText, routeFor, isOpen, tripBreaker, _resetBreakers } = await import('../src/ai/index.js');
 const { costUsd, isFreeModel } = await import('../src/ai/pricing.js');
 const { config } = await import('../src/config.js');
 const { detectSchema } = await import('../src/ai/schemas.js');
@@ -108,4 +108,14 @@ test('revisor usa outro modelo que o gerador (avoid)', async () => {
   };
   assert.equal(ordem({ provider: 'anthropic', model: 'claude-haiku-5-5' }), 'claude-sonnet-5-5');
   assert.equal(ordem({ provider: 'anthropic', model: 'claude-sonnet-5-5' }), 'claude-haiku-5-5');
+});
+
+test('D2: rate_limit abre o disjuntor temporariamente e pula o modelo', () => {
+  _resetBreakers();
+  const key = 'groq:openai/gpt-oss-20b';
+  assert.equal(isOpen(key), false);
+  tripBreaker(key, 15000);
+  assert.equal(isOpen(key), true);
+  _resetBreakers();
+  assert.equal(isOpen(key), false);
 });

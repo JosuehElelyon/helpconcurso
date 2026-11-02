@@ -36,7 +36,7 @@ export function createAnthropic({ apiKey, baseUrl, timeoutMs, name = 'anthropic'
     if (e?.name === 'APIConnectionTimeoutError') return new AiError('Tempo esgotado ao consultar a IA.', { retryable: true, code: 'timeout', cause: e });
     if (e?.name === 'APIConnectionError') return new AiError('Falha de conexão com a IA.', { retryable: true, code: 'network', cause: e });
     if (e?.status === 529) return new AiError('IA sobrecarregada.', { status: 529, retryable: true, code: 'unavailable', cause: e });
-    if (typeof e?.status === 'number') return fromHttp(e.status, e.message, e);
+    if (typeof e?.status === 'number') return fromHttp(e.status, e.message, e, e.headers);
     return e instanceof AiError ? e : new AiError(e?.message || 'Erro na IA.', { retryable: true, code: 'network', cause: e });
   };
 
