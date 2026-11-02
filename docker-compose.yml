@@ -1,0 +1,75 @@
+# Sobe o HelpConcurso completo no seu computador:
+#   docker compose up -d --build
+# App: http://localhost:3000 · E-mails (Mailpit): http://localhost:8025 · Arquivos (MinIO): http://localhost:9001
+# Para deixar público pela internet: docker compose --profile publico up -d   (veja docs/DEPLOY.md)
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://helpconcurso:helpconcurso@db:5432/helpconcurso
+      DATABASE_SSL: "false"
+      # SMTP: usa o do .env (ex.: Brevo); se SMTP_HOST estiver vazio, usa o Mailpit local (http://localhost:8025)
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      # Arquivos: MinIO local (troque por S3_ENDPOINT_COMPOSE=https://... para usar R2/S3 na nuvem)
+      S3_ENDPOINT: ${S3_ENDPOINT_COMPOSE:-http://minio:9000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      db: { condition: service_healthy }
+      minio: { condition: service_started }
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: helpconcurso
+      POSTGRES_PASSWORD: helpconcurso
+      POSTGRES_DB: helpconcurso
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U helpconcurso"]
+      interval: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+    volumes:
+      - ./data/minio:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+  # Antivírus opcional: docker compose --profile antivirus up -d  (e CLAMAV_HOST=clamav no .env)
+  clamav:
+    image: clamav/clamav:stable
+    profiles: ["antivirus"]
+    restart: unless-stopped
+
+  # Túnel Cloudflare: expõe o app na internet com HTTPS, sem abrir portas no roteador
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["publico"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on: [app]
