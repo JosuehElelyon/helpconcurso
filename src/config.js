@@ -20,18 +20,24 @@ export const FREE_AGENT_CATALOG = [
   { provider: 'ollama',      fast: env('OLLAMA_MODEL', 'qwen2.5:14b'),               strong: env('OLLAMA_MODEL', 'qwen2.5:14b'),                          label: 'Ollama Local (Gratuito)' },
 ];
 
+// dados: 'aluno' = conteúdo privado do aluno → só provedores de AI_PROVEDORES_PRIVADOS (padrão: anthropic, que não treina
+//        com dados da API); 'publico' = provas e editais (documentos públicos) → pode usar a cascata grátis.
+// pagoPrimeiro: o modelo pago vem antes dos grátis (tarefa em que a qualidade compensa o custo).
+// Estratégia de custo (docs/PLANO-ACAO.md): o modelo barato escreve (Haiku gera), o forte confere (Sonnet revisa) —
+// a saída longa sai barata e o juiz é mais forte que o autor.
 export const AI_TASKS = {
-  detect:         { label: 'Identificar matéria do material',           tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  generate:       { label: 'Gerar questões',                            tier: 'strong', preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
-  ocr:            { label: 'Ler PDF escaneado (OCR)',                   tier: 'fast',   preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  prova_check:    { label: 'Checagem automática de prova enviada',      tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  prova_analysis: { label: 'Analisar estilo da banca',                  tier: 'strong', preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
-  prova_extract:  { label: 'Extrair questões reais da prova',           tier: 'strong', preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  review:         { label: 'Revisor: resolver questões sem o gabarito', tier: 'strong',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  report_check:   { label: 'Verificar erro reportado por aluno',        tier: 'strong', preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
-  edital_parse:   { label: 'Extrair conteúdo programático do edital',   tier: 'fast',   preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  edital_match:   { label: 'Cruzar material de estudo com o edital',    tier: 'fast',   preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
-  json_repair:    { label: 'Corrigir JSON malformado',                  tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: null },
+  detect:         { label: 'Identificar matéria do material',           dados: 'aluno',   tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  generate:       { label: 'Gerar questões',                            dados: 'aluno',   tier: 'strong', preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  ocr:            { label: 'Ler PDF escaneado (OCR)',                   dados: 'aluno',   tier: 'fast',   preferred: [],                               primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  prova_check:    { label: 'Checagem automática de prova enviada',      dados: 'publico', tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  prova_analysis: { label: 'Analisar estilo da banca',                  dados: 'publico', tier: 'strong', preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5', pagoPrimeiro: true },
+  prova_extract:  { label: 'Extrair questões reais da prova',           dados: 'publico', tier: 'strong', preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  review:         { label: 'Revisor: resolver questões sem o gabarito', dados: 'aluno',   tier: 'strong', preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
+  report_check:   { label: 'Verificar erro reportado por aluno',        dados: 'aluno',   tier: 'strong', preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
+  edital_parse:   { label: 'Extrair conteúdo programático do edital',   dados: 'publico', tier: 'fast',   preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  edital_match:   { label: 'Cruzar material de estudo com o edital',    dados: 'aluno',   tier: 'fast',   preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  // json_repair herda a classificação da tarefa que gerou o JSON (runJSON passa "dados")
+  json_repair:    { label: 'Corrigir JSON malformado',                  dados: 'aluno',   tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: null },
 };
 const taskEnv = (t) => t.toUpperCase();
 for (const [t, v] of Object.entries(AI_TASKS)) {
@@ -85,6 +91,8 @@ export const config = {
     freeGenerate: bool('AI_FREE_GENERATE', false),
     // Provedores cuja conta é de cota grátis (custo 0 no painel e no limite diário). Ex.: AI_PROVEDORES_GRATIS=groq,gemini
     freeProviders: list('AI_PROVEDORES_GRATIS'),
+    // Provedores autorizados a receber conteúdo do aluno (tarefas dados='aluno'). Ex.: adicionar gemini se ativar o faturamento no Google.
+    privateProviders: list('AI_PROVEDORES_PRIVADOS', 'anthropic'),
     // "direct" = treino imediato; "batch" = modo lote (mais barato, resposta em minutos/horas). Cai para direct se o provedor não suportar.
     trainingMode: env('AI_TRAINING_MODE', 'direct'),
     maxRetries: num('AI_MAX_RETRIES', 3),

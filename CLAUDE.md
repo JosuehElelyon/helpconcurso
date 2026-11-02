@@ -54,8 +54,8 @@ Novo na v1.3/v1.4 (migração `006_cadernos.sql`):
   (precisa de tabela de ligação — ver `editais_canonicos` em `docs/ARQUITETURA-CONHECIMENTO.md`).
 
 ## Custo de IA (conta Anthropic do Josueh, crédito pré-pago de US$ 5)
-- Modelos por tarefa em `src/config.js` (`AI_TASKS`): Sonnet em `generate`, `prova_analysis`, `report_check`;
-  Haiku no resto. Trocar via `AI_MODEL_<TAREFA>` no `.env`. Sonnet custa ~20× o Haiku.
+- Modelos por tarefa em `src/config.js` (`AI_TASKS`): Sonnet em `review`, `prova_analysis`, `report_check`;
+  Haiku no resto (inclusive `generate`). Trocar via `AI_MODEL_<TAREFA>` no `.env`. Sonnet custa ~20× o Haiku.
 - Preços e cálculo de custo num lugar só: `src/ai/pricing.js` (painel admin e limite diário usam). Atualize ao trocar de modelo.
 - **Limite diário** `AI_LIMITE_USD_DIA` (hoje 0.50, dia de Brasília): ao atingir, `runText`/`submitBatch` lançam `AiError` com
   `code='budget'`; a fila adia tarefas por 30 min sem gastar tentativa. Painel admin mostra "Hoje: US$ x de US$ y".
@@ -65,7 +65,9 @@ Novo na v1.3/v1.4 (migração `006_cadernos.sql`):
 - O cache de prompt (`cacheSystem` na geração) quase não é reaproveitado com pouco tráfego; a escrita de cache não é registrada.
 - **Cascata grátis** (`AI_FREE_CASCADE`, desligada por padrão; ligada no .env do Josueh): Groq na triagem/revisão,
   Gemini na geração/análise, Claude de reserva (`routeFor()` em `src/ai/index.js`, catálogo `FREE_AGENT_CATALOG` em `src/config.js`).
-  Custo 0 só para o que está em `AI_PROVEDORES_GRATIS`. O revisor usa provedor diferente do gerador (`avoidProvider`).
+  Custo 0 só para o que está em `AI_PROVEDORES_GRATIS`. **Material do aluno só no Claude** (`AI_TASKS[*].dados` +
+  `AI_PROVEDORES_PRIVADOS`); provas/editais (públicos) na cascata grátis. Haiku gera, Sonnet revisa (revisor ≠ gerador por modelo,
+  `avoid`); análise de estilo com Sonnet primeiro (`pagoPrimeiro`). Teto diário bloqueia só modelos pagos. Benchmark: `scripts/benchmark-ia.js`.
   Riscos e próximos passos em `docs/PLANO-ACAO.md` (privacidade da cota grátis, modo lote, qualidade por modelo).
 - Uso real: tabela `ai_usage` (ou painel admin → IA; o provedor `mock` fica de fora). Para testar sem gastar: `AI_MOCK=true`.
 

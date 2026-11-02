@@ -9,6 +9,7 @@ const { pool, migrate, query } = await import('../src/db.js');
 const { runJSON, _resetBudgetCache } = await import('../src/ai/index.js');
 const { costUsd } = await import('../src/ai/pricing.js');
 const { detectSchema } = await import('../src/ai/schemas.js');
+const { config } = await import('../src/config.js');
 
 await migrate();
 after(() => pool.end());
@@ -21,7 +22,7 @@ test('custo usa os preços por modelo, com desconto de cache e de lote', () => {
   assert.equal(costUsd('claude-sonnet-5-5', 0, 1_000_000, 0, true), 5);     // lote = metade
 });
 
-test('limite diário: abaixo do teto chama a IA; acima, recusa com code=budget', async () => {
+test('limite diário: abaixo do teto chama a IA; acima, bloqueia só modelos pagos (code=budget)', async () => {
   await query("DELETE FROM ai_usage WHERE task='teste_limite'");
   const ok = await runJSON('detect', { prompt: 'Material: atos administrativos e licitação.' }, detectSchema);
   assert.equal(ok.data.materia, 'Direito Administrativo');
@@ -31,8 +32,14 @@ test('limite diário: abaixo do teto chama a IA; acima, recusa com code=budget',
   try {
     _resetBudgetCache(); // o gasto do dia fica em cache por 60 s; força nova leitura
 
+    // Modelo grátis (mock) continua atendendo mesmo acima do teto
+    const gratis = await runJSON('detect', { prompt: 'Material: atos administrativos.' }, detectSchema);
+    assert.equal(gratis.meta.provider, 'mock');
+    // Modelo pago é bloqueado com code=budget
+    Object.assign(config.ai.tasks.detect, { primary: 'anthropic:claude-haiku-5-5', fallback: null });
     await assert.rejects(runJSON('detect', { prompt: 'Material: atos administrativos.' }, detectSchema), (e) => e.code === 'budget');
   } finally {
+    Object.assign(config.ai.tasks.detect, { primary: 'mock:simulado', fallback: null });
     await query("DELETE FROM ai_usage WHERE task='teste_limite'");
   }
 });

@@ -60,6 +60,36 @@ Groq e Gemini Flash-Lite ~1,8 s; OpenRouter 40–80 s; Claude é a reserva paga 
 ## Ordem sugerida
 
 1. ✅ **Feito em 02/11/2026:** S2, S3, S7, S8, D1 (51/51 testes), commit da cascata, OpenRouter e benchmark.
-2. **Próximo:** D2, S6, D5 (benchmark difícil), D8 → push. S1 assim que houver decisão.
+2. **Próximo:** D2, S6, D5 (benchmark difícil), D8 → push. ✅ S1 feito (opção b — ver "Estratégia de IA adotada").
 3. **Antes de abrir para mais alunos:** S5, D4, D9.
 4. **Depois:** D6, D7 (Fase 2). D3 só se o uso do Claude de reserva crescer.
+
+## Estratégia de IA adotada (S1 = opção b) — 02/11/2026
+
+Princípio: **gastar token pago só onde ele vira acerto para o aluno; o resto, de graça.**
+
+| Tarefa | Dado | Fila | Por quê |
+|---|---|---|---|
+| Gerar questões | aluno | **Haiku** → Sonnet | Saída longa (≈1.300 tokens/questão): no Haiku custa ~20× menos. Benchmark: Haiku 100 na geração |
+| Revisar questões | aluno | **Sonnet** → Haiku | Saída curta (~100 tokens/questão): o modelo mais forte vira o juiz. Juiz mais forte que o autor pega mais erro de gabarito |
+| Identificar matéria, cruzar material × edital | aluno | Haiku → Sonnet | Tarefas simples |
+| Verificar erro reportado | aluno | Sonnet → Haiku | Raro e decide estrelas/correção: precisão vale o custo |
+| OCR | aluno | Haiku → Sonnet | Só o Claude lê PDF escaneado |
+| Analisar estilo da banca | público | **Sonnet** → Gemini → Groq → OpenRouter → Haiku | Gera o perfil da banca que alimenta todas as gerações (~US$ 0,02 por prova) |
+| Extrair questões da prova, ler edital | público | Gemini → Groq → OpenRouter → Claude | Muito texto de saída; documento público: grátis |
+| Checar prova enviada | público | Groq → Gemini → OpenRouter → Claude | Triagem rápida (~1 s) |
+| Consertar JSON | herda | conforme a tarefa de origem | Não vaza material do aluno para o grátis |
+
+Regras no código:
+- `AI_TASKS[*].dados` + `AI_PROVEDORES_PRIVADOS` (padrão `anthropic`): material do aluno nunca entra na cascata grátis.
+  Ativando faturamento no Google, basta `AI_PROVEDORES_PRIVADOS=anthropic,gemini`.
+- `pagoPrimeiro` (análise de estilo): Sonnet primeiro, grátis como reserva.
+- Revisor ≠ gerador por **modelo** (`avoid`): Haiku gerou → Sonnet revisa; se a geração cair no Sonnet, o Haiku revisa.
+- Limite diário (`AI_LIMITE_USD_DIA`) bloqueia só modelos pagos: provas e editais continuam sendo processados de graça.
+
+Custo estimado por simulado de 10 questões: geração Haiku ≈ US$ 0,008 + revisão Sonnet ≈ US$ 0,03 + matéria ≈ US$ 0,001
+→ **≈ US$ 0,04** (antes, Sonnet gerando e Haiku revisando: ≈ US$ 0,15). Com o teto de US$ 0,50/dia: ~12 simulados/dia
+além das provas. A confirmar com o D5 (benchmark difícil) e com os números reais do `ai_usage`.
+
+Valor extra grátis (dados públicos, sem custo de token): reprocessar provas antigas sem rótulo (Fase 1), dupla extração
+com consenso de gabarito, e montar o `perfil_banca` da Fase 2 com os modelos grátis.

@@ -12,7 +12,7 @@ import { createAnthropic } from './providers/anthropic.js';
 import { createOpenAICompat } from './providers/openai-compat.js';
 import { createMock } from './providers/mock.js';
 import { SECURITY_RULES } from './guard.js';
-import { costUsd, spentTodayUsd } from './pricing.js';
+import { costUsd, spentTodayUsd, isFreeModel } from './pricing.js';
 import { PROMPT_VERSAO } from '../lib/prompts.js';
 
 const providers = new Map();
@@ -37,26 +37,33 @@ function getProvider(name) {
 const parseSpec = (spec) => { const i = spec.indexOf(':'); return { provider: spec.slice(0, i), model: spec.slice(i + 1) }; };
 const splitSpecs = (val) => (val ? String(val).split(',').map((s) => s.trim()).filter(Boolean) : []);
 
-export function routeFor(task) {
+/**
+ * Fila de modelos de uma tarefa. Conteúdo do aluno (dados='aluno') só vai para AI_PROVEDORES_PRIVADOS;
+ * conteúdo público (provas, editais) pode usar a cascata grátis. opts.dados sobrescreve (json_repair herda da tarefa-mãe).
+ */
+export function routeFor(task, opts = {}) {
   const t = config.ai.tasks[task];
   if (!t) throw new AiError(`Tarefa de IA desconhecida: ${task}`, { code: 'not_configured', fallback: false });
-  const baseSpecs = [...splitSpecs(t.primary), ...splitSpecs(t.fallback)];
-  // Se AI_FREE_CASCADE estiver ativo e a tarefa não tiver um modelo forçado manualmente no .env,
-  // monta a cadeia multi-agente com todos os provedores gratuitos configurados antes do modelo pago.
-  let specs = baseSpecs;
+  const dados = opts.dados || t.dados || 'aluno';
+  const permitido = (provider) => dados === 'publico' || provider === 'mock' || config.ai.privateProviders.includes(provider);
+  const all = [...splitSpecs(t.primary), ...splitSpecs(t.fallback)];
+  // Modelo forçado no .env (AI_MODEL_<TAREFA>) é decisão explícita do administrador: vale como está.
+  const base = t.explicitPrimary ? all : all.filter((s) => permitido(parseSpec(s).provider));
+  let freeSpecs = [];
   if (config.ai.freeCascade && !t.explicitPrimary && task !== 'ocr') {
     const useFreeFirst = t.tier === 'fast' || config.ai.freeGenerate || !config.ai.keys.anthropic;
     if (useFreeFirst) {
-      let available = (config.ai.freeCatalog || []).filter((a) => !!config.ai.keys[a.provider]);
-      if (Array.isArray(t.preferred) && t.preferred.length) {
-        // Preferidos na ordem da lista; os demais depois, na ordem do catálogo (sort estável)
-        const pos = (p) => { const i = t.preferred.indexOf(p); return i === -1 ? 99 : i; };
-        available = [...available].sort((a, b) => pos(a.provider) - pos(b.provider));
-      }
-      const freeSpecs = available.map((a) => `${a.provider}:${t.tier === 'strong' ? a.strong : a.fast}`);
-      if (freeSpecs.length) specs = [...freeSpecs, ...baseSpecs];
+      // Preferidos na ordem da lista; os demais depois, na ordem do catálogo (sort estável)
+      const pos = (p) => { const i = (t.preferred || []).indexOf(p); return i === -1 ? 99 : i; };
+      freeSpecs = (config.ai.freeCatalog || [])
+        .filter((a) => !!config.ai.keys[a.provider] && permitido(a.provider))
+        .sort((a, b) => pos(a.provider) - pos(b.provider))
+        .map((a) => `${a.provider}:${t.tier === 'strong' ? a.strong : a.fast}`);
     }
   }
+  const specs = t.pagoPrimeiro && base.length
+    ? [base[0], ...freeSpecs, ...base.slice(1)]   // ex.: análise de estilo da banca — Sonnet primeiro, grátis como reserva
+    : [...freeSpecs, ...base];
   const seen = new Set();
   return specs.filter((s) => { if (seen.has(s)) return false; seen.add(s); return true; }).map(parseSpec);
 }
@@ -105,13 +112,19 @@ async function logUsage(row) {
  * @param {string} task  chave de AI_TASKS
  * @param {{system?:string, prompt:string, pdf?:string, maxTokens?:number, temperature?:number,
  *          onText?:(s:string)=>void, signal?:AbortSignal, userId?:string, cacheSystem?:boolean,
- *          avoidProvider?:string}} req  avoidProvider: joga esse provedor para o fim da fila (revisor ≠ gerador)
+ *          avoid?:{provider:string, model?:string}, dados?:'aluno'|'publico'}} req
+ *   avoid: revisão independente — o mesmo modelo vai para o fim da fila e o mesmo provedor (outro modelo) logo antes dele
  */
 export async function runText(task, req) {
-  let routes = routeFor(task);
-  if (req.avoidProvider) routes = [...routes.filter((r) => r.provider !== req.avoidProvider), ...routes.filter((r) => r.provider === req.avoidProvider)];
+  let routes = routeFor(task, { dados: req.dados });
+  if (req.avoid?.provider) {
+    const peso = (r) => (r.provider !== req.avoid.provider ? 0 : r.model === req.avoid.model ? 2 : 1);
+    routes = [...routes].sort((a, b) => peso(a) - peso(b));
+  }
   if (req.preferFallback && routes.length > 1) routes = [routes[1], routes[0]];
-  await assertBudget(task);
+  // Limite diário atingido: bloqueia só os modelos pagos — os grátis da fila continuam atendendo
+  let overBudget = null;
+  try { await assertBudget(task); } catch (e) { if (e.code !== 'budget') throw e; overBudget = e; }
   const content = [...(req.pdf ? [{ type: 'pdf', data: req.pdf }] : []), { type: 'text', text: req.prompt }];
   const system = [SECURITY_RULES, req.system].filter(Boolean).join('\n\n');
   let lastErr;
@@ -123,6 +136,7 @@ export async function runText(task, req) {
       lastErr = new AiError('Modelo temporariamente desativado (disjuntor).', { code: 'unavailable' });
       continue;
     }
+    if (overBudget && !isFreeModel(model, pName)) { lastErr = overBudget; continue; }
     let provider;
     try { provider = getProvider(pName); } catch (e) {
       console.error(`[ERRO-IA] [CONFIG] tarefa=${task} provedor=${pName} msg="${e.message}"`);
@@ -190,7 +204,7 @@ export async function runJSON(task, req, schema) {
       const preview = logPreview(out.text);
       console.warn(`[ERRO-IA] [JSON-INVALIDO] tarefa=${task} modelo=${out.provider}:${out.model} rodada=${round + 1}/2 msg="${e.message}" previa="${preview}"`);
       try {
-        const fixed = await runText('json_repair', { prompt: `Corrija o conteúdo abaixo para que seja um JSON válido, sem alterar os dados e sem acrescentar nada. Se estiver cortado no fim, feche as estruturas abertas descartando o item incompleto. Responda só com o JSON.\n\n${out.text.slice(0, 120000)}`, maxTokens: Math.min(16000, (req.maxTokens || 4096) + 500), userId: req.userId, signal: req.signal });
+        const fixed = await runText('json_repair', { dados: req.dados || config.ai.tasks[task]?.dados, prompt: `Corrija o conteúdo abaixo para que seja um JSON válido, sem alterar os dados e sem acrescentar nada. Se estiver cortado no fim, feche as estruturas abertas descartando o item incompleto. Responda só com o JSON.\n\n${out.text.slice(0, 120000)}`, maxTokens: Math.min(16000, (req.maxTokens || 4096) + 500), userId: req.userId, signal: req.signal });
         obj = extractJSON(fixed.text);
       } catch (e2) { lastErr = e2; if (e2 instanceof AiAbortError) throw e2; continue; }
     }

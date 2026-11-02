@@ -49,32 +49,39 @@ test('cascata multi-agente gratuita prioriza provedores gratuitos configurados e
   }
 });
 
-test('orquestração multi-agente Groq + Gemini: tarefas rápidas vão para Groq, tarefas profundas vão para Gemini', () => {
+test('dados do aluno só vão para provedores privados; provas e editais usam a cascata grátis', () => {
   config.ai.keys.gemini = 'gemini-test-key';
   config.ai.keys.groq = 'groq-test-key';
+  const prevOr = config.ai.keys.openrouter;
+  config.ai.keys.openrouter = undefined;
   try {
-    const checkChain = routeFor('prova_check');
-    assert.equal(checkChain[0].provider, 'groq');
-    assert.equal(checkChain[0].model, 'openai/gpt-oss-20b');
-    assert.equal(checkChain[1].provider, 'gemini');
-    assert.equal(checkChain[1].model, 'gemini-3.5-flash-lite');
+    // Público: triagem rápida no Groq, extração no Gemini, análise de estilo com Sonnet primeiro (pagoPrimeiro)
+    const check = routeFor('prova_check');
+    assert.deepEqual(check.slice(0, 2).map((r) => `${r.provider}:${r.model}`), ['groq:openai/gpt-oss-20b', 'gemini:gemini-3.5-flash-lite']);
+    assert.equal(routeFor('prova_extract')[0].provider, 'gemini');
+    const analysis = routeFor('prova_analysis');
+    assert.equal(`${analysis[0].provider}:${analysis[0].model}`, 'anthropic:claude-sonnet-5-5');
+    assert.equal(analysis[1].provider, 'gemini');
+    assert.equal(routeFor('edital_parse')[0].provider, 'gemini');
 
-    const generateChain = routeFor('generate');
-    assert.equal(generateChain[0].provider, 'gemini');
-    assert.equal(generateChain[0].model, 'gemini-3.5-flash');
-    assert.equal(generateChain[1].provider, 'groq');
-    assert.equal(generateChain[1].model, 'openai/gpt-oss-120b');
+    // Aluno: só Claude — o barato escreve, o forte confere
+    // (detect fica de fora: neste arquivo ele foi forçado no .env — AI_MODEL_DETECT — e escolha explícita vale como está)
+    for (const task of ['generate', 'review', 'edital_match', 'report_check', 'json_repair']) {
+      assert.ok(routeFor(task).every((r) => r.provider === 'anthropic'), `${task} não pode usar provedor grátis`);
+    }
+    assert.equal(routeFor('generate')[0].model, 'claude-haiku-5-5');
+    assert.equal(routeFor('review')[0].model, 'claude-sonnet-5-5');
+    // json_repair herda: conserto de JSON de prova pública pode usar o grátis
+    assert.equal(routeFor('json_repair', { dados: 'publico' })[0].provider, 'groq');
 
-    const reviewChain = routeFor('review');
-    assert.equal(reviewChain[0].provider, 'groq');
-    assert.equal(reviewChain[1].provider, 'gemini');
-
-    const provaAnalysisChain = routeFor('prova_analysis');
-    assert.equal(provaAnalysisChain[0].provider, 'gemini');
-    assert.equal(provaAnalysisChain[1].provider, 'groq');
+    // Com faturamento no Google, basta autorizar o gemini
+    config.ai.privateProviders = ['anthropic', 'gemini'];
+    assert.equal(routeFor('generate')[0].provider, 'gemini');
   } finally {
+    config.ai.privateProviders = ['anthropic'];
     config.ai.keys.gemini = undefined;
     config.ai.keys.groq = undefined;
+    config.ai.keys.openrouter = prevOr;
   }
 });
 
@@ -90,16 +97,15 @@ test('gratuidade é declarada: provedor fora de AI_PROVEDORES_GRATIS é cobrado 
   } finally { config.ai.freeProviders = prev; }
 });
 
-test('revisor evita o provedor que gerou as questões (avoidProvider)', async () => {
+test('revisor usa outro modelo que o gerador (avoid)', async () => {
   // detect: groq (sem chave) → nvidia (sem chave) → mock. Evitando "mock", ele vai para o fim, mas ainda atende se for o único
-  const out = await runText('detect', { prompt: 'Material: licitação.', avoidProvider: 'mock', maxTokens: 50 });
+  const out = await runText('detect', { prompt: 'Material: licitação.', avoid: { provider: 'mock', model: 'simulado' }, maxTokens: 50 });
   assert.equal(out.provider, 'mock');
-  config.ai.keys.gemini = 'gemini-test-key';
-  config.ai.keys.groq = 'groq-test-key';
-  try {
-    assert.equal(routeFor('review')[0].model, 'openai/gpt-oss-120b'); // revisor no modelo forte
-  } finally {
-    config.ai.keys.gemini = undefined;
-    config.ai.keys.groq = undefined;
-  }
+  // Haiku gerou → Sonnet revisa; Sonnet gerou (reserva) → Haiku revisa
+  const ordem = (gen) => {
+    const peso = (r) => (r.provider !== gen.provider ? 0 : r.model === gen.model ? 2 : 1);
+    return [...routeFor('review')].sort((a, b) => peso(a) - peso(b))[0].model;
+  };
+  assert.equal(ordem({ provider: 'anthropic', model: 'claude-haiku-5-5' }), 'claude-sonnet-5-5');
+  assert.equal(ordem({ provider: 'anthropic', model: 'claude-sonnet-5-5' }), 'claude-haiku-5-5');
 });
