@@ -102,3 +102,21 @@ Custo estimado por 10 questões: Fácil/Médio ≈ US$ 0,04 · Difícil/Misto �
 Próximo ganho sem custo extra: nos dois níveis o juiz deu nota baixa em **dificuldade** (8–14 de 25) — as questões
 copiam a lei. Melhorar `promptGenerate` (situação hipotética, combinar dispositivos, cobrir mais do material, não repetir
 "Julgue o item" no enunciado) e medir de novo com `npm run eval` / `EVAL_NIVEL=Médio npm run eval`.
+
+## Arquitetura de Veracidade e Fonte Primária (P1 e P2 concluídos) — 02/11/2026
+
+Garante a integridade do acervo contra falsificações, materiais de cursinhos com gabaritos adaptados/distorcidos ou links não oficiais:
+
+- **P1: Catálogo de Domínios Oficiais Primários (`src/lib/bancas.js`)**:
+  - Bancas suportadas: `cebraspe.org.br`, `conhecimento.fgv.br`, `vunesp.com.br`, `concursosfcc.com.br`, `cesgranrio.org.br`, `ibfc.org.br`, `quadrix.org.br`, `institutoaocp.org.br`, etc.
+  - Rede oficial estatal e Diários Oficiais: `in.gov.br` (DOU), `imprensaoficial.com.br`, e qualquer sufixo `.gov.br`, `.jus.br`, `.leg.br`, `.def.br`, `.mp.br`, `.tc.br`.
+  - Bloqueio imediato de fontes secundárias/cursinhos/drives privados (`estrategiaconcursos.com.br`, `grancursosonline.com.br`, `folhadirigida.com.br`, `qconcursos.com.br`, `drive.google.com`, `dropbox.com`).
+  - Detecção automática de divergência de banca (ex: informou banca FGV, mas enviou link do Cebraspe).
+  - Função exportada: `validarUrlOficial(banca, url)`.
+
+- **P2: Rastreabilidade no Banco e nas Rotas (`008_veracidade_url_oficial.sql`)**:
+  - Colunas adicionadas: `official_url`, `oficial_confirmado` e `official_url_tipo` em `provas`, `editais` e `editais_canonicos`.
+  - Validação automática na submissão de Provas (`POST /api/provas`) e Editais (`POST /api/editais`). Se o usuário informar uma URL que não seja primária/oficial, a requisição é rejeitada com HTTP 422 e mensagem explicativa.
+  - Na checagem em segundo plano (`checkProva`), provas com fonte oficial confirmada recebem marcação explícita de alta veracidade.
+  - Painel do aluno e painel do administrador exibem se a prova/edital possui fonte oficial primária validada.
+  - 61/61 testes passando com cobertura completa em `test/veracidade.test.js` e `test/v1.test.js`.

@@ -6,7 +6,7 @@ import { one, many, query } from '../db.js';
 import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
 import { requireAuth } from '../lib/auth.js';
 import { uploader, fileOf } from '../lib/upload.js';
-import { BANCA } from '../lib/bancas.js';
+import { BANCA, validarUrlOficial } from '../lib/bancas.js';
 import { submitProva, publicStatus } from '../services/provas.js';
 import { createEditalForUser } from '../services/edital.js';
 import { assertCanUpload } from '../services/quota.js';
@@ -24,10 +24,19 @@ r.post('/', perUser, uploader([{ name: 'prova', maxCount: 1 }, { name: 'gabarito
     banca: z.enum(Object.keys(BANCA), { errorMap: () => ({ message: 'Escolha a banca.' }) }),
     orgao: meta, cargo: meta, ano: z.string().trim().regex(/^(\d{4})?$/, 'Ano inválido.').optional().default(''),
     editalId: z.string().trim().optional().default(''),
+    officialUrl: z.string().trim().optional().default(''),
   }), req.body);
   for (const v of [b.orgao, b.cargo]) if (SEV[scanText(v).severity] >= SEV.medium) throw new HttpError(422, 'Órgão/cargo com conteúdo não permitido.');
   const file = fileOf(req, 'prova');
   if (!file) throw new HttpError(400, 'Envie o arquivo da prova (PDF, DOCX, DOC ou TXT).');
+
+  let officialValidation = null;
+  if (b.officialUrl) {
+    officialValidation = validarUrlOficial(b.banca, b.officialUrl);
+    if (!officialValidation.valida) {
+      throw new HttpError(422, officialValidation.motivo || 'URL informada não é aceita como fonte oficial.');
+    }
+  }
 
   let editalId = b.editalId;
   let editalCreated = null;
@@ -35,12 +44,25 @@ r.post('/', perUser, uploader([{ name: 'prova', maxCount: 1 }, { name: 'gabarito
   if (editalFile) {
     const { editalRow } = await createEditalForUser({
       user: req.user, file: editalFile, banca: b.banca, orgao: b.orgao, cargo: b.cargo, ano: b.ano, ip: req.ip,
+      officialUrl: officialValidation?.urlNormalizada || null,
+      oficialConfirmado: !!officialValidation?.valida,
+      officialUrlTipo: officialValidation?.tipo || null,
     });
     editalId = editalRow.id;
     editalCreated = { id: editalRow.id, titulo: editalRow.titulo };
   }
 
-  const out = await submitProva({ user: req.user, ...b, editalId, file, gabarito: fileOf(req, 'gabarito'), ip: req.ip });
+  const out = await submitProva({
+    user: req.user,
+    ...b,
+    officialUrl: officialValidation?.urlNormalizada || null,
+    oficialConfirmado: !!officialValidation?.valida,
+    officialUrlTipo: officialValidation?.tipo || null,
+    editalId,
+    file,
+    gabarito: fileOf(req, 'gabarito'),
+    ip: req.ip,
+  });
   if (editalCreated && out.prova) {
     await query('UPDATE editais SET prova_id=$2 WHERE id=$1', [editalCreated.id, out.prova.id]);
   } else if (editalCreated && out.provaId) {
@@ -88,6 +110,7 @@ const viewMine = (p) => ({
   id: p.id, banca: p.banca, orgao: p.orgao, cargo: p.cargo, ano: p.ano,
   titulo: p.titulo || p.file_name, fileName: p.file_name, status: p.status, statusLabel: publicStatus[p.status],
   editalId: p.edital_id || null, editalTitulo: p.edital_titulo || null,
+  officialUrl: p.official_url || null, oficialConfirmado: !!p.oficial_confirmado, officialUrlTipo: p.official_url_tipo || null,
   motivo: ['REJECTED', 'DUPLICATE'].includes(p.status) ? p.review_note : null, numQuestoes: p.status === 'READY' ? p.num_questoes : null, createdAt: p.created_at,
 });
 

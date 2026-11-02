@@ -41,7 +41,7 @@ const isTrusted = (u) => u && (u.role === 'ADMIN' || (u.approved_contribs >= con
 // ---------------------------------------------------------------------
 // 1) Envio
 // ---------------------------------------------------------------------
-export async function submitProva({ user, banca, orgao, cargo, ano, editalId, file, gabarito, ip }) {
+export async function submitProva({ user, banca, orgao, cargo, ano, editalId, file, gabarito, ip, officialUrl = null, oficialConfirmado = false, officialUrlTipo = null }) {
   if (!BANCA[banca]) throw new HttpError(400, 'Escolha a banca.');
   if (user.role !== 'ADMIN') {
     const n = await one("SELECT count(*)::int AS n FROM provas WHERE uploaded_by=$1 AND created_at > now() - interval '24 hours'", [user.id]);
@@ -67,10 +67,11 @@ export async function submitProva({ user, banca, orgao, cargo, ano, editalId, fi
   let p;
   try {
     p = await one(`INSERT INTO provas(banca, banca_informada, orgao, cargo, ano, titulo, file_name, file_key, gabarito_name, gabarito_key, sha256, gabarito_sha256,
-                     text, gabarito_text, needs_ocr, page_count, security, source, uploaded_by, edital_id, status)
-                   VALUES ($1,$1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'CHECKING') RETURNING *`,
+                     text, gabarito_text, needs_ocr, page_count, security, source, uploaded_by, edital_id, status, official_url, oficial_confirmado, official_url_tipo)
+                   VALUES ($1,$1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'CHECKING',$20,$21,$22) RETURNING *`,
       [banca, orgao, cargo, ano, [orgao, cargo, ano].filter(Boolean).join(' · ') || file.name, file.name, fileKey, gabarito?.name || null, gabKey, sec.sha256, gab?.sha256 || null,
-       sec.needsOcr ? null : sec.text, gab?.text || null, sec.needsOcr, sec.pages, JSON.stringify(security), user.role === 'ADMIN' ? 'admin' : 'user', user.id, validEditalId]);
+       sec.needsOcr ? null : sec.text, gab?.text || null, sec.needsOcr, sec.pages, JSON.stringify(security), user.role === 'ADMIN' ? 'admin' : 'user', user.id, validEditalId,
+       officialUrl, oficialConfirmado, officialUrlTipo]);
   } catch (e) {
     await deleteFile(fileKey); await deleteFile(gabKey);
     if (e.code === '23505') return { duplicate: true, message: 'Essa prova acabou de ser enviada por outra pessoa e já está na nossa base.' };
@@ -117,6 +118,11 @@ async function checkProva({ provaId }) {
   if (!p.cargo && c.cargo) extra.cargo = c.cargo.slice(0, 120);
   if (!p.ano && /^\d{4}$/.test(c.ano)) extra.ano = c.ano;
   const notes = [];
+
+  if (p.oficial_confirmado) {
+    findings.push({ code: 'fonte_oficial_confirmada', severity: 'low', where: 'veracidade', message: `Fonte primária oficial validada (${p.official_url_tipo}): ${p.official_url}` });
+    notes.push(`Fonte primária oficial confirmada (${p.official_url}).`);
+  }
 
   // S6: só recusa automaticamente com 90% ou mais de certeza; abaixo disso, vai para revisão humana (IN_REVIEW)
   if (!c.e_prova && c.confianca >= 0.90) {

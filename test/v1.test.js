@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import * as fx from './fixtures.js';
 
-const PORT = 3998, URL = `http://localhost:${PORT}`;
+const PORT = 3900 + Math.floor(Math.random() * 900), URL = `http://localhost:${PORT}`;
 const RUN = Date.now().toString(36);
 let srv, log = '';
 const lastCode = (email) => [...log.matchAll(new RegExp(`Para: ${email.replace(/[.+]/g, '\\$&')}[\\s\\S]*?código[^:]*: (\\d{6})`, 'g'))].at(-1)?.[1];
@@ -48,15 +48,8 @@ before(async () => {
   srv = spawn(process.execPath, ['src/server.js'], { env: { ...process.env, PORT: String(PORT), APP_URL: URL, AI_MOCK: 'true', AI_TRAINING_MODE: 'direct', S3_DISABLED: 'true', SMTP_HOST: '', REGISTRATION_MODE: 'allowlist', ADMIN_EMAILS: emails.admin, ALLOWED_EMAILS: `${emails.user},${emails.amanda}`, TRUST_AUTO_APPROVE_MIN: '5', BLOCKED_UPLOADS_BEFORE_LOCK: '3' } });
   srv.stdout.on('data', (d) => (log += d)); srv.stderr.on('data', (d) => (log += d));
   for (let i = 0; i < 80; i++) { try { if ((await fetch(URL + '/api/health')).ok) break; } catch {} await sleep(200); }
-  try {
-    await signup(admin, emails.admin, 'Admin');
-    await signup(user, emails.user, 'Usuário Teste');
-  } catch (err) {
-    console.error('--- SERVER LOG ON FAILURE ---');
-    console.error(log);
-    console.error('--- END SERVER LOG ---');
-    throw err;
-  }
+  await signup(admin, emails.admin, 'Admin');
+  await signup(user, emails.user, 'Usuário Teste');
 });
 after(() => srv?.kill());
 
@@ -373,4 +366,60 @@ test('edital canônico: o mesmo edital enviado por outro aluno é reaproveitado 
   assert.equal(b.data.edital.resumo.totalTopicos, a.data.edital.resumo.totalTopicos);
   // cada aluno tem o seu edital (progresso separado), ambos apontando para o mesmo conteúdo canônico
   assert.notEqual(b.data.edital.id, a.data.edital.id);
+});
+
+test('P1/P2: validação de fonte primária oficial em provas e editais', async () => {
+  const pTxt = 'CONCURSO PÚBLICO — FGV\nQUESTÃO 1: No processo licitatório conforme Lei 14.133/2021, a modalidade diálogo competitivo é cabível para contratações complexas.\nA) Certo\nB) Errado\nGabarito: A\n';
+  const pBuf = await fx.pdfClean(pTxt);
+
+  // 1. Prova com URL de cursinho preparatório é recusada
+  const rCursinho = await user('/api/provas', {
+    method: 'POST',
+    fields: { banca: 'fgv', officialUrl: 'https://www.estrategiaconcursos.com.br/blog/edital-receita/' },
+    files: { prova: [pBuf, 'prova-cursinho.pdf'] },
+  });
+  assert.equal(rCursinho.status, 422);
+  assert.match(rCursinho.data.error, /cursinho preparatório/i);
+
+  // 2. Prova com divergência de banca (declarou FGV, enviou link Cebraspe) é recusada
+  const rDivergente = await user('/api/provas', {
+    method: 'POST',
+    fields: { banca: 'fgv', officialUrl: 'https://www.cebraspe.org.br/concursos/inss_2024' },
+    files: { prova: [pBuf, 'prova-divergente.pdf'] },
+  });
+  assert.equal(rDivergente.status, 422);
+  assert.match(rDivergente.data.error, /CEBRASPE/);
+
+  // 3. Prova com URL oficial da FGV é aceita e confirmada
+  const rOficial = await user('/api/provas', {
+    method: 'POST',
+    fields: { banca: 'fgv', officialUrl: 'https://conhecimento.fgv.br/concursos/receita-federal' },
+    files: { prova: [await fx.pdfClean(pTxt + `\nIDENTIFICADOR UNICO ${RUN}`), 'prova-oficial.pdf'] },
+  });
+  assert.equal(rOficial.status, 202);
+  assert.equal(rOficial.data.prova.oficialConfirmado, true);
+  assert.equal(rOficial.data.prova.officialUrl, 'https://conhecimento.fgv.br/concursos/receita-federal');
+  assert.equal(rOficial.data.prova.officialUrlTipo, 'banca');
+
+  // 4. Edital com URL de cursinho é recusado
+  const edTxt = `EDITAL OFICIAL CONCURSO PÚBLICO NACIONAL — CEBRASPE ${RUN}
+  CONTEÚDO PROGRAMÁTICO COMPLETO:
+  NOÇÕES DE DIREITO ADMINISTRATIVO: 1. Regime jurídico dos servidores públicos civis da União. 2. Atos administrativos: conceito, requisitos, atributos, anulação e revogação. 3. Licitações e contratos administrativos conforme a Lei nº 14.133/2021.
+  LÍNGUA PORTUGUESA: 1. Compreensão e interpretação de textos de gêneros variados. 2. Domínio da ortografia oficial e acentuação gráfica. 3. Emprego dos sinais de pontuação e crase. Demais disposições conforme normas complementares deste edital.`;
+  const edCursinho = await user('/api/editais', {
+    method: 'POST',
+    body: { text: edTxt, banca: 'cebraspe', officialUrl: 'https://grancursosonline.com.br/concurso/inss' },
+  });
+  assert.equal(edCursinho.status, 422);
+  assert.match(edCursinho.data.error, /cursinho preparatório/i);
+
+  // 5. Edital com URL oficial do DOU (in.gov.br) é aceito e marcado como oficial_confirmado
+  const edDou = await user('/api/editais', {
+    method: 'POST',
+    body: { text: edTxt, banca: 'cebraspe', officialUrl: 'https://www.in.gov.br/web/dou/-/edital-1-2024' },
+  });
+  assert.equal(edDou.status, 201, JSON.stringify(edDou.data));
+  assert.equal(edDou.data.edital.oficialConfirmado, true);
+  assert.equal(edDou.data.edital.officialUrl, 'https://www.in.gov.br/web/dou/-/edital-1-2024');
+  assert.equal(edDou.data.edital.officialUrlTipo, 'diario_oficial');
 });

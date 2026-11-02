@@ -19,6 +19,7 @@ const view = (p, detail = false) => ({
   id: p.id, banca: p.banca, bancaInformada: p.banca_informada, orgao: p.orgao, cargo: p.cargo, ano: p.ano, titulo: p.titulo, fileName: p.file_name, gabaritoName: p.gabarito_name,
   status: p.status, statusLabel: publicStatus[p.status], error: p.error, source: p.source, uploader: p.uploader_name ? { name: p.uploader_name, email: p.uploader_email } : null,
   needsOcr: p.needs_ocr, pageCount: p.page_count, materias: p.materias, numQuestoes: p.num_questoes, reviewNote: p.review_note, autoApproved: p.auto_approved,
+  officialUrl: p.official_url || null, oficialConfirmado: !!p.oficial_confirmado, officialUrlTipo: p.official_url_tipo || null,
   securitySeverity: p.security?.decision?.severity || null, duplicateOf: p.duplicate_of, createdAt: p.created_at,
   ...(detail ? { security: p.security, classification: p.classification, analysis: p.analysis, textPreview: (p.text || '').slice(0, 6000) } : {}),
 });

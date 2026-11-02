@@ -374,6 +374,9 @@ export async function buildEditalDashboard(edital, userId) {
     fileName: edital.file_name,
     pages: edital.pages,
     active: edital.active,
+    officialUrl: edital.official_url || null,
+    oficialConfirmado: !!edital.oficial_confirmado,
+    officialUrlTipo: edital.official_url_tipo || null,
     createdAt: edital.created_at,
     provasVinculadas,
     materiaisVinculados,
@@ -405,6 +408,9 @@ async function parseEditalCanonico(text, fileName, userId, signal, meta) {
   const chave = crypto.createHash('sha256').update(normNome(text)).update(`|cargo:${normNome(meta.cargo)}`).digest('hex');
   const hit = await one('UPDATE editais_canonicos SET usos=usos+1, updated_at=now() WHERE chave=$1 RETURNING *', [chave]);
   if (hit) {
+    if (!hit.official_url && meta.officialUrl && meta.oficialConfirmado) {
+      await query('UPDATE editais_canonicos SET official_url=$2, oficial_confirmado=true, official_url_tipo=$3 WHERE id=$1', [hit.id, meta.officialUrl, meta.officialUrlTipo]);
+    }
     return {
       parsed: { titulo: hit.titulo, orgao: hit.orgao, cargo: hit.cargo, banca: hit.banca, ano: hit.ano, verticalizado: hit.verticalizado },
       canonicoId: hit.id,
@@ -418,9 +424,11 @@ async function parseEditalCanonico(text, fileName, userId, signal, meta) {
     for (const t of d.topicos) t.topicoId = await topicoId(d.materiaId, t.nome);
   }
   const row = await one(
-    `INSERT INTO editais_canonicos(chave,titulo,orgao,cargo,banca,ano,verticalizado,prompt_versao) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    `INSERT INTO editais_canonicos(chave,titulo,orgao,cargo,banca,ano,verticalizado,prompt_versao,official_url,oficial_confirmado,official_url_tipo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      ON CONFLICT (chave) DO UPDATE SET usos = editais_canonicos.usos + 1, updated_at = now() RETURNING id`,
-    [chave, parsed.titulo, parsed.orgao, parsed.cargo, parsed.banca, parsed.ano, JSON.stringify(parsed.verticalizado), PROMPT_VERSAO.edital_parse]
+    [chave, parsed.titulo, parsed.orgao, parsed.cargo, parsed.banca, parsed.ano, JSON.stringify(parsed.verticalizado), PROMPT_VERSAO.edital_parse,
+     meta.officialUrl || null, !!meta.oficialConfirmado, meta.officialUrlTipo || null]
   );
   return { parsed, canonicoId: row.id, reaproveitado: false };
 }
@@ -430,7 +438,7 @@ const words = (t) => (String(t).match(/\S+/g) || []).length;
 /**
  * Cria e verticaliza um edital (via arquivo ou texto), vinculando opcionalmente à banca e à prova.
  */
-export async function createEditalForUser({ user, file, text: rawText, banca, orgao, cargo, ano, provaId, ip, signal }) {
+export async function createEditalForUser({ user, file, text: rawText, banca, orgao, cargo, ano, provaId, ip, signal, officialUrl = null, oficialConfirmado = false, officialUrlTipo = null }) {
   let text, pages = null, sha = null, ocr = false, warnings = [], security;
   if (file) {
     const s = await secureUpload(file.buffer, file.name, 'material', { ocr: 'full', userId: user.id, ip, signal });
@@ -459,7 +467,7 @@ export async function createEditalForUser({ user, file, text: rawText, banca, or
 
   const fileKey = file ? await putFile(makeKey(`editais/${user.id}`, file.name), file.buffer, file.mime) : null;
   try {
-    const { parsed, canonicoId, reaproveitado } = await parseEditalCanonico(text, file?.name || [orgao, cargo, ano].filter(Boolean).join(' · ') || 'Edital', user.id, signal, { banca, orgao, cargo, ano });
+    const { parsed, canonicoId, reaproveitado } = await parseEditalCanonico(text, file?.name || [orgao, cargo, ano].filter(Boolean).join(' · ') || 'Edital', user.id, signal, { banca, orgao, cargo, ano, officialUrl, oficialConfirmado, officialUrlTipo });
     if (reaproveitado) warnings.push('Este edital já tinha sido lido antes: reaproveitamos o conteúdo programático na hora.');
     if (!parsed.verticalizado.length) throw new HttpError(422, 'Não conseguimos identificar as disciplinas e tópicos neste arquivo. Envie o edital ou o anexo de conteúdo programático.');
 
@@ -477,9 +485,10 @@ export async function createEditalForUser({ user, file, text: rawText, banca, or
       ? (await one('SELECT id FROM provas WHERE id=$1 AND (uploaded_by=$2 OR $3)', [provaId, user.id, user.role === 'ADMIN']))?.id || null
       : null;
     const e = await one(
-      `INSERT INTO editais(user_id,titulo,orgao,cargo,banca,ano,prova_id,file_name,file_key,mime_type,size,pages,text,word_count,verticalizado,sha256,security,ocr,active,canonico_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,true,$19) RETURNING *`,
-      [user.id, finalTitulo, finalOrgao, finalCargo, finalBanca, finalAno, validProvaId, file?.name || null, fileKey, file?.mime || null, file?.buffer.length || null, pages, text, words(text), JSON.stringify(parsed.verticalizado), sha, JSON.stringify(security), ocr, canonicoId]
+      `INSERT INTO editais(user_id,titulo,orgao,cargo,banca,ano,prova_id,file_name,file_key,mime_type,size,pages,text,word_count,verticalizado,sha256,security,ocr,active,canonico_id,official_url,oficial_confirmado,official_url_tipo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,true,$19,$20,$21,$22) RETURNING *`,
+      [user.id, finalTitulo, finalOrgao, finalCargo, finalBanca, finalAno, validProvaId, file?.name || null, fileKey, file?.mime || null, file?.buffer.length || null, pages, text, words(text), JSON.stringify(parsed.verticalizado), sha, JSON.stringify(security), ocr, canonicoId,
+       officialUrl, oficialConfirmado, officialUrlTipo]
     );
     if (validProvaId) {
       await query('UPDATE provas SET edital_id=$2 WHERE id=$1', [validProvaId, e.id]);

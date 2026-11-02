@@ -27,6 +27,147 @@ export const MATERIAS = ['Língua Portuguesa', 'Direito Constitucional', 'Direit
 
 export const NIVEIS = ['Fácil', 'Médio', 'Difícil', 'Misto'];
 
+// Domínios oficiais primários das bancas organizadoras de concursos
+export const DOMINIOS_OFICIAIS = {
+  cebraspe: ['cebraspe.org.br', 'cespe.unb.br'],
+  fgv: ['conhecimento.fgv.br', 'fgv.br'],
+  fcc: ['concursosfcc.com.br', 'fcc.org.br'],
+  vunesp: ['vunesp.com.br'],
+  cesgranrio: ['cesgranrio.org.br'],
+  ibfc: ['ibfc.org.br'],
+  quadrix: ['quadrix.org.br'],
+  aocp: ['institutoaocp.org.br', 'aocp.com.br'],
+  idecan: ['idecan.org.br'],
+  selecon: ['selecon.org.br', 'selecon.com.br'],
+  iades: ['iades.com.br'],
+  funcab: ['funcab.org'],
+  consulplan: ['consulplan.net', 'institutoconsulplan.org.br'],
+  fundatec: ['fundatec.org.br'],
+  fepese: ['fepese.org.br'],
+  comperve: ['comperve.ufrn.br'],
+  coperve: ['coperve.ufsc.br'],
+};
+
+// Cursinhos, redes sociais, blogs e repositórios de arquivos (NÃO são fonte oficial primária)
+export const DOMINIOS_NAO_OFICIAIS = [
+  'grancursosonline.com.br',
+  'gran.com.br',
+  'estrategiaconcursos.com.br',
+  'estrategia.com',
+  'folhadirigida.com.br',
+  'folhadirigida.com',
+  'qconcursos.com.br',
+  'qconcursos.com',
+  'direcaoconcursos.com.br',
+  'alfaconconcursos.com.br',
+  'novaconcursos.com.br',
+  'pciconcursos.com.br',
+  'acheconcursos.com.br',
+  'concursosnobrasil.com.br',
+  'drive.google.com',
+  'docs.google.com',
+  'dropbox.com',
+  'mega.nz',
+  'mediafire.com',
+  'onedrive.live.com',
+  '1drv.ms',
+  'scribd.com',
+  'passeidireto.com',
+];
+
+/**
+ * Valida se uma URL pertence ao site oficial da banca informada ou a uma fonte governamental oficial
+ * (Diários Oficiais: DOU in.gov.br, Imprensa Oficial, portais de órgãos .gov.br, .jus.br, .leg.br etc.).
+ *
+ * @param {string} banca - ID da banca (ex: 'cebraspe', 'fgv')
+ * @param {string} rawUrl - URL enviada pelo usuário
+ * @returns {{ valida: boolean, oficial: boolean, dominio: string|null, tipo?: string, motivo?: string, urlNormalizada?: string }}
+ */
+export function validarUrlOficial(banca, rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return { valida: false, oficial: false, dominio: null, motivo: 'URL não informada.' };
+  }
+  let parsed;
+  try {
+    const trimmed = rawUrl.trim();
+    const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    parsed = new URL(withProto);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return { valida: false, oficial: false, dominio: null, motivo: 'Protocolo inválido. Use http ou https.' };
+    }
+  } catch {
+    return { valida: false, oficial: false, dominio: null, motivo: 'Formato de URL inválido.' };
+  }
+
+  let host = parsed.hostname.toLowerCase().replace(/\.+$/, '');
+  if (host.startsWith('www.')) host = host.slice(4);
+
+  // 1. Checa domínios não oficiais (cursinhos, blogs, drives compartilhados)
+  for (const dom of DOMINIOS_NAO_OFICIAIS) {
+    if (host === dom || host.endsWith('.' + dom)) {
+      return {
+        valida: false,
+        oficial: false,
+        dominio: host,
+        tipo: 'nao_oficial',
+        motivo: `O domínio "${host}" pertence a cursinho preparatório, blog ou serviço de arquivos particulares, não sendo fonte primária oficial da banca nem diário oficial.`,
+      };
+    }
+  }
+
+  // 2. Checa se pertence à banca declarada
+  const bancaKey = String(banca || '').trim().toLowerCase();
+  const domsBanca = DOMINIOS_OFICIAIS[bancaKey] || [];
+  const matchBanca = domsBanca.some((d) => host === d || host.endsWith('.' + d));
+
+  if (matchBanca) {
+    return {
+      valida: true,
+      oficial: true,
+      dominio: host,
+      tipo: 'banca',
+      urlNormalizada: parsed.toString(),
+    };
+  }
+
+  // 3. Checa portais governamentais e Diários Oficiais oficiais
+  const sufixosOficiais = ['.gov.br', '.leg.br', '.jus.br', '.def.br', '.mp.br', '.tc.br'];
+  const dominiosOficiaisGerais = ['in.gov.br', 'imprensaoficial.com.br'];
+  const matchGov = sufixosOficiais.some((suf) => host === suf.slice(1) || host.endsWith(suf)) || dominiosOficiaisGerais.some((d) => host === d || host.endsWith('.' + d));
+
+  if (matchGov) {
+    const tipo = host.includes('in.gov.br') || host.includes('imprensaoficial') || host.includes('diario') ? 'diario_oficial' : 'orgao_publico';
+    return {
+      valida: true,
+      oficial: true,
+      dominio: host,
+      tipo,
+      urlNormalizada: parsed.toString(),
+    };
+  }
+
+  // 4. Se a URL pertence a OUTRA banca do catálogo (divergência de banca)
+  for (const [outraBanca, doms] of Object.entries(DOMINIOS_OFICIAIS)) {
+    if (outraBanca !== bancaKey && doms.some((d) => host === d || host.endsWith('.' + d))) {
+      return {
+        valida: false,
+        oficial: true,
+        dominio: host,
+        tipo: 'banca_divergente',
+        motivo: `A URL pertence ao portal oficial da banca "${outraBanca.toUpperCase()}", divergindo da banca informada "${bancaKey.toUpperCase()}".`,
+      };
+    }
+  }
+
+  return {
+    valida: false,
+    oficial: false,
+    dominio: host,
+    tipo: 'desconhecido',
+    motivo: `O domínio "${host}" não consta no catálogo de domínios oficiais das bancas examinadoras nem na rede de diários oficiais governamentais.`,
+  };
+}
+
 const KEYWORDS = {
   'Direito Constitucional': ['constituição', 'constitucional', 'art. 5', 'direitos fundamentais', 'emenda constitucional', 'poder constituinte', 'controle de constitucionalidade', 'mandado de segurança', 'habeas'],
   'Direito Administrativo': ['administração pública', 'ato administrativo', 'atos administrativos', 'licitação', 'servidor público', 'poder de polícia', '14.133', '8.112', 'improbidade', 'autarquia'],
