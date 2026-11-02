@@ -186,6 +186,12 @@ export async function runText(task, req) {
             break;
           }
         }
+        // Provedor fora do ar (503/5xx): com reserva na fila, segue adiante em vez de insistir no mesmo modelo
+        if (err.code === 'unavailable' && r < routes.length - 1) {
+          if (err.retryAfterMs) tripBreaker(key, err.retryAfterMs);
+          console.warn(`[ERRO-IA] [INDISPONIVEL] modelo=${key} — avançando para modelo reserva sem nova tentativa`);
+          break;
+        }
         if (!err.retryable || attempt === config.ai.maxRetries) break;
         const wait = Math.min(20000, 800 * 2 ** (attempt - 1)) + Math.random() * 400; // espera exponencial + jitter
         console.warn(`[ERRO-IA] [RETRY] tarefa=${task} modelo=${key} aguardando ${Math.round(wait)}ms para nova tentativa`);

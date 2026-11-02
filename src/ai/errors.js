@@ -21,7 +21,9 @@ export function fromHttp(status, message, cause, headers) {
     const ra = typeof headers.get === 'function' ? headers.get('retry-after') : (headers['retry-after'] || headers['Retry-After']);
     if (ra) {
       const sec = Number(ra);
-      retryAfterMs = Number.isFinite(sec) ? sec * 1000 : Math.max(1000, new Date(ra).getTime() - Date.now());
+      retryAfterMs = Number.isFinite(sec) ? sec * 1000 : new Date(ra).getTime() - Date.now();
+      // Entre 1 s e 1 h: valor inválido/negativo não pode anular a pausa, nem cota diária travar o modelo o dia todo
+      retryAfterMs = Number.isFinite(retryAfterMs) ? Math.min(3_600_000, Math.max(1000, retryAfterMs)) : null;
     }
   }
   if (status === 401 || status === 403) return new AiError(`Chave de API inválida ou sem permissão (${status}).`, { status, retryable: false, fallback: true, code: 'auth', cause });

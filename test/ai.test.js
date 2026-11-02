@@ -119,3 +119,39 @@ test('D2: rate_limit abre o disjuntor temporariamente e pula o modelo', () => {
   _resetBreakers();
   assert.equal(isOpen(key), false);
 });
+
+test('D2: 429 e 503 pulam para o próximo modelo sem gastar tentativas; 429 pausa o modelo pelo retry-after', async () => {
+  // detect: groq:modelo-inexistente → nvidia (sem chave) → mock. O fetch do Groq é simulado.
+  const prevFetch = globalThis.fetch, prevRetries = config.ai.maxRetries, prevGroq = config.ai.keys.groq;
+  config.ai.maxRetries = 3;
+  config.ai.keys.groq = 'gsk-teste';
+  const chamadas = { groq: 0 };
+  try {
+    for (const [status, headers] of [[429, { 'retry-after': '7' }], [503, {}]]) {
+      _resetBreakers();
+      chamadas.groq = 0;
+      globalThis.fetch = async (url) => {
+        if (String(url).includes('groq')) { chamadas.groq++; return new Response(JSON.stringify({ error: { message: 'x' } }), { status, headers }); }
+        return prevFetch(url);
+      };
+      const out = await runText('detect', { prompt: 'Material: licitação.', maxTokens: 50 });
+      assert.equal(out.provider, 'mock', `status ${status}: deveria cair no reserva`);
+      assert.equal(chamadas.groq, 1, `status ${status}: não pode repetir no mesmo modelo`);
+      assert.equal(isOpen('groq:modelo-inexistente'), status === 429, `status ${status}: pausa só no 429`);
+    }
+  } finally {
+    globalThis.fetch = prevFetch;
+    config.ai.maxRetries = prevRetries;
+    config.ai.keys.groq = prevGroq;
+    _resetBreakers();
+  }
+});
+
+test('retry-after fica entre 1 s e 1 h', async () => {
+  const { fromHttp } = await import('../src/ai/errors.js');
+  const h = (v) => new Headers({ 'retry-after': v });
+  assert.equal(fromHttp(429, '', null, h('-5')).retryAfterMs, 1000);
+  assert.equal(fromHttp(429, '', null, h('86400')).retryAfterMs, 3_600_000);
+  assert.equal(fromHttp(429, '', null, h('lixo')).retryAfterMs, null);
+  assert.equal(fromHttp(429, '', null, h('12')).retryAfterMs, 12000);
+});
