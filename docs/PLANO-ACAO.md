@@ -43,9 +43,23 @@ Revisão de 02/11/2026 da cascata gratuita (`AI_FREE_CASCADE`), feita sobre o c�
 | D7 | **Fase 2 da arquitetura**: `perfil_banca` consolidado + pacote de contexto compacto | Menos tokens por geração; modelo menor rende como maior | Grande |
 | D8 | **Docs**: atualizar `docs/IA.md`, `ROADMAP.md`, `CLAUDE.md` e `.env.example` (multi-provedor, sensibilidade, gratuidade declarada) | Próxima sessão entende o desenho | Pequeno |
 
+## Reanálise após o benchmark (02/11/2026)
+
+Feito também: OpenRouter como 3º grátis, `scripts/benchmark-ia.js` e `docs/BENCHMARK-IA.md` (8 modelos com nota 100;
+Groq e Gemini Flash-Lite ~1,8 s; OpenRouter 40–80 s; Claude é a reserva paga e o único com OCR).
+
+| Item | O que o código mostrou | Nova prioridade |
+|---|---|---|
+| D2 (429/503) | Um 429 é tratado como "tente de novo": 3 tentativas com espera (~2,5 s) **no mesmo provedor** antes de ir para o próximo; o disjuntor só abre após 5 falhas. Com cota grátis, 429 é frequente → o aluno espera à toa | **Alta** — ir direto ao próximo provedor e dar "descanso" ao que deu 429 pelo tempo do `retry-after` (padrão 60 s) |
+| D3 (lote) | Com a cascata ligada, o treino de prova vai direto ao Gemini (grátis, segundos). O lote só valeria se os 3 grátis falharem — raro e complexo de encaixar | **Baixa** — documentar e não implementar agora |
+| S6 (provas) | A aprovação automática já exige usuário de confiança (≥5 aprovadas, 0 recusadas) **e** varredura sem alertas. O risco real do modelo pequeno é outro: `prova_check` **recusa sozinho** se achar que não é prova (confiança ≥ 0,7) ou se a banca não é suportada (≥ 0,85) — falso negativo some com uma prova legítima | **Média** — recusa automática só com confiança ≥ 0,9; abaixo disso vai para revisão do admin |
+| D5 (avaliação) | Todos tiraram 100: o teste atual mede velocidade e formato, não qualidade | **Alta** — casos difíceis + juiz (Sonnet) avaliando se o gabarito gerado está certo e se a pegadinha é boa |
+| S1 (privacidade) | Material do aluno vai hoje para Gemini/Groq/OpenRouter grátis | **Decisão do Josueh** |
+| Novo — D9 | Painel admin sem visão por provedor: chamadas de hoje, 429, falhas, tempo médio | **Média** — base para o D4 |
+
 ## Ordem sugerida
 
-1. ✅ **Feito em 02/11/2026:** S2, S3, S7, S8, D1 (51/51 testes) e commit da cascata.
-2. **Esta semana:** S1, S6, D2, D3, D8 → push.
-3. **Antes de abrir para mais alunos:** S5, D4, D5.
-4. **Depois:** D6, D7 (Fase 2).
+1. ✅ **Feito em 02/11/2026:** S2, S3, S7, S8, D1 (51/51 testes), commit da cascata, OpenRouter e benchmark.
+2. **Próximo:** D2, S6, D5 (benchmark difícil), D8 → push. S1 assim que houver decisão.
+3. **Antes de abrir para mais alunos:** S5, D4, D9.
+4. **Depois:** D6, D7 (Fase 2). D3 só se o uso do Claude de reserva crescer.
