@@ -42,3 +42,4 @@
   <circle cx="64" cy="68" r="8" fill="#1e293b" stroke="url(#gold3)" stroke-width="2"/>
   <path d="M60 68 L68 68 M64 64 L64 72" stroke="url(#gold3)" stroke-width="2" stroke-linecap="round"/>
 </svg>
+

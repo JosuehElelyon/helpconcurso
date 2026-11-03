@@ -44,7 +44,7 @@ function renderAvatar(u, sizeClass = '') {
   const init = initials(name);
   const url = u.avatarUrl || u.avatar_url;
   if (url) {
-    return `<img src="${esc(url)}" class="avatar ${sizeClass}" alt="${esc(name)}" onerror="this.outerHTML='<span class=\\'avatar ${sizeClass}\\'>${esc(init)}</span>'" />`;
+    return `<img src="${esc(url)}" class="avatar ${sizeClass}" alt="${esc(name)}" data-ini="${esc(init)}">`;
   }
   return `<span class="avatar ${sizeClass}" aria-hidden="true">${esc(init)}</span>`;
 }
@@ -425,10 +425,26 @@ function stats() {
   S.sets.forEach((s) => { const r = s.respostas || {}; (s.questoes || []).forEach((q, i) => { if (r[i] != null) { resp++; if (r[i] === q.gabarito) ac++; } }); });
   return { qs, feitos: S.sets.filter((s) => s.finalizado).length, taxa: resp ? Math.round((ac / resp) * 100) + '%' : '—', provas: S.bancas.reduce((a, b) => a + (b.provasTreinadas || 0), 0) };
 }
+// Novidade: foto de perfil — aparece para todos (aluno e admin) até escolher uma foto ou dispensar
+const avisoAvatarKey = () => `hc_aviso_avatar_${S.user?.id}`;
+function avisoAvatarHtml() {
+  if (!S.user || S.user.avatarUrl) return '';
+  try { if (localStorage.getItem(avisoAvatarKey())) return ''; } catch { /* modo privado */ }
+  return `<div class="card card-pad row avatar-news" style="justify-content:space-between;margin-bottom:18px">
+    <div style="display:flex;gap:14px;align-items:center;min-width:0">
+      <div class="avatar-news-pics" aria-hidden="true"><img src="/avatars/avatar-6.svg" alt=""><img src="/avatars/avatar-7.svg" alt=""><img src="/avatars/avatar-10.svg" alt=""></div>
+      <div style="min-width:0"><div class="row" style="gap:6px"><span class="badge accent">Novidade</span><b>Coloque sua foto de perfil</b></div>
+        <div class="hint">Envie uma foto sua ou escolha um dos 10 avatares de concurseiro.</div></div>
+    </div>
+    <div class="row" style="gap:8px"><button class="btn btn-primary btn-sm" data-aviso-avatar="abrir">${ic('camera', 'sm')} Escolher foto</button><button class="btn btn-quiet btn-sm" data-aviso-avatar="fechar">Agora não</button></div>
+  </div>`;
+}
+
 function viewHome() {
   const st = stats(), h = new Date().getHours();
   return `<h1 class="page-title">${h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'}, ${esc(firstName(S.user.name))}</h1>
   <p class="page-sub">O que vamos estudar hoje?</p>
+  ${avisoAvatarHtml()}
   <div class="hero">
     <div class="hero-main">
       <div class="eyebrow">Gerador de questões</div>
@@ -1348,7 +1364,7 @@ function viewProvas() {
       ${m.sec.blockedUsers.length ? `<div class="banner warn">${ic('alert', 'sm')}<div>Envios pausados: ${m.sec.blockedUsers.map((u) => esc(u.name) + ' (' + esc(u.email) + ')').join(', ')}</div></div>` : ''}
       ${m.sec.events.length ? `<table class="tbl"><thead><tr><th>Quando</th><th>Tipo</th><th>Nível</th><th>Usuário</th><th>Arquivo</th><th>Motivos</th></tr></thead><tbody>${m.sec.events.slice(0, 80).map((e) => `<tr><td>${new Date(e.created_at).toLocaleString('pt-BR')}</td><td>${esc(e.kind)}</td><td><span class="sev ${e.severity}">${SEV_LABEL[e.severity] || esc(e.severity)}</span></td><td>${esc(e.name || '—')}</td><td>${esc(e.file_name || '—')}</td><td class="hint">${esc(((e.details?.findings || []).filter((f) => !['info', 'low'].includes(f.severity)).map((f) => f.message).concat(e.details?.reasons || [], e.details?.alertas || [])).slice(0, 3).join(' · '))}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Nenhum evento.</p>'}</div>`;
   }
-  return `<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h1 class="page-title">Base de provas</h1><p class="page-sub">Revise as provas enviadas, acompanhe o treino da IA e monitore segurança e custos.</p></div><div class="row" style="gap:8px"><button class="btn btn-ghost" id="admPedidos" title="Pedidos de upgrade de plano">${ic('crown', 'sm')} Pedidos de plano</button><button class="btn btn-ghost" id="admDiverg" title="Questões em que os dois modelos discordaram do gabarito">${ic('alert', 'sm')} Divergências</button><button class="btn btn-ghost" id="admLote" title="Importa várias provas de links oficiais de uma vez">${ic('download', 'sm')} Importar em lote</button><button class="btn btn-ghost" id="admRotular" title="Completa tópico, comando e pegadinha das questões de provas antigas usando as IAs grátis (provas são públicas)">${ic('brain', 'sm')} Rotular provas antigas</button><button class="btn btn-primary" data-go="contribuir">${ic('upload', 'sm')} Enviar provas</button></div></div>
+  return `<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h1 class="page-title">Base de provas</h1><p class="page-sub">Revise as provas enviadas, acompanhe o treino da IA e monitore segurança e custos.</p></div><div class="row" style="gap:8px"><button class="btn btn-ghost" id="admPedidos" title="Pedidos de upgrade de plano">${ic('crown', 'sm')} Pedidos de plano</button><button class="btn btn-ghost" id="admDiverg" title="Questões em que os dois modelos discordaram do gabarito">${ic('alert', 'sm')} Divergências</button><button class="btn btn-ghost" id="admLote" title="Importa várias provas de links oficiais de uma vez">${ic('download', 'sm')} Importar em lote</button><button class="btn btn-ghost" id="admRotular" title="Completa tópico, comando e pegadinha das questões de provas antigas usando as IAs grátis (provas são públicas)">${ic('brain', 'sm')} Rotular provas antigas</button><button class="btn btn-primary" data-go="contribuir">${ic('upload', 'sm')} Enviar provas</button></div></div>${avisoAvatarHtml()}
   <div class="tabs" style="max-width:520px">${tabs.map(([k, l]) => `<button type="button" class="${tab === k ? 'on' : ''}" data-atab="${k}">${l}</button>`).join('')}</div>${body}`;
 }
 
@@ -1723,6 +1739,12 @@ function go(v) {
   }
   render(); window.scrollTo({ top: 0 });
 }
+// Foto de perfil que não carrega volta para as iniciais (a CSP bloqueia onerror inline)
+document.addEventListener('error', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLImageElement) || !t.classList.contains('avatar')) return;
+  const sp = document.createElement('span'); sp.className = t.className; sp.textContent = t.dataset.ini || '?'; t.replaceWith(sp);
+}, true);
 window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (S.screen === 'app' && ROUTES.includes(h) && h !== S.view) go(h); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (S.drawer || S.modal)) { S.drawer = false; S.modal = null; render(); } });
 
@@ -1798,6 +1820,11 @@ function bindApp() {
   // ---------- Avatar (upload, presets e remoção) ----------
   on('#openAvatarModal', 'click', () => showAvatarModal());
   on('#openAvatarModal2', 'click', () => showAvatarModal());
+  on('[data-aviso-avatar]', 'click', (e) => {
+    if (e.currentTarget.dataset.avisoAvatar === 'abrir') return showAvatarModal();
+    try { localStorage.setItem(avisoAvatarKey(), '1'); } catch { /* modo privado */ }
+    render();
+  });
   const handleRemoveAvatar = async () => {
     try {
       const res = await api('/me/avatar', { method: 'DELETE' });
@@ -2347,7 +2374,7 @@ function bindApp() {
           title: `Pedidos de plano (${pend.length} pendente${pend.length === 1 ? '' : 's'})`,
           html: pedidos.length ? `<p class="hint" style="margin-top:0">Confirme o pagamento antes de aprovar. Aprovar soma 1 mês (ou 1 ano) ao período do aluno.</p>
             <table class="tbl"><thead><tr><th>Aluno</th><th>Plano</th><th>Valor</th><th>Pedido em</th><th>Situação</th><th></th></tr></thead><tbody>${pedidos.map((p) => `<tr>
-              <td><b>${esc(p.name)}</b><div class="hint">${esc(p.email)}</div></td>
+              <td><div class="row" style="gap:8px;flex-wrap:nowrap">${renderAvatar({ name: p.name, avatarUrl: p.avatar_url })}<div><b>${esc(p.name)}</b><div class="hint">${esc(p.email)}</div></div></div></td>
               <td>${esc(p.planoNome)} <span class="hint">(${esc(p.periodicidade)})</span></td>
               <td>${brl(p.valor)}</td><td>${new Date(p.created_at).toLocaleString('pt-BR')}</td>
               <td><span class="badge ${p.status === 'pendente' ? 'accent' : p.status === 'aprovado' ? 'brand' : ''}">${esc(p.status)}</span></td>

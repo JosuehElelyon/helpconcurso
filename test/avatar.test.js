@@ -101,3 +101,49 @@ test('storage: putFile, getFile e deleteFile manipulam chave de avatar corretame
   // Após exclusão, getFile deve lançar erro
   await assert.rejects(getFile(key));
 });
+
+// ---------- Remoção de metadados (privacidade da foto pública) ----------
+import { stripImageMetadata } from '../src/lib/avatars.js';
+
+const seg = (marker, dados) => { const c = Buffer.alloc(4); c[0] = 0xff; c[1] = marker; c.writeUInt16BE(dados.length + 2, 2); return Buffer.concat([c, dados]); };
+function exifCom(orient, extra = 'GPS-LATITUDE-SECRETA') { // TIFF little-endian com Orientation + um texto qualquer
+  const tiff = Buffer.alloc(8 + 2 + 12 + 4);
+  tiff.write('II', 0, 'latin1'); tiff.writeUInt16LE(42, 2); tiff.writeUInt32LE(8, 4);
+  tiff.writeUInt16LE(1, 8); tiff.writeUInt16LE(0x0112, 10); tiff.writeUInt16LE(3, 12); tiff.writeUInt32LE(1, 14); tiff.writeUInt16LE(orient, 18);
+  return Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff, Buffer.from(extra)]);
+}
+const jpeg = (...segs) => Buffer.concat([Buffer.from([0xff, 0xd8]), ...segs, Buffer.from([0xff, 0xda, 0, 4, 1, 2, 0xaa, 0xbb, 0xff, 0xd9])]);
+
+test('stripImageMetadata: JPEG perde EXIF/GPS, comentário e XMP, mas mantém orientação e os dados da imagem', () => {
+  const orig = jpeg(seg(0xe0, Buffer.from('JFIF\0\x01\x01')), seg(0xe1, exifCom(6)), seg(0xe1, Buffer.from('http://ns.adobe.com/xap/1.0/\0<x:xmpmeta>autor</x:xmpmeta>')), seg(0xfe, Buffer.from('comentario')));
+  const limpo = stripImageMetadata(orig, 'jpg');
+  const txt = limpo.toString('latin1');
+  assert.ok(!txt.includes('GPS-LATITUDE-SECRETA') && !txt.includes('xmpmeta') && !txt.includes('comentario'));
+  assert.ok(txt.includes('JFIF'));
+  assert.deepEqual([...limpo.subarray(-6)], [1, 2, 0xaa, 0xbb, 0xff, 0xd9]);
+  // a orientação 6 (foto de celular "em pé") continua lá
+  assert.ok(limpo.includes(Buffer.from([0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6])));
+  // sem orientação (ou orientação 1) não sobra nenhum APP1
+  const semRot = stripImageMetadata(jpeg(seg(0xe1, exifCom(1))), 'jpg');
+  assert.ok(!semRot.includes(Buffer.from('Exif')));
+});
+
+test('stripImageMetadata: PNG perde eXIf/tEXt e WebP perde EXIF/XMP com cabeçalho RIFF corrigido', () => {
+  const chunk = (tipo, dados) => { const c = Buffer.alloc(8); c.writeUInt32BE(dados.length, 0); c.write(tipo, 4, 'latin1'); return Buffer.concat([c, dados, Buffer.alloc(4)]); };
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', Buffer.alloc(13)), chunk('tEXt', Buffer.from('Author\0Fulano')), chunk('eXIf', Buffer.from('GPS')), chunk('IDAT', Buffer.from('pix')), chunk('IEND', Buffer.alloc(0))]);
+  const p = stripImageMetadata(png, 'png').toString('latin1');
+  assert.ok(p.includes('IHDR') && p.includes('IDAT') && p.includes('IEND') && !p.includes('Fulano') && !p.includes('eXIf'));
+
+  const wch = (tipo, dados) => { const c = Buffer.alloc(8); c.write(tipo, 0, 'latin1'); c.writeUInt32LE(dados.length, 4); return Buffer.concat([c, dados, Buffer.alloc(dados.length & 1)]); };
+  const corpo = Buffer.concat([wch('VP8X', Buffer.from([0x0c, 0, 0, 0, 0, 0, 0, 0, 0, 0])), wch('VP8 ', Buffer.from('imagem')), wch('EXIF', Buffer.from('GPS-SECRETO')), wch('XMP ', Buffer.from('xmp'))]);
+  const cab = Buffer.from('RIFF0000WEBP', 'latin1'); cab.writeUInt32LE(corpo.length + 4, 4);
+  const w = stripImageMetadata(Buffer.concat([cab, corpo]), 'webp');
+  assert.ok(!w.toString('latin1').includes('GPS-SECRETO') && w.toString('latin1').includes('imagem'));
+  assert.equal(w.readUInt32LE(4), w.length - 8);
+  assert.equal(w[20] & 0x0c, 0); // flags de EXIF/XMP desligadas no VP8X
+});
+
+test('stripImageMetadata: imagem malformada é recusada', () => {
+  assert.throws(() => stripImageMetadata(Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0xff, 0xff, 0]), 'jpg'));
+  assert.throws(() => stripImageMetadata(Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from([0, 0, 0xff, 0xff, 0x49, 0x44, 0x41, 0x54])]), 'png'));
+});

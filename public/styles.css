@@ -456,7 +456,8 @@ details summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--brand)
 /* Minha conta */
 img.avatar{object-fit:cover;display:block;border-radius:50%}
 .avatar-wrap{position:relative;display:inline-block;flex:none}
-.avatar-edit-btn{position:absolute;right:-3px;bottom:-3px;width:26px;height:26px;border-radius:50%;background:var(--brand);color:#fff;border:2px solid var(--surface);display:grid;place-items:center;cursor:pointer;box-shadow:var(--shadow-sm);transition:transform .15s,background .15s}
+.avatar-edit-btn{padding:0;line-height:0;box-sizing:border-box;position:absolute;right:-3px;bottom:-3px;width:26px;height:26px;border-radius:50%;background:var(--brand);color:#fff;border:2px solid var(--surface);display:grid;place-items:center;cursor:pointer;box-shadow:var(--shadow-sm);transition:transform .15s,background .15s}
+.avatar-edit-btn svg.i{width:14px;height:14px;margin:0;display:block}
 .avatar-edit-btn:hover{transform:scale(1.1);background:var(--brand-dark,#0a5849)}
 .btn-xs{padding:4px 10px;font-size:12px;height:28px}
 .avatar-presets-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin:12px 0;max-height:280px;overflow-y:auto;padding:2px}
@@ -524,3 +525,11 @@ img.avatar{object-fit:cover;display:block;border-radius:50%}
 @media (max-width:899px){.cad-grid{grid-template-columns:1fr}}
 @media print{.sidebar,.tabbar{display:none !important}.layout{display:block}}
 .login-side .logo-txt b{color:var(--accent)}
+
+/* Aviso de novidade: foto de perfil */
+.avatar-news{border-color:var(--accent,#F2A62B);background:linear-gradient(90deg,var(--accent-soft,#fff6e6),var(--surface) 60%)}
+.row+.avatar-news{margin-top:14px}
+.avatar-news-pics{display:flex;flex:none}
+.avatar-news-pics img{width:40px;height:40px;border-radius:50%;border:2px solid var(--surface);box-shadow:var(--shadow-sm)}
+.avatar-news-pics img+img{margin-left:-12px}
+@media (max-width:700px){.avatar-news{flex-direction:column;align-items:stretch}.avatar-news .row:last-child{justify-content:flex-end}}

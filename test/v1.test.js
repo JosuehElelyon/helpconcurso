@@ -685,7 +685,7 @@ test('avatar: presets, seleção, upload de imagem com magic bytes, download e r
   assert.equal(upFalso.status, 400);
 
   // 5. Upload de PNG legítimo
-  const pngValido = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89]);
+  const pngValido = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'); // PNG 1x1 real
   const upOk = await user('/api/me/avatar', { method: 'POST', files: { avatar: [pngValido, 'meu-avatar.png'] } });
   assert.equal(upOk.status, 200, JSON.stringify(upOk.data));
   assert.ok(upOk.data.perfil.avatarUrl.startsWith(`/api/users/${meUser.id}/avatar`));
@@ -698,6 +698,22 @@ test('avatar: presets, seleção, upload de imagem com magic bytes, download e r
   const bufBaixado = Buffer.from(await downloadRes.arrayBuffer());
   assert.ok(bufBaixado.equals(pngValido));
 
+  // 6b. Foto de celular com GPS no EXIF: o arquivo público sai sem a localização; a foto anterior é apagada do storage
+  const keyAnterior = (await one('SELECT avatar_key FROM users WHERE id=$1', [meUser.id])).avatar_key;
+  const exif = Buffer.concat([Buffer.from('457869660000', 'hex'), Buffer.from('49492a000800000000000000', 'hex'), Buffer.from('GPS -15.79,-47.88')]);
+  const app1 = Buffer.concat([Buffer.from([0xff, 0xe1, 0, exif.length + 2]), exif]);
+  const jpegGps = Buffer.concat([Buffer.from([0xff, 0xd8]), app1, Buffer.from([0xff, 0xda, 0, 4, 1, 2, 0xaa, 0xbb, 0xff, 0xd9])]);
+  const upJpeg = await user('/api/me/avatar', { method: 'POST', files: { avatar: [jpegGps, 'celular.jpg'] } });
+  assert.equal(upJpeg.status, 200, JSON.stringify(upJpeg.data));
+  const baixadoJpeg = Buffer.from(await (await fetch(`${URL}/api/users/${meUser.id}/avatar`)).arrayBuffer());
+  assert.ok(!baixadoJpeg.toString('latin1').includes('GPS -15.79'));
+  const { getFile } = await import('../src/lib/storage.js');
+  await assert.rejects(getFile(keyAnterior));
+
+  // 6c. Acima de 4 MB é recusado já na recepção
+  const grande = Buffer.concat([pngValido.subarray(0, 16), Buffer.alloc(4 * 1024 * 1024 + 10)]);
+  assert.equal((await user('/api/me/avatar', { method: 'POST', files: { avatar: [grande, 'grande.png'] } })).status, 413);
+
   // 7. Remover avatar
   const rem = await user('/api/me/avatar', { method: 'DELETE' });
   assert.equal(rem.status, 200);
@@ -706,4 +722,12 @@ test('avatar: presets, seleção, upload de imagem com magic bytes, download e r
   // 8. Após remoção, GET do avatar devolve 404
   const downloadPosRemocao = await fetch(`${URL}/api/users/${meUser.id}/avatar`);
   assert.equal(downloadPosRemocao.status, 404);
+});
+
+test('avatar: o ADMIN também escolhe e remove a foto de perfil, e ela aparece no /me', async () => {
+  const sel = await admin('/api/me/avatar/preset', { method: 'PATCH', body: { preset: 'avatar-7.svg' } });
+  assert.equal(sel.status, 200);
+  assert.equal(sel.data.perfil.avatarUrl, '/avatars/avatar-7.svg');
+  assert.equal((await admin('/api/auth/me')).data.user.avatarUrl, '/avatars/avatar-7.svg');
+  assert.equal((await admin('/api/me/avatar', { method: 'DELETE' })).data.perfil.avatarUrl, null);
 });

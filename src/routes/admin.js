@@ -59,7 +59,7 @@ r.post('/provas/rotular', ah(async (req, res) => {
 
 // Planos: pedidos de upgrade (o admin confirma o pagamento e ativa — sem gateway por enquanto)
 r.get('/pedidos', ah(async (_req, res) => {
-  const rows = await many(`SELECT pp.id, pp.plano, pp.periodicidade, pp.valor, pp.status, pp.created_at, u.id AS user_id, u.name, u.email, u.plano AS plano_atual, u.plano_ate
+  const rows = await many(`SELECT pp.id, pp.plano, pp.periodicidade, pp.valor, pp.status, pp.created_at, u.id AS user_id, u.name, u.email, u.avatar_url, u.plano AS plano_atual, u.plano_ate
                            FROM plano_pedidos pp JOIN users u ON u.id = pp.user_id
                            ORDER BY (pp.status = 'pendente') DESC, pp.created_at DESC LIMIT 200`);
   res.json({ pedidos: rows.map((p) => ({ ...p, planoNome: PLANOS[p.plano]?.nome || p.plano })) });
