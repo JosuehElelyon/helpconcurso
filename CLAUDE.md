@@ -50,6 +50,10 @@ Novo na v1.3/v1.4 (migração `006_cadernos.sql`):
 - `/api/me/conta` (perfil, senha, uso), `/api/me/planos`, `/api/admin/pedidos`. Front: telas `#conta` e `#planos`, menu lateral
   no desktop, barra inferior no celular. Nos testes, os alunos rodam no plano Aprovação (o Grátis tem teste próprio).
 
+Sprint 5 (parte 1, migração 014): tela **"Hoje"** no Início — meta diária, sequência de dias, últimos 7 dias, revisões e tópicos
+fracos (`src/services/atividade.js`, `GET /api/me/hoje`, tabela `atividade_diaria` alimentada ao responder no simulado/caderno).
+Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), galeria de 10 avatares, aviso de novidade para todos.
+
 ## Segurança — revisão de 02/11/2026 (corrigido)
 - Cadastro nunca sobrescreve conta confirmada (nem de admin/convidado) e só ativa conta com o código do e-mail;
   se o SMTP falhar, a conta fica pendente e o aluno usa "Reenviar código". Teste cobre a tentativa de tomar a conta do admin.

@@ -384,3 +384,16 @@ chamadas/429 por provedor; cache de prompt medido. Decisões de modelo e prompt 
 2. **Gateway de pagamento** (Pix + cartão, renovação automática): Mercado Pago, Asaas ou Stripe — escolher para integrar.
 3. Na fase de testes, `QUOTA_GERACOES_DIA` no `.env` sobrepõe o limite do Grátis (hoje 30/dia). Remover no lançamento (o padrão é 3).
 4. Contas de teste (Amanda) estão no Grátis: para testar tudo, aprovar um pedido dela ou mudar o plano direto no banco.
+
+## Sprint 5 (parte 1) — pendências + tela "Hoje" (03/11/2026)
+- **Pendências:** selo "Anulada pela banca — não conta" / "Gabarito atualizado" também no simulado; placar do simulado, lista
+  de simulados, taxa de acerto do Início e caderno de erros ignoram questão anulada; a **lista** de simulados e de cadernos agora
+  aplica a situação oficial (antes só o detalhe), numa consulta só (`carregarSituacaoOficial`); resumo do caderno não conta anulada
+  em acerto nem em "revisar hoje".
+- **Tela "Hoje"** (Início): meta diária (anel de progresso), sequência de dias 🔥 com recorde, últimos 7 dias (✓ estudou, ★ meta
+  batida), contagem até a prova e "Para fazer hoje" (revisões pendentes por caderno → abre o caderno no filtro "Revisar hoje";
+  tópicos do edital com acerto < 70% e tópicos de alta incidência ainda não estudados → treino com questões reais quando houver).
+  Base: tabela `atividade_diaria` (migração 014, dia de Brasília), alimentada ao responder no simulado e no caderno
+  (`src/services/atividade.js`, `GET /api/me/hoje`). A sequência começa a contar a partir de agora (não há histórico com data).
+- **Amanda** (conta real) no plano Aprovação até 01/02/2027.
+- Próximo: simulado no formato da prova real (F3) e lembrete diário por e-mail (N2).

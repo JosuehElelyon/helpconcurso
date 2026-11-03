@@ -1,14 +1,16 @@
 // =========================================================
 // Testes unitários e de integração de Avatares (presets, magic bytes e storage)
 // =========================================================
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PRESET_AVATARS, MAX_AVATAR_BYTES, detectImageType } from '../src/lib/avatars.js';
 import { putFile, getFile, deleteFile } from '../src/lib/storage.js';
-import { migrate, one, query } from '../src/db.js';
+import { pool, migrate, one, query } from '../src/db.js';
+
+after(() => pool.end());
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

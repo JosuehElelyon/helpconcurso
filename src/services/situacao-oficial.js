@@ -4,17 +4,28 @@ import { many } from '../db.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function aplicarSituacaoOficial(questoes) {
-  const lista = Array.isArray(questoes) ? questoes : [];
-  const ids = [...new Set(lista.map((q) => String(q?.id || '')).filter((id) => UUID.test(id)))];
-  if (!ids.length) return lista;
-  const rows = await many('SELECT id, anulada, gabarito, gabarito_definitivo FROM prova_questoes WHERE id = ANY($1::uuid[])', [ids]);
+/**
+ * Lê de uma vez a situação oficial de todas as questões de várias listas (ex.: todos os simulados do aluno)
+ * e devolve uma função síncrona que aplica a situação a uma lista. Uma consulta só, em vez de uma por lista.
+ */
+export async function carregarSituacaoOficial(listas) {
+  const ids = new Set();
+  for (const lista of listas) for (const q of Array.isArray(lista) ? lista : []) { const id = String(q?.id || ''); if (UUID.test(id)) ids.add(id); }
+  const rows = ids.size ? await many('SELECT id, anulada, gabarito, gabarito_definitivo FROM prova_questoes WHERE id = ANY($1::uuid[])', [[...ids]]) : [];
   const porId = new Map(rows.map((r) => [String(r.id), r]));
-  return lista.map((q) => {
-    const r = porId.get(String(q?.id || ''));
-    if (!r) return q;
-    if (r.anulada) return { ...q, anulada: true };
-    if (r.gabarito_definitivo && r.gabarito && r.gabarito !== q.gabarito) return { ...q, gabarito: r.gabarito, gabaritoAtualizado: true };
-    return q;
-  });
+  return (questoes) => {
+    const lista = Array.isArray(questoes) ? questoes : [];
+    if (!porId.size) return lista;
+    return lista.map((q) => {
+      const r = porId.get(String(q?.id || ''));
+      if (!r) return q;
+      if (r.anulada) return { ...q, anulada: true };
+      if (r.gabarito_definitivo && r.gabarito && r.gabarito !== q.gabarito) return { ...q, gabarito: r.gabarito, gabaritoAtualizado: true };
+      return q;
+    });
+  };
+}
+
+export async function aplicarSituacaoOficial(questoes) {
+  return (await carregarSituacaoOficial([questoes]))(questoes);
 }

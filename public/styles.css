@@ -533,3 +533,29 @@ img.avatar{object-fit:cover;display:block;border-radius:50%}
 .avatar-news-pics img{width:40px;height:40px;border-radius:50%;border:2px solid var(--surface);box-shadow:var(--shadow-sm)}
 .avatar-news-pics img+img{margin-left:-12px}
 @media (max-width:700px){.avatar-news{flex-direction:column;align-items:stretch}.avatar-news .row:last-child{justify-content:flex-end}}
+
+/* Tela "Hoje": meta diária, sequência e tarefas do dia */
+.hoje-card{padding:20px 22px;margin-bottom:18px;border-top:4px solid var(--brand)}
+.hoje-top{display:flex;gap:22px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.hoje-meta{display:flex;gap:16px;align-items:center;flex:1;min-width:260px}
+.hoje-title{font-size:18px;font-weight:800;line-height:1.25;margin:2px 0 3px}
+.hoje-streak{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.hs-fire{position:relative;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:var(--line-2);filter:grayscale(1);opacity:.7}
+.hs-fire.on{background:var(--accent-soft);filter:none;opacity:1}
+.hs-fire span{font-size:24px;line-height:1}
+.hs-fire b{position:absolute;right:-4px;bottom:-4px;min-width:22px;height:22px;padding:0 5px;border-radius:11px;background:var(--accent);color:#fff;font-size:12px;display:grid;place-items:center;border:2px solid var(--surface)}
+.hd-week{display:flex;gap:6px}
+.hd-day{display:flex;flex-direction:column;align-items:center;gap:3px}
+.hd-day i{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-style:normal;font-size:12px;font-weight:800;color:#fff}
+.hd-day.on i{background:var(--brand);border-color:var(--brand)}
+.hd-day.meta i{background:var(--accent);border-color:var(--accent)}
+.hd-day.today i{box-shadow:0 0 0 3px var(--brand-soft)}
+.hd-day small{font-size:10.5px;color:var(--muted);font-weight:700}
+.hoje-prova{display:inline-flex;gap:6px;align-items:center;margin-top:14px;padding:6px 12px;border-radius:999px;background:var(--accent-soft);color:#6E4A0F;font-size:13px}
+.hoje-tasks{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+.hoje-task{display:flex;gap:12px;align-items:center;width:100%;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);margin-bottom:8px;min-height:44px;transition:border-color .15s,background .15s}
+.hoje-task:hover{border-color:var(--brand);background:var(--brand-soft)}
+.hoje-task .ht-ic{font-size:18px;flex:none}
+.hoje-task .ht-main{flex:1;min-width:0}
+.hoje-task .ht-main .hint{display:block;margin-top:1px}
+@media (max-width:700px){.hoje-card{padding:16px}.hoje-meta{min-width:0}.hoje-streak{width:100%;justify-content:space-between}.hd-day i{width:24px;height:24px}}

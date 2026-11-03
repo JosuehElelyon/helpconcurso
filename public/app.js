@@ -419,12 +419,81 @@ function viewPlanos() {
 }
 
 // ---------- Home ----------
+// Placar de um simulado: questão anulada pela banca não conta (nem no total, nem em acerto/erro)
+function placar(s) {
+  const r = s.respostas || {}, qs = s.questoes || [];
+  let n = 0, resp = 0, ac = 0;
+  qs.forEach((q, i) => { if (q.anulada) return; n++; if (r[i] != null) { resp++; if (r[i] === q.gabarito) ac++; } });
+  return { n, resp, ac, er: resp - ac, anuladas: qs.length - n };
+}
 function stats() {
   const qs = S.sets.reduce((a, s) => a + (s.questoes || []).length, 0);
   let resp = 0, ac = 0;
-  S.sets.forEach((s) => { const r = s.respostas || {}; (s.questoes || []).forEach((q, i) => { if (r[i] != null) { resp++; if (r[i] === q.gabarito) ac++; } }); });
+  S.sets.forEach((s) => { const p = placar(s); resp += p.resp; ac += p.ac; });
   return { qs, feitos: S.sets.filter((s) => s.finalizado).length, taxa: resp ? Math.round((ac / resp) * 100) + '%' : '—', provas: S.bancas.reduce((a, b) => a + (b.provasTreinadas || 0), 0) };
 }
+// ---------- Hoje: meta diária, sequência de dias, revisões e tópicos fracos ----------
+async function loadHoje() {
+  try { S.hoje = await api('/me/hoje'); } catch { /* opcional */ }
+  if (S.view === 'home') render();
+}
+const DIAS_SEMANA = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+function tarefasDeHoje() {
+  const out = [];
+  for (const c of S.cadernos || []) {
+    if (c.revisaoHojeCount > 0) out.push(`<button class="hoje-task" data-hoje-revisar="${c.id}"><span class="ht-ic">🔔</span><span class="ht-main"><b>${c.revisaoHojeCount} revis${c.revisaoHojeCount === 1 ? 'ão' : 'ões'}</b> em ${esc(c.titulo)}<span class="hint">Questões que você errou voltam no dia certo para fixar</span></span>${ic('arrowR', 'sm')}</button>`);
+  }
+  const ed = S.activeEdital;
+  if (ed?.disciplinas) {
+    const tops = ed.disciplinas.flatMap((d) => (d.topicos || []).map((t) => ({ ...t, materia: d.materia })));
+    const fracos = tops.filter((t) => t.status === 'praticado' && t.taxaAcerto != null && t.taxaAcerto < 70).sort((a, b) => a.taxaAcerto - b.taxaAcerto);
+    const cai = tops.filter((t) => t.status === 'pendente' && t.incidenciaBanca === 'alta');
+    const acao = (t) => (t.questoesNaBanca ? `data-treinar-reais="${t.id}"` : `data-train-topic="${esc(t.materia)}||${esc(t.nome)}"`);
+    for (const t of fracos.slice(0, 3)) out.push(`<button class="hoje-task" ${acao(t)}><span class="ht-ic">🎯</span><span class="ht-main"><b>Reforçar:</b> ${esc(t.nome)}<span class="hint">${esc(t.materia)} · ${t.taxaAcerto}% de acerto${t.questoesNaBanca ? ' · treinar com questões reais (grátis)' : ''}</span></span>${ic('arrowR', 'sm')}</button>`);
+    for (const t of cai.slice(0, Math.max(0, 2 - fracos.length))) out.push(`<button class="hoje-task" ${acao(t)}><span class="ht-ic">📌</span><span class="ht-main"><b>Começar:</b> ${esc(t.nome)}<span class="hint">${esc(t.materia)} · cai muito nesta banca e você ainda não estudou</span></span>${ic('arrowR', 'sm')}</button>`);
+  }
+  return out;
+}
+function viewHoje() {
+  const h = S.hoje;
+  if (!h) return '';
+  const feitas = h.hoje.respondidas, meta = h.meta, pct = meta ? Math.min(100, Math.round((feitas / meta) * 100)) : 0;
+  const seq = h.sequencia;
+  const titulo = !meta ? 'Defina sua meta diária de questões'
+    : h.hoje.metaBatida ? 'Meta de hoje batida! 🎉'
+      : feitas ? `Faltam <b>${meta - feitas}</b> questões para sua meta` : `Sua meta de hoje: <b>${meta}</b> questões`;
+  const semana = h.semana.map((d) => {
+    const wd = new Date(`${d.dia}T12:00:00Z`).getUTCDay(), hojeCls = d.dia === h.dia ? ' today' : '';
+    return `<span class="hd-day${d.respondidas ? ' on' : ''}${d.metaBatida ? ' meta' : ''}${hojeCls}" title="${new Date(`${d.dia}T12:00:00Z`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'short', timeZone: 'UTC' })}: ${d.respondidas} questão(ões)${d.metaBatida ? ' · meta batida' : ''}"><i>${d.metaBatida ? '★' : d.respondidas ? '✓' : ''}</i><small>${DIAS_SEMANA[wd]}</small></span>`;
+  }).join('');
+  const tarefas = tarefasDeHoje();
+  const prova = h.diasParaProva != null && h.diasParaProva >= 0
+    ? `<div class="hoje-prova">${ic('calendar', 'sm')} ${h.diasParaProva === 0 ? '<b>A prova é hoje.</b> Boa prova!' : h.diasParaProva === 1 ? 'A prova é <b>amanhã</b>' : `Faltam <b>${h.diasParaProva}</b> dias para a prova`}</div>` : '';
+  return `<section class="card hoje-card" aria-label="Seu dia de estudo">
+    <div class="hoje-top">
+      <div class="hoje-meta">
+        ${meta ? donutSvg(pct, 84, h.hoje.metaBatida ? 'var(--accent)' : 'var(--brand)') : `<span class="li-icon" style="background:var(--brand);width:56px;height:56px">${ic('target')}</span>`}
+        <div style="min-width:0">
+          <div class="eyebrow" style="color:var(--brand)">Hoje</div>
+          <div class="hoje-title">${titulo}</div>
+          <div class="hint">${meta ? `${feitas} de ${meta} respondidas hoje${h.hoje.respondidas ? ` · ${h.hoje.acertos} acerto(s)` : ''}` : 'Com uma meta, você acompanha seu ritmo e mantém a sequência.'}</div>
+          ${!meta ? '<button class="btn btn-primary btn-sm" data-go="conta" style="margin-top:8px">Definir minha meta</button>' : ''}
+        </div>
+      </div>
+      <div class="hoje-streak">
+        <div class="hs-fire ${seq.atual ? 'on' : ''}"><span>🔥</span><b>${seq.atual}</b></div>
+        <div><b>${!seq.atual ? 'Comece sua sequência' : seq.atual === 1 ? '1 dia seguido' : `${seq.atual} dias seguidos`}</b><div class="hint">${!seq.atual ? (seq.recorde ? `Seu recorde: ${seq.recorde} dia(s). Responda 1 questão hoje` : 'Responda 1 questão por dia para acender o fogo') : !h.hoje.respondidas ? 'Responda 1 questão hoje para não perder a sequência' : `Recorde: ${seq.recorde} dia(s)`}</div></div>
+        <div class="hd-week" aria-label="Últimos 7 dias">${semana}</div>
+      </div>
+    </div>
+    ${prova}
+    <div class="hoje-tasks">
+      <div class="hint" style="font-weight:700;margin-bottom:6px">Para fazer hoje</div>
+      ${tarefas.length ? tarefas.join('') : `<button class="hoje-task" data-go="gerar"><span class="ht-ic">✨</span><span class="ht-main"><b>Gerar um simulado</b> a partir do seu material<span class="hint">Nada pendente: avance em um tópico novo</span></span>${ic('arrowR', 'sm')}</button>`}
+    </div>
+  </section>`;
+}
+
 // Novidade: foto de perfil — aparece para todos (aluno e admin) até escolher uma foto ou dispensar
 const avisoAvatarKey = () => `hc_aviso_avatar_${S.user?.id}`;
 function avisoAvatarHtml() {
@@ -445,6 +514,7 @@ function viewHome() {
   return `<h1 class="page-title">${h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'}, ${esc(firstName(S.user.name))}</h1>
   <p class="page-sub">O que vamos estudar hoje?</p>
   ${avisoAvatarHtml()}
+  ${viewHoje()}
   <div class="hero">
     <div class="hero-main">
       <div class="eyebrow">Gerador de questões</div>
@@ -477,8 +547,7 @@ function viewHome() {
 }
 function setRow(s) {
   const b = BANCA()[s.banca] || { cor: '#999', nome: '?' };
-  const r = s.respostas || {}, n = (s.questoes || []).length, resp = Object.keys(r).length;
-  const ac = (s.questoes || []).filter((q, i) => r[i] === q.gabarito).length;
+  const { n, resp, ac } = placar(s);
   return `<button class="list-item" data-open="${s.id}"><span class="li-icon" style="background:${b.cor}">${esc(b.nome.slice(0, 4))}</span>
     <span class="li-main"><div class="li-title">${esc(s.materia)}${s.assunto ? ` · ${esc(s.assunto)}` : ''}</div><div class="li-meta">${n} questões · ${esc(s.arquivo || 'texto colado')} · ${fmtDate(s.createdAt)}</div></span>
     ${s.finalizado ? `<span class="badge brand">${ac}/${n} acertos</span>` : resp ? `<span class="badge accent">${resp}/${n} respondidas</span>` : '<span class="badge">Novo</span>'}
@@ -702,7 +771,7 @@ function viewPratica() {
   const s = S.sets.find((x) => x.id === S.active);
   if (!s) return `<div class="empty">Simulado não encontrado. <button class="btn btn-quiet" data-go="questoes">Voltar</button></div>`;
   const b = BANCA()[s.banca], r = s.respostas || {}, n = s.questoes.length;
-  const resp = Object.keys(r).length, ac = s.questoes.filter((q, i) => r[i] === q.gabarito).length, er = resp - ac, ce = s.formato === 'ce';
+  const { resp, ac, er, anuladas } = placar(s), ce = s.formato === 'ce';
   return `<div class="row" style="gap:8px;margin:-6px 0 10px -10px">
     <button class="btn btn-quiet" data-go="questoes">${ic('arrowL', 'sm')} Cadernos e simulados</button>
     ${s.cadernoId ? `<button class="btn btn-quiet" data-open-caderno="${s.cadernoId}">${ic('book', 'sm')} Abrir Caderno de Questões</button>` : ''}
@@ -712,7 +781,7 @@ function viewPratica() {
       <h1 class="page-title">${esc(s.materia)}${s.assunto ? ` <span style="color:var(--muted);font-weight:700">· ${esc(s.assunto)}</span>` : ''}</h1>
       <div class="hint">${n} questões · gerado de ${esc(s.arquivo || 'texto colado')} em ${fmtDate(s.createdAt)}</div>
       ${s.revisao ? `<div class="hint" style="margin-top:4px">${s.revisao.revisor === 'ok' ? `${ic('check', 'sm')} Revisão automática: ${s.revisao.aprovadas} aprovada(s)${s.revisao.descartadas ? `, ${s.revisao.descartadas} descartada(s) e ${s.revisao.refeitas} refeita(s)` : ''}` : s.revisao.revisor === 'indisponivel' ? '⚠ O revisor automático estava indisponível: confira as questões com atenção' : ''}</div>` : ''}</div>
-    <div class="score-box"><div><b>${resp}/${n}</b><span>Respondidas</span></div><div><b style="color:var(--ok)">${ac}</b><span>Acertos</span></div><div><b style="color:var(--bad)">${er}</b><span>Erros</span></div>${ce ? `<div><b>${ac - er}</b><span>Nota líquida</span></div>` : ''}</div>
+    <div class="score-box"><div><b>${resp}/${n - anuladas}</b><span>Respondidas</span></div><div><b style="color:var(--ok)">${ac}</b><span>Acertos</span></div><div><b style="color:var(--bad)">${er}</b><span>Erros</span></div>${ce ? `<div><b>${ac - er}</b><span>Nota líquida</span></div>` : ''}</div>
   </div>
   ${ce ? `<div class="banner info">${ic('info', 'sm')}<div>No estilo CEBRASPE, cada item errado anula um certo. Na dúvida, você pode deixar o item em branco.</div></div>` : ''}
   <div class="banner info">${ic('info', 'sm')}<div>As questões seguem o conteúdo do <b>seu material</b>. Se ele estiver desatualizado (ex.: lei alterada), a questão também estará. Achou um erro? Use <b>Reportar erro</b> — se a IA confirmar, você ganha estrelas.</div></div>
@@ -729,7 +798,7 @@ function viewQ(q, i, ans, ce, fb) {
     ? `<div class="ce">${[['C', 'Certo'], ['E', 'Errado']].map(([L, t]) => `<button class="alt ${cls(L)}" data-ans="${i}:${L}" ${answered ? 'disabled' : ''}><span class="tx">${t}</span></button>`).join('')}</div>`
     : `<div class="alts">${q.alternativas.map((a, j) => `<button class="alt ${cls(LETRAS[j])}" data-ans="${i}:${LETRAS[j]}" ${answered ? 'disabled' : ''}><span class="lt">${LETRAS[j]}</span><span class="tx">${esc(a)}</span></button>`).join('')}</div>`;
   return `<article class="card q" id="q${i}">
-    <div class="q-top"><span class="q-num">${ce ? 'Item' : 'Questão'} ${i + 1}</span>${q.tema ? `<span class="badge">${esc(q.tema)}</span>` : ''}${q.topico_edital ? `<span class="badge edital-tag" title="Tópico do edital cobrado nesta questão">${ic('target', 'sm')} Edital: ${esc(q.topico_edital)}</span>` : ''}${q.nivel ? `<span class="badge">${esc(q.nivel)}</span>` : ''}${q.verificada ? `<span class="badge brand" title="Uma segunda IA resolveu sem ver o gabarito e chegou à mesma resposta">${ic('check', 'sm')} Verificada</span>` : ''}${q.contestada ? '<span class="sev high">Erro confirmado</span>' : ''}</div>
+    <div class="q-top"><span class="q-num">${ce ? 'Item' : 'Questão'} ${i + 1}</span>${q.tema ? `<span class="badge">${esc(q.tema)}</span>` : ''}${q.topico_edital ? `<span class="badge edital-tag" title="Tópico do edital cobrado nesta questão">${ic('target', 'sm')} Edital: ${esc(q.topico_edital)}</span>` : ''}${q.nivel ? `<span class="badge">${esc(q.nivel)}</span>` : ''}${q.verificada ? `<span class="badge brand" title="Uma segunda IA resolveu sem ver o gabarito e chegou à mesma resposta">${ic('check', 'sm')} Verificada</span>` : ''}${q.contestada ? '<span class="sev high">Erro confirmado</span>' : ''}${q.anulada ? '<span class="badge sev high" title="A banca anulou esta questão no gabarito definitivo">Anulada pela banca — não conta</span>' : q.gabaritoAtualizado ? '<span class="badge accent" title="Gabarito conferido com o definitivo oficial">Gabarito atualizado (definitivo)</span>' : ''}</div>
     <p class="q-text">${esc(q.enunciado)}</p>${opts}
     ${answered ? `<div class="explain"><div class="verdict ${ok ? 'ok' : 'bad'}">${ic(ok ? 'check' : 'x', 'sm')} ${ok ? 'Você acertou' : 'Resposta incorreta'} · Gabarito: ${ce ? (q.gabarito === 'C' ? 'Certo' : 'Errado') : q.gabarito}</div>
       <p>${esc(q.comentario)}</p>
@@ -823,7 +892,7 @@ function getWrongQuestions() {
   for (const s of S.sets || []) {
     const r = s.respostas || {};
     (s.questoes || []).forEach((q, i) => {
-      if (r[i] != null && r[i] !== q.gabarito) {
+      if (!q.anulada && r[i] != null && r[i] !== q.gabarito) {
         out.push({ setId: s.id, setMateria: s.materia, setAssunto: s.assunto, banca: s.banca, formato: s.formato, createdAt: s.createdAt, idx: i, ans: r[i], q });
       }
     });
@@ -1724,6 +1793,7 @@ function go(v) {
   if (v === 'provas' && isAdmin()) loadAdmin(S.adminTab === 'monitor').then(() => { if (S.view === 'provas') render(); }).catch((e) => toast(e.message));
   if (v === 'estrelas') refreshStars({ silent: true });
   if (v === 'conta') loadConta();
+  if (v === 'home') loadHoje();
   if (v === 'planos') loadPlanos();
   if (v === 'edital') { refreshEditais(); api('/provas/minhas').then((r) => { S.minhas = r.provas; if (S.view === 'edital') render(); }).catch(() => {}); }
   if (v === 'simulado' && S.active) loadFeedback(S.active);
@@ -1820,6 +1890,37 @@ function bindApp() {
   // ---------- Avatar (upload, presets e remoção) ----------
   on('#openAvatarModal', 'click', () => showAvatarModal());
   on('#openAvatarModal2', 'click', () => showAvatarModal());
+  // Tópicos do edital (painel do edital e tela "Hoje")
+  on('[data-train-topic]', 'click', (e) => {
+    const [mat, top] = e.currentTarget.dataset.trainTopic.split('||');
+    S.wiz = newWiz();
+    if (S.materias.includes(mat)) S.wiz.materia = mat;
+    S.wiz.assunto = top.slice(0, 100);
+    go('gerar');
+    toast(`Envie seu resumo sobre "${top.slice(0, 50)}" para gerar questões focadas!`);
+  });
+  on('[data-treinar-reais]', 'click', async (e) => {
+    const topicoId = e.currentTarget.dataset.treinarReais;
+    const ed = S.activeEdital;
+    if (!ed) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner sm"></span>';
+    try {
+      const r = await api(`/editais/${ed.id}/topicos/${topicoId}/praticar-reais`, { method: 'POST', body: { limite: 10 } });
+      if (r.set) {
+        S.sets.unshift(r.set);
+        S.active = r.set.id;
+        go('simulado');
+        toast(`Simulado com ${r.count} questão(ões) reais da banca: ${r.doTopico} deste tópico${r.daDisciplina ? ` e ${r.daDisciplina} da disciplina (${r.disciplina?.materia || 'mesma matéria'})` : ''}. Custo US$ 0.`);
+      }
+    } catch (err) {
+      toast(err.message);
+      btn.disabled = false;
+      btn.innerHTML = `${ic('book', 'sm')} Reais`;
+    }
+  });
+  on('[data-hoje-revisar]', 'click', (e) => { S.cadFilter = { ...(S.cadFilter || {}), status: 'revisao_hoje' }; S.cadernoFeedTab = ''; openCaderno(e.currentTarget.dataset.hojeRevisar); });
   on('[data-aviso-avatar]', 'click', (e) => {
     if (e.currentTarget.dataset.avisoAvatar === 'abrir') return showAvatarModal();
     try { localStorage.setItem(avisoAvatarKey(), '1'); } catch { /* modo privado */ }
@@ -1989,8 +2090,8 @@ function bindApp() {
     on('#delSet', 'click', () => confirmBox('Excluir simulado?', 'As questões deste simulado serão removidas.', 'Excluir', true, async () => { await api(`/sets/${s.id}`, { method: 'DELETE' }).catch(() => {}); S.sets = S.sets.filter((x) => x.id !== s.id); go('questoes'); toast('Simulado excluído'); }));
     on('#resetSet', 'click', () => confirmBox('Refazer simulado?', 'Suas respostas serão apagadas para você resolver de novo.', 'Refazer', false, () => { s.respostas = {}; s.finalizado = false; api(`/sets/${s.id}`, { method: 'PATCH', body: { respostas: {}, finalizado: false } }).catch(() => {}); render(); window.scrollTo({ top: 0 }); }));
     on('#finish', 'click', () => {
-      const n = s.questoes.length, r = s.respostas || {}, resp = Object.keys(r).length, ac = s.questoes.filter((q, i) => r[i] === q.gabarito).length;
-      const fin = () => { s.finalizado = true; clearTimeout(saveT); api(`/sets/${s.id}`, { method: 'PATCH', body: { respostas: r, finalizado: true } }).catch(() => {}); render(); toast(`Resultado: ${ac} de ${n} (${Math.round((ac / n) * 100)}%)${s.formato === 'ce' ? ` · nota líquida ${ac - (resp - ac)}` : ''}`); };
+      const r = s.respostas || {}, { n, resp, ac } = placar(s);
+      const fin = () => { s.finalizado = true; clearTimeout(saveT); api(`/sets/${s.id}`, { method: 'PATCH', body: { respostas: r, finalizado: true } }).catch(() => {}); render(); toast(`Resultado: ${ac} de ${n} (${Math.round((ac / Math.max(1, n)) * 100)}%)${s.formato === 'ce' ? ` · nota líquida ${ac - (resp - ac)}` : ''}`); };
       if (resp < n && !s.finalizado && s.formato !== 'ce') confirmBox('Finalizar com questões em branco?', `Você respondeu ${resp} de ${n}. As demais contam como erro.`, 'Finalizar', false, fin); else fin();
     });
   }
@@ -2053,35 +2154,6 @@ function bindApp() {
         await refreshEditais();
         toast('Edital removido');
       });
-    });
-    on('[data-train-topic]', 'click', (e) => {
-      const [mat, top] = e.currentTarget.dataset.trainTopic.split('||');
-      S.wiz = newWiz();
-      if (S.materias.includes(mat)) S.wiz.materia = mat;
-      S.wiz.assunto = top.slice(0, 100);
-      go('gerar');
-      toast(`Envie seu resumo sobre "${top.slice(0, 50)}" para gerar questões focadas!`);
-    });
-    on('[data-treinar-reais]', 'click', async (e) => {
-      const topicoId = e.currentTarget.dataset.treinarReais;
-      const ed = S.activeEdital;
-      if (!ed) return;
-      const btn = e.currentTarget;
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner sm"></span>';
-      try {
-        const r = await api(`/editais/${ed.id}/topicos/${topicoId}/praticar-reais`, { method: 'POST', body: { limite: 10 } });
-        if (r.set) {
-          S.sets.unshift(r.set);
-          S.active = r.set.id;
-          go('simulado');
-          toast(`Simulado com ${r.count} questão(ões) reais da banca: ${r.doTopico} deste tópico${r.daDisciplina ? ` e ${r.daDisciplina} da disciplina (${r.disciplina?.materia || 'mesma matéria'})` : ''}. Custo US$ 0.`);
-        }
-      } catch (err) {
-        toast(err.message);
-        btn.disabled = false;
-        btn.innerHTML = `${ic('book', 'sm')} Reais`;
-      }
     });
   }
   if (S.view === 'estrelas') {
@@ -2604,7 +2676,7 @@ async function enterApp(user) {
   try {
     const [b, s] = await Promise.all([api('/bancas'), api('/sets')]);
     Object.assign(S, { bancas: b.bancas, materias: b.materias, niveis: b.niveis, sets: s.sets, loaded: true });
-    await Promise.all([refreshStars({ silent: true }), refreshEditais({ silent: true }), refreshCadernos({ silent: true })]);
+    await Promise.all([refreshStars({ silent: true }), refreshEditais({ silent: true }), refreshCadernos({ silent: true }), loadHoje()]);
     if (['provas', 'contribuir', 'gerar', 'edital', 'conta', 'planos', 'estrelas'].includes(S.view)) return go(S.view);
   } catch (e) { toast(e.message); }
   render();

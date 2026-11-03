@@ -15,7 +15,8 @@ import { scanText, SEV, logSecurityEvent } from '../security/index.js';
 import { reviewQuestions } from '../services/review.js';
 import { rate, report, listFeedback } from '../services/feedback.js';
 import { registrarRespostasNaRevisao } from '../services/revisao.js';
-import { aplicarSituacaoOficial } from '../services/situacao-oficial.js';
+import { aplicarSituacaoOficial, carregarSituacaoOficial } from '../services/situacao-oficial.js';
+import { registrarAtividade, contarNovas } from '../services/atividade.js';
 import { config } from '../config.js';
 
 const r = Router();
@@ -170,6 +171,8 @@ r.post('/', perUser, ah(async (req, res) => {
 
 r.get('/', ah(async (req, res) => {
   const rows = await many('SELECT * FROM question_sets WHERE user_id=$1 ORDER BY created_at DESC LIMIT 300', [req.user.id]);
+  const situacao = await carregarSituacaoOficial(rows.map((s) => s.questoes));
+  for (const s of rows) s.questoes = situacao(s.questoes);
   res.json({ sets: rows.map(view) });
 }));
 
@@ -188,6 +191,7 @@ r.patch('/:id', ah(async (req, res) => {
   // Erro/acerto no simulado de um caderno entra no ciclo de revisão espaçada (C4)
   if (s && antes?.caderno_id) await registrarRespostasNaRevisao({ cadernoId: antes.caderno_id, userId: req.user.id, setId: s.id, questoes: antes.questoes || [], antes: antes.respostas || {}, depois: b.respostas });
   if (!s) throw new HttpError(404, 'Simulado não encontrado.');
+  if (antes && b.respostas) await registrarAtividade(req.user.id, contarNovas(antes.questoes, antes.respostas, b.respostas)); // meta diária e sequência
   res.json({ set: view(s) });
 }));
 

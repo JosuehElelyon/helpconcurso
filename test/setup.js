@@ -1,8 +1,10 @@
 // Carregado antes de cada arquivo de teste (npm test → --import): os testes usam um banco próprio,
 // para não misturar usuários e uso de IA de teste com o banco de desenvolvimento.
 // Banco: TEST_DATABASE_URL, ou o mesmo de DATABASE_URL com o sufixo "_test" (criado se não existir).
-// As migrações são aplicadas pelo servidor que o teste sobe.
 import pg from 'pg';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const base = process.env.DATABASE_URL;
 if (!base) throw new Error('Defina DATABASE_URL (ou TEST_DATABASE_URL) para rodar os testes.');
@@ -22,13 +24,31 @@ try {
 }
 process.env.DATABASE_URL = url.toString();
 
-// Tarefas pendentes de rodadas anteriores (o banco de teste é mantido) não podem atrasar a fila desta rodada
+// Garante que todas as migrações estão aplicadas antes de qualquer arquivo de teste rodar
+// (no CI o banco começa vazio e os arquivos de teste rodam em paralelo) e limpa tarefas antigas.
+const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
 const limpa = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await limpa.connect();
 try {
+  await limpa.query('SELECT pg_advisory_lock(727274)');
+  await limpa.query('CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
+  const done = new Set((await limpa.query('SELECT name FROM schema_migrations')).rows.map((r) => r.name));
+  const files = (await fs.readdir(dir)).filter((f) => f.endsWith('.sql')).sort();
+  for (const f of files) {
+    if (done.has(f)) continue;
+    const sql = await fs.readFile(path.join(dir, f), 'utf8');
+    await limpa.query('BEGIN');
+    try {
+      await limpa.query(sql);
+      await limpa.query('INSERT INTO schema_migrations(name) VALUES ($1)', [f]);
+      await limpa.query('COMMIT');
+    } catch (e) {
+      await limpa.query('ROLLBACK');
+      throw new Error(`Falha na migração ${f}: ${e.message}`);
+    }
+  }
   await limpa.query("UPDATE jobs SET status='dead', updated_at=now() WHERE status IN ('queued','running') AND created_at < now() - interval '2 minutes'");
-} catch (e) {
-  if (e.code !== '42P01') throw e; // tabela jobs ainda não existe (banco novo)
 } finally {
+  await limpa.query('SELECT pg_advisory_unlock(727274)').catch(() => {});
   await limpa.end();
 }

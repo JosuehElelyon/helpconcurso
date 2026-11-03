@@ -1,11 +1,13 @@
 // =====================================================================
 // Sprint 4 — Testes automatizados: Gabarito Definitivo, Lote e Consenso
 // =====================================================================
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { one, many, query } from '../src/db.js';
+import { pool, one, many, query } from '../src/db.js';
 import { parseGabaritoTexto, aplicarGabaritoDefinitivo, importarProvasEmLote } from '../src/services/provas.js';
 import { getQuestoesReaisDoTopico } from '../src/services/edital.js';
+
+after(() => pool.end());
 
 test('F7: parseGabaritoTexto reconhece formatos de gabaritos oficiais, anulações e alterações', () => {
   const texto = `
@@ -156,11 +158,15 @@ GABARITO DEFINITIVO
 });
 
 test('F7: questões anuladas são excluídas de questões reais para alunos', async () => {
+  // Garante um usuário (no CI o banco começa vazio antes de v1.test.js)
+  const u = await one('SELECT id FROM users LIMIT 1')
+    || await one("INSERT INTO users(name, email, password_hash, role, email_verified_at) VALUES ('Aluno Sprint4', 'sprint4@teste.com', 'x', 'USER', now()) ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name RETURNING id");
+
   // Criar edital de teste
   const ed = await one(`INSERT INTO editais(user_id, banca, orgao, cargo, ano, titulo, text, word_count, verticalizado)
-                        VALUES ((SELECT id FROM users LIMIT 1), 'fgv', 'TRF-Teste', 'Analista', '2024', 'Edital TRF Teste', 'Texto do edital', 50,
+                        VALUES ($1, 'fgv', 'TRF-Teste', 'Analista', '2024', 'Edital TRF Teste', 'Texto do edital', 50,
                                 '[{"id":"D1","materia":"Direito Administrativo","topicos":[{"id":"T1","codigo":"1","nome":"Licitações públicas"}]}]'::jsonb)
-                        RETURNING *`);
+                        RETURNING *`, [u.id]);
 
   const p = await one(`INSERT INTO provas(banca, banca_informada, file_name, file_key, status, titulo, edital_id, text)
                        VALUES ('fgv','fgv','ed_prova.pdf','ed/p','READY','Prova TRF Edital', $1, 'texto') RETURNING id`, [ed.id]);

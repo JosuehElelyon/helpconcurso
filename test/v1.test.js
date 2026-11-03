@@ -322,6 +322,16 @@ test('edital verticalizado: envio, cruzamento com material, vínculo nas questõ
   const ans = { 0: done.set.questoes[0].gabarito, 1: done.set.questoes[1].gabarito };
   await user(`/api/sets/${done.set.id}`, { method: 'PATCH', body: { respostas: ans, finalizado: true } });
 
+  // Tela "Hoje": as 2 respostas novas entram na atividade do dia e iniciam a sequência
+  const hoje = await user('/api/me/hoje');
+  assert.equal(hoje.status, 200);
+  assert.ok(hoje.data.hoje.respondidas >= 2 && hoje.data.hoje.acertos >= 2, JSON.stringify(hoje.data.hoje));
+  assert.ok(hoje.data.sequencia.atual >= 1);
+  assert.equal(hoje.data.semana.length, 7);
+  // Reenviar as mesmas respostas não conta de novo
+  await user(`/api/sets/${done.set.id}`, { method: 'PATCH', body: { respostas: ans } });
+  assert.equal((await user('/api/me/hoje')).data.hoje.respondidas, hoje.data.hoje.respondidas);
+
   const dash = await user(`/api/editais/${ed.data.edital.id}`);
   assert.equal(dash.status, 200);
   assert.ok(dash.data.edital.resumo.topicosEstudados >= 2);

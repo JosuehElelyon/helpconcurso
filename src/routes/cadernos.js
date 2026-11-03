@@ -16,7 +16,8 @@ import { submitProva, publicStatus } from '../services/provas.js';
 import { assertCanUpload } from '../services/quota.js';
 import { scanText, SEV } from '../security/index.js';
 import { questaoValida } from '../lib/questoes-validas.js';
-import { aplicarSituacaoOficial } from '../services/situacao-oficial.js';
+import { aplicarSituacaoOficial, carregarSituacaoOficial } from '../services/situacao-oficial.js';
+import { registrarAtividade } from '../services/atividade.js';
 import { assertLimitePlano } from '../services/quota.js';
 import { calcularRevisao, paraRevisarHoje, rotuloFase, resumoRevisao, estadoEfetivo } from '../lib/revisao-espacada.js';
 
@@ -125,6 +126,7 @@ function summarizeCaderno(c, setsForCaderno = [], editalTitulo = null) {
     const r = s.respostas || {};
     questoesIa += qs.length;
     qs.forEach((q, idx) => {
+      if (q?.anulada) { delete revEfetiva[`set:${s.id}:${idx}`]; return; } // anulada pela banca: não conta acerto/erro nem revisão
       const a = r[idx];
       if (a != null) {
         respondidas++;
@@ -137,6 +139,7 @@ function summarizeCaderno(c, setsForCaderno = [], editalTitulo = null) {
   }
 
   for (const q of extras) {
+    if (q?.anulada) { delete revEfetiva[`extra:${q.id}`]; continue; }
     const a = respExtras[q.id];
     if (a != null) {
       respondidas++;
@@ -385,6 +388,11 @@ r.get('/', ah(async (req, res) => {
       [req.user.id]
     ),
   ]);
+
+  // Situação oficial (anulada / gabarito definitivo) de todas as questões numa consulta só
+  const situacao = await carregarSituacaoOficial([...allSets.map((s) => s.questoes), ...cadernosRows.map((c) => c.questoes_extras)]);
+  for (const s of allSets) s.questoes = situacao(s.questoes);
+  for (const c of cadernosRows) if (Array.isArray(c.questoes_extras)) c.questoes_extras = situacao(c.questoes_extras);
 
   const setsByCaderno = new Map();
   for (const s of allSets) {
@@ -681,6 +689,7 @@ r.patch('/:id/interagir', ah(async (req, res) => {
 
       if (b.resposta !== null && gabarito) {
         const acerto = (b.resposta === gabarito);
+        await registrarAtividade(req.user.id, { respondidas: 1, acertos: acerto ? 1 : 0 }); // meta diária e sequência
         const estadoAnterior = estadoEfetivo(revisaoMap[b.key], respostaAnterior, gabarito);
         const novo = calcularRevisao({ estadoAnterior, acerto });
         if (novo) {

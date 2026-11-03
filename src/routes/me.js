@@ -7,6 +7,7 @@ import { ah, parseBody, HttpError } from '../lib/http.js';
 import { requireAuth, hashPassword, checkPassword, publicUser } from '../lib/auth.js';
 import { summary, redeem } from '../services/stars.js';
 import { generationQuota } from '../services/quota.js';
+import { resumoHoje } from '../services/atividade.js';
 import { PLANOS, catalogoPlanos, planoDoUsuario } from '../lib/planos.js';
 import { BANCA } from '../lib/bancas.js';
 import { scanText, SEV } from '../security/index.js';
@@ -27,6 +28,9 @@ r.post('/estrelas/trocar', ah(async (req, res) => {
   const b = parseBody(z.object({ geracoes: z.coerce.number().int().min(1, 'Quantidade inválida.').max(50) }), req.body);
   res.json(await redeem(req.user.id, b.geracoes));
 }));
+
+// Tela "Hoje": meta diária, sequência de dias de estudo, últimos 7 dias e contagem até a prova
+r.get('/hoje', ah(async (req, res) => res.json(await resumoHoje(req.user))));
 
 // ---------- Minha conta ----------
 const perfil = (u) => ({
