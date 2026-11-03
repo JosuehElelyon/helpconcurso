@@ -17,6 +17,7 @@ import { assertCanUpload } from '../services/quota.js';
 import { scanText, SEV } from '../security/index.js';
 import { questaoValida } from '../lib/questoes-validas.js';
 import { aplicarSituacaoOficial } from '../services/situacao-oficial.js';
+import { assertLimitePlano } from '../services/quota.js';
 import { calcularRevisao, paraRevisarHoje, rotuloFase, resumoRevisao, estadoEfetivo } from '../lib/revisao-espacada.js';
 
 const r = Router();
@@ -425,6 +426,7 @@ r.get('/', ah(async (req, res) => {
 
 // Cria um novo Caderno de Questões (por Banca, Concurso e/ou Edital)
 r.post('/', perUser, ah(async (req, res) => {
+  await assertLimitePlano(req.user, 'cadernos');
   const b = parseBody(z.object({
     titulo: z.string().trim().max(160).optional().default(''),
     descricao: z.string().trim().max(400).optional().default(''),

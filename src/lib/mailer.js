@@ -27,7 +27,7 @@ function layout({ title, intro, code, buttonLabel, link, outro }) {
     <tr><td style="padding:28px">
       <h1 style="font-size:20px;margin:0 0 12px">${esc(title)}</h1>
       <p style="margin:0 0 20px;line-height:1.55;color:#3D4A59">${intro}</p>
-      <div style="font-size:32px;letter-spacing:10px;font-weight:800;background:#F5F4EF;border-radius:10px;padding:16px;text-align:center;margin:0 0 20px">${esc(code)}</div>
+      ${code ? `<div style="font-size:32px;letter-spacing:10px;font-weight:800;background:#F5F4EF;border-radius:10px;padding:16px;text-align:center;margin:0 0 20px">${esc(code)}</div>` : ''}
       <p style="margin:0 0 22px;text-align:center"><a href="${esc(link)}" style="background:#0F6E5C;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;display:inline-block">${esc(buttonLabel)}</a></p>
       <p style="margin:0;font-size:13px;color:#6B7684;line-height:1.5">${outro}</p>
     </td></tr>
@@ -98,5 +98,30 @@ export function sendProvaStatusEmail(user, { titulo, banca, status, note, bonus 
       <table role="presentation" width="100%" style="max-width:520px;background:#fff;border:1px solid #E4E1D8;border-radius:14px"><tr><td style="padding:24px 28px;font-weight:800;font-size:18px;border-bottom:1px solid #EFECE4">HelpConcurso</td></tr>
       <tr><td style="padding:28px"><h1 style="font-size:20px;margin:0 0 12px">${esc(subject)}</h1><p style="margin:0 0 22px;line-height:1.55;color:#3D4A59">Olá, ${esc(user.name)}! ${esc(body)}</p>
       <a href="${esc(link)}" style="background:#0F6E5C;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;display:inline-block">Ver minhas contribuições</a></td></tr></table></td></tr></table></body></html>`,
+  });
+}
+
+const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/** Aviso ao admin: um aluno pediu upgrade de plano (confirmar o pagamento e ativar no painel). */
+export function sendUpgradePedidoEmail(to, { aluno, plano, periodicidade, valor }) {
+  const link = `${config.appUrl}/#provas`;
+  return send({
+    to, subject: `Pedido de upgrade: ${aluno.name} → ${plano} (${periodicidade}) · HelpConcurso`,
+    text: `${aluno.name} (${aluno.email}) pediu o plano ${plano}, ${periodicidade}, ${brl(valor)}.\nConfirme o pagamento e ative em: ${link}`,
+    html: layout({ title: 'Novo pedido de upgrade', intro: `${esc(aluno.name)} (${esc(aluno.email)}) pediu o plano <b>${esc(plano)}</b>, ${esc(periodicidade)}, ${esc(brl(valor))}.`,
+      buttonLabel: 'Abrir pedidos no painel', link, outro: 'Confirme o pagamento antes de ativar o plano.' }),
+  });
+}
+
+/** Aviso ao aluno: plano ativado. */
+export function sendPlanoAtivadoEmail(user, { plano, ate }) {
+  const link = `${config.appUrl}/#conta`;
+  const validade = ate ? ` até ${new Date(ate).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : '';
+  return send({
+    to: user.email, subject: `Seu plano ${plano} está ativo · HelpConcurso`,
+    text: `Olá, ${user.name}! Seu plano ${plano} foi ativado${validade}. Bons estudos!\n${link}`,
+    html: layout({ title: `Plano ${esc(plano)} ativado`, intro: `Olá, ${esc(user.name)}! Seu plano <b>${esc(plano)}</b> foi ativado${esc(validade)}. Bons estudos!`,
+      buttonLabel: 'Ver minha conta', link, outro: 'Qualquer dúvida, é só responder este e-mail.' }),
   });
 }

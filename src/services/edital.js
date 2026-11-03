@@ -15,6 +15,7 @@ import { decide } from '../security/policy.js';
 import { putFile, makeKey, deleteFile } from '../lib/storage.js';
 import { HttpError } from '../lib/http.js';
 import { questaoValida } from '../lib/questoes-validas.js';
+import { assertLimitePlano } from './quota.js';
 import { publicStatus } from './provas.js';
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -441,6 +442,7 @@ const words = (t) => (String(t).match(/\S+/g) || []).length;
  * Cria e verticaliza um edital (via arquivo ou texto), vinculando opcionalmente à banca e à prova.
  */
 export async function createEditalForUser({ user, file, text: rawText, banca, orgao, cargo, ano, provaId, ip, signal, officialUrl = null, oficialConfirmado = false, officialUrlTipo = null }) {
+  await assertLimitePlano(user, 'editais');
   let text, pages = null, sha = null, ocr = false, warnings = [], security;
   if (file) {
     const s = await secureUpload(file.buffer, file.name, 'material', { ocr: 'full', userId: user.id, ip, signal });

@@ -2,6 +2,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { one, many, query } from '../db.js';
+import { PLANOS } from '../lib/planos.js';
+import { sendPlanoAtivadoEmail } from '../lib/mailer.js';
 import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
 import { requireAdmin } from '../lib/auth.js';
 import { BANCA } from '../lib/bancas.js';
@@ -53,6 +55,30 @@ r.post('/provas/:id/reprocessar', ah(async (req, res) => res.json({ prova: view(
 r.post('/provas/rotular', ah(async (req, res) => {
   const provaId = /^[0-9a-f-]{36}$/i.test(String(req.body?.provaId || '')) ? req.body.provaId : null; // vazio = todas
   res.json({ provas: await enqueueRelabel({ provaId }) });
+}));
+
+// Planos: pedidos de upgrade (o admin confirma o pagamento e ativa — sem gateway por enquanto)
+r.get('/pedidos', ah(async (_req, res) => {
+  const rows = await many(`SELECT pp.id, pp.plano, pp.periodicidade, pp.valor, pp.status, pp.created_at, u.id AS user_id, u.name, u.email, u.plano AS plano_atual, u.plano_ate
+                           FROM plano_pedidos pp JOIN users u ON u.id = pp.user_id
+                           ORDER BY (pp.status = 'pendente') DESC, pp.created_at DESC LIMIT 200`);
+  res.json({ pedidos: rows.map((p) => ({ ...p, planoNome: PLANOS[p.plano]?.nome || p.plano })) });
+}));
+r.post('/pedidos/:pid/:acao', ah(async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.pid) || !['aprovar', 'recusar'].includes(req.params.acao)) throw new HttpError(404, 'Pedido não encontrado.');
+  const p = await one("SELECT * FROM plano_pedidos WHERE id=$1 AND status='pendente'", [req.params.pid]);
+  if (!p) throw new HttpError(404, 'Pedido não encontrado ou já decidido.');
+  if (req.params.acao === 'recusar') {
+    await query("UPDATE plano_pedidos SET status='recusado', decidido_por=$2, decidido_em=now() WHERE id=$1", [p.id, req.user.id]);
+    return res.json({ ok: true });
+  }
+  // Renovação soma ao período que ainda resta
+  const u = await one(`UPDATE users SET plano=$2,
+                         plano_ate = greatest(coalesce(CASE WHEN plano=$2 THEN plano_ate END, now()), now()) + (CASE WHEN $3='anual' THEN interval '1 year' ELSE interval '1 month' END),
+                         updated_at=now() WHERE id=$1 RETURNING *`, [p.user_id, p.plano, p.periodicidade]);
+  await query("UPDATE plano_pedidos SET status='aprovado', decidido_por=$2, decidido_em=now() WHERE id=$1", [p.id, req.user.id]);
+  sendPlanoAtivadoEmail(u, { plano: PLANOS[p.plano]?.nome || p.plano, ate: u.plano_ate });
+  res.json({ ok: true, planoAte: u.plano_ate });
 }));
 
 // G5: questões com gabarito em disputa entre os modelos do consenso — o admin escolhe/confirma

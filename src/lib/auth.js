@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { planoDoUsuario } from './planos.js';
 import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { one, query } from '../db.js';
@@ -17,7 +18,8 @@ export function setSession(res, user) {
 }
 export function clearSession(res) { res.clearCookie(COOKIE, { path: '/' }); }
 
-export const publicUser = (u) => u && ({ id: u.id, name: u.name, email: u.email, role: u.role, emailVerified: !!u.email_verified_at, stars: { total: u.stars_total ?? 0, balance: u.stars_balance ?? 0 } });
+export const publicUser = (u) => u && ({ id: u.id, name: u.name, email: u.email, role: u.role, emailVerified: !!u.email_verified_at, stars: { total: u.stars_total ?? 0, balance: u.stars_balance ?? 0 },
+  plano: (() => { const p = planoDoUsuario(u); return { id: p.id, nome: p.nome }; })() });
 
 // Carrega o usuário da sessão (se houver)
 export async function loadUser(req, _res, next) {

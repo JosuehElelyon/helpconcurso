@@ -74,7 +74,7 @@ r.post('/', perUser, ah(async (req, res) => {
   const m = await one('SELECT * FROM materials WHERE id=$1 AND user_id=$2', [b.materialId, req.user.id]);
   if (!m) throw new HttpError(404, 'Material não encontrado.');
   const caderno = b.cadernoId ? await one('SELECT * FROM cadernos WHERE id=$1 AND user_id=$2', [b.cadernoId, req.user.id]) : null;
-  const used = await consumeGeneration(req.user);
+  const used = await consumeGeneration(req.user, b.nivel);
   await query('UPDATE materials SET materia=$2, assunto=$3 WHERE id=$1', [m.id, b.materia, b.assunto || null]);
 
   res.status(200).set({ 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' });
