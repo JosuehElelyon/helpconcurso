@@ -10,7 +10,11 @@ import { generationQuota } from '../services/quota.js';
 import { PLANOS, catalogoPlanos, planoDoUsuario } from '../lib/planos.js';
 import { BANCA } from '../lib/bancas.js';
 import { scanText, SEV } from '../security/index.js';
+import { scanWithClamAV } from '../security/antivirus.js';
 import { sendUpgradePedidoEmail } from '../lib/mailer.js';
+import { uploader, fileOf } from '../lib/upload.js';
+import { putFile, deleteFile, makeKey } from '../lib/storage.js';
+import { PRESET_AVATARS, MAX_AVATAR_BYTES, detectImageType } from '../lib/avatars.js';
 import { config } from '../config.js';
 
 const r = Router();
@@ -75,6 +79,57 @@ r.post('/conta/senha', senhaLimit, ah(async (req, res) => {
   await query('UPDATE users SET password_hash=$2, updated_at=now() WHERE id=$1', [req.user.id, await hashPassword(b.novaSenha)]);
   res.json({ ok: true });
 }));
+
+// ---------- Avatar ----------
+const avatarLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, keyGenerator: (req) => req.user.id, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Muitos envios de avatar. Aguarde alguns minutos.' } });
+
+const getPresetsHandler = ah(async (_req, res) => res.json({ presets: PRESET_AVATARS }));
+r.get('/avatar/presets', getPresetsHandler);
+r.get('/conta/avatar/presets', getPresetsHandler);
+
+const presetIds = PRESET_AVATARS.map((p) => p.id);
+const setPresetHandler = ah(async (req, res) => {
+  const b = parseBody(z.object({ preset: z.string().refine((p) => presetIds.includes(p), 'Avatar pré-definido inválido.') }), req.body);
+  const current = await one('SELECT avatar_key FROM users WHERE id=$1', [req.user.id]);
+  if (current?.avatar_key) await deleteFile(current.avatar_key).catch(() => {});
+  const u = await one('UPDATE users SET avatar_url=$2, avatar_key=NULL, updated_at=now() WHERE id=$1 RETURNING *', [req.user.id, `/avatars/${b.preset}`]);
+  res.json(await contaView(u));
+});
+r.patch('/avatar/preset', setPresetHandler);
+r.patch('/conta/avatar/preset', setPresetHandler);
+
+const uploadAvatarHandler = ah(async (req, res) => {
+  const f = fileOf(req, 'avatar');
+  if (!f) throw new HttpError(400, 'Selecione uma imagem para o avatar.');
+  if (f.buffer.length > MAX_AVATAR_BYTES) throw new HttpError(413, 'A imagem deve ter no máximo 4 MB.');
+  const detected = detectImageType(f.buffer);
+  if (!detected) throw new HttpError(400, 'Formato inválido. Envie uma imagem PNG, JPEG, WebP ou GIF.');
+
+  const av = await scanWithClamAV(f.buffer);
+  if (av.status === 'infected') throw new HttpError(400, 'Arquivo rejeitado pelo antivírus.');
+  if (av.status === 'error') throw new HttpError(500, 'Não foi possível verificar a segurança da imagem.');
+
+  const current = await one('SELECT avatar_key FROM users WHERE id=$1', [req.user.id]);
+  if (current?.avatar_key) await deleteFile(current.avatar_key).catch(() => {});
+
+  const key = makeKey('avatars', `avatar-${req.user.id}.${detected.ext}`);
+  await putFile(key, f.buffer, detected.mime);
+  const avatarUrl = `/api/users/${req.user.id}/avatar?t=${Date.now()}`;
+  const u = await one('UPDATE users SET avatar_url=$2, avatar_key=$3, updated_at=now() WHERE id=$1 RETURNING *', [req.user.id, avatarUrl, key]);
+  res.json(await contaView(u));
+});
+r.post('/avatar', avatarLimit, uploader([{ name: 'avatar', maxCount: 1 }]), uploadAvatarHandler);
+r.post('/conta/avatar', avatarLimit, uploader([{ name: 'avatar', maxCount: 1 }]), uploadAvatarHandler);
+
+const deleteAvatarHandler = ah(async (req, res) => {
+  const current = await one('SELECT avatar_key FROM users WHERE id=$1', [req.user.id]);
+  if (current?.avatar_key) await deleteFile(current.avatar_key).catch(() => {});
+  const u = await one('UPDATE users SET avatar_url=NULL, avatar_key=NULL, updated_at=now() WHERE id=$1 RETURNING *', [req.user.id]);
+  res.json(await contaView(u));
+});
+r.delete('/avatar', deleteAvatarHandler);
+r.delete('/conta/avatar', deleteAvatarHandler);
 
 // ---------- Planos ----------
 r.get('/planos', ah(async (req, res) => res.json({ planos: catalogoPlanos(), atual: planoDoUsuario(req.user).id })));

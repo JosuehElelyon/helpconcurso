@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg8" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d9488"/>
+      <stop offset="100%" stop-color="#134e4a"/>
+    </linearGradient>
+    <linearGradient id="globe8" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="gold8" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde047"/>
+      <stop offset="100%" stop-color="#ca8a04"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="url(#bg8)"/>
+
+  <!-- Globe Body -->
+  <circle cx="60" cy="60" r="34" fill="url(#globe8)"/>
+  <!-- Continents/Grid Lines -->
+  <!-- Equator & Parallels -->
+  <ellipse cx="60" cy="60" rx="34" ry="12" fill="none" stroke="#e0f2fe" stroke-width="2" opacity="0.6"/>
+  <ellipse cx="60" cy="46" rx="28" ry="8" fill="none" stroke="#e0f2fe" stroke-width="1.5" opacity="0.5"/>
+  <ellipse cx="60" cy="74" rx="28" ry="8" fill="none" stroke="#e0f2fe" stroke-width="1.5" opacity="0.5"/>
+  <!-- Meridians -->
+  <ellipse cx="60" cy="60" rx="14" ry="34" fill="none" stroke="#e0f2fe" stroke-width="2" opacity="0.6"/>
+  <line x1="60" y1="26" x2="60" y2="94" stroke="#e0f2fe" stroke-width="2" opacity="0.6"/>
+
+  <!-- Globe Ring / Stand -->
+  <path d="M26 60 C26 78 40 98 60 98 C78 98 94 82 94 60" fill="none" stroke="url(#gold8)" stroke-width="5" stroke-linecap="round"/>
+  <rect x="56" y="98" width="8" height="12" fill="url(#gold8)"/>
+  <rect x="42" y="108" width="36" height="6" rx="3" fill="url(#gold8)"/>
+
+  <!-- Diplomatic Fountain Pen (Crossed diagonally) -->
+  <g transform="rotate(40 85 45)">
+    <!-- Pen Barrel -->
+    <rect x="80" y="20" width="8" height="42" rx="3" fill="#1e293b"/>
+    <rect x="80" y="32" width="8" height="4" fill="url(#gold8)"/>
+    <!-- Gold Nib -->
+    <polygon points="80,62 88,62 84,74" fill="url(#gold8)"/>
+    <!-- Nib slit -->
+    <line x1="84" y1="64" x2="84" y2="71" stroke="#1e293b" stroke-width="1"/>
+  </g>
+</svg>

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="skin1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fed7aa"/>
+      <stop offset="100%" stop-color="#fdba74"/>
+    </linearGradient>
+    <linearGradient id="hair1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#334155"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="hp1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="100%" stop-color="#0891b2"/>
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="64" fill="url(#bg1)"/>
+  
+  <!-- Torso/Hoodie -->
+  <path d="M28 128 C28 100 44 94 64 94 C84 94 100 100 100 128 Z" fill="#6366f1"/>
+  <!-- Hoodie collar -->
+  <path d="M50 94 C54 104 74 104 78 94 C74 110 54 110 50 94 Z" fill="#4338ca"/>
+
+  <!-- Neck -->
+  <rect x="56" y="80" width="16" height="18" rx="6" fill="url(#skin1)"/>
+
+  <!-- Head -->
+  <ellipse cx="64" cy="62" rx="22" ry="26" fill="url(#skin1)"/>
+
+  <!-- Hair back -->
+  <path d="M42 56 C40 38 52 30 64 30 C76 30 88 38 86 56 C82 46 76 40 64 40 C52 40 46 46 42 56 Z" fill="url(#hair1)"/>
+
+  <!-- Hair front bangs -->
+  <path d="M44 46 C48 38 60 36 68 38 C76 40 82 48 84 52 C78 44 70 42 62 44 C54 46 48 50 44 46 Z" fill="url(#hair1)"/>
+
+  <!-- Glasses -->
+  <rect x="47" y="56" width="14" height="10" rx="3" fill="none" stroke="#0f172a" stroke-width="2.5"/>
+  <rect x="67" y="56" width="14" height="10" rx="3" fill="none" stroke="#0f172a" stroke-width="2.5"/>
+  <line x1="61" y1="61" x2="67" y2="61" stroke="#0f172a" stroke-width="2.5"/>
+  <!-- Eyes -->
+  <circle cx="54" cy="61" r="2" fill="#0f172a"/>
+  <circle cx="74" cy="61" r="2" fill="#0f172a"/>
+  <!-- Smile -->
+  <path d="M59 74 Q64 78 69 74" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Headphones Band -->
+  <path d="M38 60 C38 34 90 34 90 60" fill="none" stroke="url(#hp1)" stroke-width="6" stroke-linecap="round"/>
+  <!-- Headphones Ear Cups -->
+  <rect x="34" y="52" width="9" height="18" rx="4" fill="#0e7490"/>
+  <rect x="36" y="54" width="5" height="14" rx="2" fill="#22d3ee"/>
+  <rect x="85" y="52" width="9" height="18" rx="4" fill="#0e7490"/>
+  <rect x="87" y="54" width="5" height="14" rx="2" fill="#22d3ee"/>
+</svg>

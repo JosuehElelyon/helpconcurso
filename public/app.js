@@ -29,6 +29,7 @@ const P = {
   book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2Z"/><path d="M4 19V5"/>', clip: '<path d="M8 6h8M8 10h8M8 14h5"/><rect x="4" y="3" width="16" height="18" rx="2"/>',
   download: '<path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/>', mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
   layers: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/>',
+  camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
 };
 const ic = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true">${P[n] || ''}</svg>`;
 
@@ -37,6 +38,16 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = (n) => (n || '?').trim().split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('') || '?';
 const firstName = (n) => (n || '').trim().split(/\s+/)[0] || '';
+function renderAvatar(u, sizeClass = '') {
+  if (!u) return `<span class="avatar ${sizeClass}">?</span>`;
+  const name = u.name || '';
+  const init = initials(name);
+  const url = u.avatarUrl || u.avatar_url;
+  if (url) {
+    return `<img src="${esc(url)}" class="avatar ${sizeClass}" alt="${esc(name)}" onerror="this.outerHTML='<span class=\\'avatar ${sizeClass}\\'>${esc(init)}</span>'" />`;
+  }
+  return `<span class="avatar ${sizeClass}" aria-hidden="true">${esc(init)}</span>`;
+}
 const fmtDate = (t) => { try { return new Date(t).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }); } catch { return ''; } };
 const LETRAS = ['A', 'B', 'C', 'D', 'E'];
 const STATUS = { PENDING: 'Na fila', PROCESSING: 'Processando', READY: 'Treinada', FAILED: 'Falhou' };
@@ -214,7 +225,7 @@ function viewShell(body) {
       <div class="spacer"></div>
       ${S.stars ? `<button class="star-chip" data-go="estrelas" title="${esc(S.stars.level.nome)} · ${S.stars.total} estrelas no total"><span class="star-ic" id="starIc">★</span><b>${S.stars.balance}</b><span class="lvl">${esc(S.stars.level.nome)}</span></button>` : ''}
       ${plano}
-      <button class="user-chip" data-go="conta" title="Minha conta · ${esc(u.email)}"><span class="avatar" aria-hidden="true">${esc(initials(u.name))}</span><span class="nm">${esc(u.name)}</span></button>
+      <button class="user-chip" data-go="conta" title="Minha conta · ${esc(u.email)}">${renderAvatar(u)}<span class="nm">${esc(u.name)}</span></button>
       <button class="icon-btn menu-btn" id="openMenu" aria-label="Abrir menu">${ic('menu')}</button>
     </div></header>
     <div class="layout">
@@ -223,7 +234,7 @@ function viewShell(body) {
     </div>
     <div class="drawer-bg" data-close></div>
     <aside class="drawer" aria-label="Menu">
-      <div class="drawer-head"><span class="avatar lg">${esc(initials(u.name))}</span><div style="min-width:0"><div style="font-weight:800">${esc(u.name)}${isAdmin() ? '<span class="admin-badge">ADMIN</span>' : ''}</div><div class="em">${esc(u.email)}</div></div><button class="icon-btn" style="margin-left:auto;width:36px;height:36px" data-close aria-label="Fechar menu">${ic('x', 'sm')}</button></div>
+      <div class="drawer-head">${renderAvatar(u, 'lg')}<div style="min-width:0"><div style="font-weight:800">${esc(u.name)}${isAdmin() ? '<span class="admin-badge">ADMIN</span>' : ''}</div><div class="em">${esc(u.email)}</div></div><button class="icon-btn" style="margin-left:auto;width:36px;height:36px" data-close aria-label="Fechar menu">${ic('x', 'sm')}</button></div>
       <nav>${navHtml}</nav>
       <div class="drawer-foot"><button class="nav-item" data-logout>${ic('logout')} <span>Sair</span></button></div>
     </aside>
@@ -234,7 +245,7 @@ function viewShell(body) {
 async function loadConta() {
   try {
     S.conta = await api('/me/conta');
-    if (S.user) Object.assign(S.user, { name: S.conta.perfil.name, plano: { id: S.conta.plano.id, nome: S.conta.plano.nome } });
+    if (S.user) Object.assign(S.user, { name: S.conta.perfil.name, avatarUrl: S.conta.perfil.avatarUrl, plano: { id: S.conta.plano.id, nome: S.conta.plano.nome } });
   } catch (e) { toast(e.message); }
   if (['conta', 'planos'].includes(S.view)) render();
 }
@@ -244,6 +255,49 @@ async function loadPlanos() {
 }
 const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const diasAte = (iso) => { if (!iso) return null; const d = Math.ceil((new Date(iso + 'T12:00:00') - new Date()) / 86400000); return d; };
+
+async function showAvatarModal() {
+  if (!S.avatarPresets) {
+    try { const r = await api('/me/avatar/presets'); S.avatarPresets = r.presets; }
+    catch { S.avatarPresets = []; }
+  }
+  const p = S.conta?.perfil || S.user || {};
+  const curUrl = p.avatarUrl || '';
+  const presetsHtml = (S.avatarPresets || []).map((av) => {
+    const isCurrent = curUrl === av.url || curUrl.includes(av.id);
+    return `<div class="avatar-preset-item ${isCurrent ? 'on' : ''}" data-choose-preset="${esc(av.id)}" title="${esc(av.nome)}">
+      <img src="${esc(av.url)}" alt="${esc(av.nome)}" loading="lazy">
+      <div class="av-name">${esc(av.nome)}</div>
+      <div class="av-cat">${esc(av.categoria)}</div>
+    </div>`;
+  }).join('');
+
+  S.modal = {
+    title: 'Foto de perfil',
+    html: `<div class="stack" style="gap:16px">
+      <div>
+        <div style="font-weight:700;font-size:14px;margin-bottom:4px">1. Enviar sua própria foto</div>
+        <div class="hint" style="margin-bottom:10px">Envie uma foto do seu computador ou celular (PNG, JPEG, WebP ou GIF até 4 MB).</div>
+        <div class="avatar-upload-drop" id="avatarDropZone">
+          <input type="file" id="avatarInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none">
+          <div style="margin-bottom:8px">${ic('upload')}</div>
+          <button type="button" class="btn btn-primary btn-sm" id="btnSelectAvatarFile">${ic('upload', 'sm')} Escolher arquivo</button>
+          <div class="hint" style="margin-top:6px" id="avatarUploadStatus">Ou arraste e solte uma imagem aqui</div>
+        </div>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:14px;margin-bottom:4px">2. Ou escolha um avatar temático</div>
+        <div class="hint" style="margin-bottom:6px">Avatares exclusivos para o seu perfil de concurseiro:</div>
+        <div class="avatar-presets-grid">${presetsHtml}</div>
+      </div>
+      <div class="row" style="justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:12px">
+        ${curUrl ? `<button type="button" class="btn btn-ghost danger-soft btn-sm" id="btnModalRemoveAvatar">${ic('trash', 'sm')} Remover foto (usar iniciais)</button>` : '<div></div>'}
+        <button type="button" class="btn btn-quiet btn-sm" data-mclose2>Fechar</button>
+      </div>
+    </div>`,
+  };
+  render();
+}
 
 function viewConta() {
   const c = S.conta;
@@ -255,11 +309,18 @@ function viewConta() {
     : `<div class="use-row"><div class="use-head"><span>${rotulo}</span><b>${usado} de ${limite}</b></div><div class="use-track ${usado >= limite ? 'full' : ''}"><i style="width:${Math.min(100, Math.round((usado / Math.max(1, limite)) * 100))}%"></i></div></div>`;
   const bancas = S.bancas || [];
   return `<div class="profile-hero card">
-      <span class="avatar xl">${esc(initials(p.name))}</span>
+      <div class="avatar-wrap">
+        ${renderAvatar(p, 'xl')}
+        <button type="button" class="avatar-edit-btn" id="openAvatarModal" title="Alterar foto de perfil" aria-label="Alterar foto de perfil">${ic('camera', 'sm')}</button>
+      </div>
       <div class="ph-main">
         <div class="eyebrow">Minha conta</div>
         <h1 class="page-title" style="margin:2px 0">${esc(p.name)}</h1>
         <div class="hint">${esc(p.email)} · membro desde ${p.membroDesde ? new Date(p.membroDesde).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) : '—'}</div>
+        <div class="row" style="margin-top:8px;gap:8px">
+          <button type="button" class="btn btn-ghost btn-xs" id="openAvatarModal2">${ic('camera', 'sm')} Alterar foto de perfil</button>
+          ${p.avatarUrl ? `<button type="button" class="link-btn danger-soft" id="btnRemoverAvatar" style="font-size:12px">Remover foto</button>` : ''}
+        </div>
       </div>
       <div class="ph-side">
         <span class="plan-pill p-${esc(pl.id)}">${ic('crown', 'sm')} Plano ${esc(pl.nome)}</span>
@@ -1733,6 +1794,75 @@ function bindApp() {
   on('[data-mclose]', 'click', (e) => { if (e.target === e.currentTarget) { S.modal = null; render(); } });
   on('[data-mclose2]', 'click', () => { S.modal = null; render(); });
   on('#mOk', 'click', () => { const f = S.modal.fn; S.modal = null; f(); });
+
+  // ---------- Avatar (upload, presets e remoção) ----------
+  on('#openAvatarModal', 'click', () => showAvatarModal());
+  on('#openAvatarModal2', 'click', () => showAvatarModal());
+  const handleRemoveAvatar = async () => {
+    try {
+      const res = await api('/me/avatar', { method: 'DELETE' });
+      S.conta = res;
+      if (S.user) S.user.avatarUrl = null;
+      S.modal = null;
+      toast('Foto de perfil removida.');
+    } catch (e) { toast(e.message); }
+    render();
+  };
+  on('#btnRemoverAvatar', 'click', handleRemoveAvatar);
+  on('#btnModalRemoveAvatar', 'click', handleRemoveAvatar);
+
+  on('[data-choose-preset]', 'click', async (e) => {
+    const preset = e.currentTarget.dataset.choosePreset;
+    try {
+      const res = await api('/me/avatar/preset', { method: 'PATCH', body: { preset } });
+      S.conta = res;
+      if (S.user) S.user.avatarUrl = res.perfil.avatarUrl;
+      S.modal = null;
+      toast('Avatar selecionado!');
+    } catch (err) { toast(err.message); }
+    render();
+  });
+
+  const sendAvatarFile = async (file) => {
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) return toast('A imagem deve ter no máximo 4 MB.');
+    const allowed = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+    if (!allowed.includes(file.type) && !/\.(png|jpe?g|webp|gif)$/i.test(file.name)) {
+      return toast('Formato inválido. Envie uma imagem PNG, JPEG, WebP ou GIF.');
+    }
+    const status = $('#avatarUploadStatus');
+    if (status) status.textContent = 'Enviando imagem…';
+    try {
+      const fd = new FormData();
+      fd.append('avatar', file);
+      const res = await api('/me/avatar', { method: 'POST', form: fd });
+      S.conta = res;
+      if (S.user) S.user.avatarUrl = res.perfil.avatarUrl;
+      S.modal = null;
+      toast('Foto de perfil atualizada!');
+    } catch (err) {
+      toast(err.message);
+      if (status) status.textContent = 'Falha no envio. Tente novamente.';
+    }
+    render();
+  };
+
+  on('#btnSelectAvatarFile', 'click', () => $('#avatarInput')?.click());
+  on('#avatarInput', 'change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) sendAvatarFile(file);
+  });
+  const dropZone = $('#avatarDropZone');
+  if (dropZone) {
+    dropZone.ondragover = (e) => { e.preventDefault(); dropZone.style.borderColor = 'var(--brand)'; };
+    dropZone.ondragleave = () => { dropZone.style.borderColor = ''; };
+    dropZone.ondrop = (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = '';
+      const file = e.dataTransfer?.files?.[0];
+      if (file) sendAvatarFile(file);
+    };
+  }
 
   const w = S.wiz;
   if (S.view === 'gerar' && w) {

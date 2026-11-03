@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg9" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e11d48"/>
+      <stop offset="100%" stop-color="#881337"/>
+    </linearGradient>
+    <linearGradient id="glow9" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde047"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="petal1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#fbcfe8"/>
+    </linearGradient>
+    <linearGradient id="petal2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f472b6"/>
+      <stop offset="100%" stop-color="#db2777"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="url(#bg9)"/>
+
+  <!-- Halo / Focus Energy Aura -->
+  <circle cx="64" cy="52" r="28" fill="#ffffff" opacity="0.15"/>
+  <circle cx="64" cy="52" r="20" fill="#ffffff" opacity="0.25"/>
+
+  <!-- Mental Spark / Jewel / Lightbulb symbol above lotus -->
+  <circle cx="64" cy="46" r="10" fill="url(#glow9)"/>
+  <!-- Radiating little sparks -->
+  <line x1="64" y1="28" x2="64" y2="32" stroke="#fde047" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="48" y1="36" x2="52" y2="39" stroke="#fde047" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="80" y1="36" x2="76" y2="39" stroke="#fde047" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="44" y1="52" x2="48" y2="52" stroke="#fde047" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="84" y1="52" x2="80" y2="52" stroke="#fde047" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Lotus Flower Base / Outer Petals -->
+  <path d="M64 96 C40 96 26 84 26 74 C38 74 54 84 64 96 Z" fill="url(#petal2)"/>
+  <path d="M64 96 C88 96 102 84 102 74 C90 74 74 84 64 96 Z" fill="url(#petal2)"/>
+
+  <!-- Mid Petals -->
+  <path d="M64 96 C44 92 34 76 40 62 C50 72 58 84 64 96 Z" fill="url(#petal1)"/>
+  <path d="M64 96 C84 92 94 76 88 62 C78 72 70 84 64 96 Z" fill="url(#petal1)"/>
+
+  <!-- Center Petal -->
+  <path d="M64 96 C54 80 54 60 64 50 C74 60 74 80 64 96 Z" fill="#ffffff"/>
+
+  <!-- Water ripple hint below -->
+  <ellipse cx="64" cy="104" rx="30" ry="4" fill="#ffffff" opacity="0.3"/>
+</svg>

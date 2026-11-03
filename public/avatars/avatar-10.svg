@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg10" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="50%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#1e1b4b"/>
+    </linearGradient>
+    <linearGradient id="flame10" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="60%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="url(#bg10)"/>
+
+  <!-- Background Stars -->
+  <!-- Star 1 -->
+  <polygon points="28,26 30,30 34,32 30,34 28,38 26,34 22,32 26,30" fill="#fde047"/>
+  <!-- Star 2 -->
+  <polygon points="100,34 101,37 104,38 101,39 100,42 99,39 96,38 99,37" fill="#fde047"/>
+  <!-- Star 3 -->
+  <polygon points="32,80 33,82 35,83 33,84 32,86 31,84 29,83 31,82" fill="#fde047"/>
+  <!-- Star 4 -->
+  <polygon points="96,86 98,90 102,91 98,92 96,96 94,92 90,91 94,90" fill="#fde047"/>
+
+  <!-- Rocket Exhaust Flames -->
+  <path d="M54 84 Q64 122 74 84 Z" fill="url(#flame10)"/>
+  <path d="M58 84 Q64 106 70 84 Z" fill="#fef08a"/>
+
+  <!-- Rocket Fins -->
+  <path d="M46 68 C44 80 40 88 40 88 L54 82 Z" fill="#ef4444"/>
+  <path d="M82 68 C84 80 88 88 88 88 L74 82 Z" fill="#ef4444"/>
+
+  <!-- Rocket Main Body -->
+  <path d="M64 22 C52 36 50 64 52 84 L76 84 C78 64 76 36 64 22 Z" fill="#ffffff"/>
+
+  <!-- Rocket Nosecone Tip -->
+  <path d="M64 22 C59 29 55 38 54 44 L74 44 C73 38 69 29 64 22 Z" fill="#ef4444"/>
+
+  <!-- Porthole / Window -->
+  <circle cx="64" cy="56" r="8" fill="#38bdf8" stroke="#cbd5e1" stroke-width="2.5"/>
+  <circle cx="66" cy="54" r="2" fill="#ffffff"/>
+
+  <!-- Rocket Booster Base Nozzle -->
+  <rect x="56" y="82" width="16" height="5" rx="1.5" fill="#64748b"/>
+</svg>

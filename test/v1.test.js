@@ -653,3 +653,57 @@ test('minha conta: edita perfil, recusa conteúdo malicioso e troca a senha conf
   assert.equal((await user('/api/auth/login', { method: 'POST', body: { email: emails.user, password: 'outra-senha-1' } })).status, 200);
   assert.equal((await user('/api/me/conta/senha', { method: 'POST', body: { senhaAtual: 'outra-senha-1', novaSenha: 'senha-forte-1' } })).status, 200);
 });
+
+test('avatar: presets, seleção, upload de imagem com magic bytes, download e remoção', async () => {
+  // 1. Listar presets
+  const presetsRes = await user('/api/me/avatar/presets');
+  assert.equal(presetsRes.status, 200);
+  assert.equal(presetsRes.data.presets.length, 10);
+
+  // 2. Selecionar preset válido
+  const selPreset = await user('/api/me/avatar/preset', { method: 'PATCH', body: { preset: 'avatar-6.svg' } });
+  assert.equal(selPreset.status, 200);
+  assert.equal(selPreset.data.perfil.avatarUrl, '/avatars/avatar-6.svg');
+
+  // Conferir em GET /api/me/conta
+  const conta1 = await user('/api/me/conta');
+  assert.equal(conta1.data.perfil.avatarUrl, '/avatars/avatar-6.svg');
+
+  // Redirecionamento em GET /api/users/:id/avatar para preset
+  const meUser = await one('SELECT id FROM users WHERE email=$1', [emails.user]);
+  const getPresetAvatar = await fetch(`${URL}/api/users/${meUser.id}/avatar`, { redirect: 'manual' });
+  assert.equal(getPresetAvatar.status, 302);
+  assert.equal(getPresetAvatar.headers.get('location'), '/avatars/avatar-6.svg');
+
+  // 3. Rejeitar preset inexistente
+  const selInvalido = await user('/api/me/avatar/preset', { method: 'PATCH', body: { preset: 'avatar-fake.svg' } });
+  assert.equal(selInvalido.status, 400);
+
+  // 4. Upload de arquivo falso (SVG ou texto fingindo ser imagem) -> rejeitado por magic bytes
+  const fakeSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="10"/></svg>');
+  const upFalso = await user('/api/me/avatar', { method: 'POST', files: { avatar: [fakeSvg, 'foto.png'] } });
+  assert.equal(upFalso.status, 400);
+
+  // 5. Upload de PNG legítimo
+  const pngValido = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89]);
+  const upOk = await user('/api/me/avatar', { method: 'POST', files: { avatar: [pngValido, 'meu-avatar.png'] } });
+  assert.equal(upOk.status, 200, JSON.stringify(upOk.data));
+  assert.ok(upOk.data.perfil.avatarUrl.startsWith(`/api/users/${meUser.id}/avatar`));
+
+  // 6. Download público do avatar customizado via GET /api/users/:id/avatar
+  const downloadRes = await fetch(`${URL}/api/users/${meUser.id}/avatar`);
+  assert.equal(downloadRes.status, 200);
+  assert.equal(downloadRes.headers.get('content-type'), 'image/png');
+  assert.equal(downloadRes.headers.get('x-content-type-options'), 'nosniff');
+  const bufBaixado = Buffer.from(await downloadRes.arrayBuffer());
+  assert.ok(bufBaixado.equals(pngValido));
+
+  // 7. Remover avatar
+  const rem = await user('/api/me/avatar', { method: 'DELETE' });
+  assert.equal(rem.status, 200);
+  assert.equal(rem.data.perfil.avatarUrl, null);
+
+  // 8. Após remoção, GET do avatar devolve 404
+  const downloadPosRemocao = await fetch(`${URL}/api/users/${meUser.id}/avatar`);
+  assert.equal(downloadPosRemocao.status, 404);
+});
