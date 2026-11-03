@@ -1,6 +1,6 @@
 {
   "name": "helpconcurso",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "private": true,
   "description": "HelpConcurso — gere questões de concurso no estilo de cada banca a partir do seu material de estudo.",
   "type": "module",

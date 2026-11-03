@@ -62,7 +62,7 @@ app.use((req, _res, next) => {
 app.use(loadUser);
 
 app.get('/api/health', async (_req, res) => {
-  try { await pool.query('SELECT 1'); res.json({ ok: true, versao: '1.4.0' }); } catch { res.status(503).json({ ok: false }); }
+  try { await pool.query('SELECT 1'); res.json({ ok: true, versao: '2.0.0' }); } catch { res.status(503).json({ ok: false }); }
 });
 app.use('/api/auth', authRoutes);
 app.use('/api/materials', materialRoutes);
@@ -101,7 +101,7 @@ await ensureTaxonomiaSeed();
 await ensureBucket().catch((e) => console.warn('[s3]', e.message));
 await verifyMailer();
 await startWorker();
-const server = app.listen(config.port, () => console.log(`HelpConcurso v1.4 rodando em ${config.appUrl} (porta ${config.port})${config.ai.mock ? ' — IA SIMULADA' : ''}`));
+const server = app.listen(config.port, () => console.log(`HelpConcurso v2.0 rodando em ${config.appUrl} (porta ${config.port})${config.ai.mock ? ' — IA SIMULADA' : ''}`));
 server.requestTimeout = 10 * 60 * 1000; // gerações longas
 server.headersTimeout = 65 * 1000;
 
