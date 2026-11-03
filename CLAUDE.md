@@ -44,6 +44,12 @@ Novo na v1.3/v1.4 (migração `006_cadernos.sql`):
   materiais, provas antigas (questões reais copiadas em `cadernos.questoes_extras`), favoritas, anotações e "refazer erradas".
 - `getKnowledge()` pontua exemplos reais por subtema e prioriza provas do caderno/edital.
 
+## v2.0 (03/11/2026): identidade visual, layout responsivo, Minha conta e Planos
+- Planos Grátis/Essencial/Aprovação com limites reais (`src/lib/planos.js`, cotas em `src/services/quota.js`, migração 012).
+  Upgrade = pedido (`plano_pedidos`) que o admin aprova após confirmar o pagamento — **sem gateway ainda**.
+- `/api/me/conta` (perfil, senha, uso), `/api/me/planos`, `/api/admin/pedidos`. Front: telas `#conta` e `#planos`, menu lateral
+  no desktop, barra inferior no celular. Nos testes, os alunos rodam no plano Aprovação (o Grátis tem teste próprio).
+
 ## Segurança — revisão de 02/11/2026 (corrigido)
 - Cadastro nunca sobrescreve conta confirmada (nem de admin/convidado) e só ativa conta com o código do e-mail;
   se o SMTP falhar, a conta fica pendente e o aluno usa "Reenviar código". Teste cobre a tentativa de tomar a conta do admin.

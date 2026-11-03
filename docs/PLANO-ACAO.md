@@ -365,3 +365,22 @@ chamadas/429 por provedor; cache de prompt medido. Decisões de modelo e prompt 
 6. Pendências pequenas: selo "Anulada" também na tela do simulado (hoje só no caderno); resumo da lista de cadernos ainda conta
    questão anulada no acerto (o detalhe já não conta).
 7. Sprint 6 (medir): conferir `cache_read_tokens` no `ai_usage` depois de alguns simulados para ver se o cache do prompt pegou.
+
+## v2.0 — Identidade visual, responsividade, Minha conta e Planos (03/11/2026)
+- **Identidade:** marca nova (escudo com check = confiança/aprovação), logotipo "Help**Concurso**", paleta verde-petróleo
+  (#0E7A65 → #14A383) + âmbar (#F2A62B) sobre papel quente, foco visível para teclado, botões com 44 px de altura mínima.
+- **Responsivo:** desktop ≥1100 px com menu lateral fixo; tablet com menu sanduíche; celular <700 px com barra inferior de 5 atalhos,
+  modais como folha que sobe da base, campos com fonte de 16 px (sem zoom no iOS). Conferido com capturas em 1366×900 e 390×844.
+- **Minha conta (`#conta`):** dados pessoais (nome, telefone, concurso alvo, banca preferida, data da prova com contagem regressiva,
+  meta diária), uso do plano no dia com barras, troca de senha conferindo a atual.
+- **Planos (`#planos`):** Grátis (R$ 0) · Essencial (R$ 29,90/mês ou R$ 299/ano) · Aprovação (R$ 59,90/mês ou R$ 599/ano);
+  limites reais aplicados nas cotas (`src/lib/planos.js`); pedido de upgrade → admin confirma o pagamento e aprova (botão
+  "Pedidos de plano" na Base de provas) → aluno recebe e-mail. **Sem gateway de pagamento ainda.**
+
+### Decisões pendentes do Josueh
+1. **Preços e limites** (estão em `src/lib/planos.js`): pior caso do Essencial ≈ 5 simulados Médio + 3 Difícil por dia ≈ US$ 0,65/dia
+   ≈ US$ 20/mês, acima do preço — só um aluno que usa tudo todo dia; o uso típico deve ficar bem abaixo. Rever com os dados reais
+   do `ai_usage` (Sprint 6) antes de abrir para o público.
+2. **Gateway de pagamento** (Pix + cartão, renovação automática): Mercado Pago, Asaas ou Stripe — escolher para integrar.
+3. Na fase de testes, `QUOTA_GERACOES_DIA` no `.env` sobrepõe o limite do Grátis (hoje 30/dia). Remover no lançamento (o padrão é 3).
+4. Contas de teste (Amanda) estão no Grátis: para testar tudo, aprovar um pedido dela ou mudar o plano direto no banco.

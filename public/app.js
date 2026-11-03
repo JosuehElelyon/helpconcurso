@@ -5,7 +5,11 @@
 
 // ---------- Ícones ----------
 const P = {
-  logo: '<path d="M4 19V6a2 2 0 0 1 2-2h11l3 3v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+  logo: '<path d="M12 2.8 4.5 6v5.6c0 4.5 3.1 8.4 7.5 9.6 4.4-1.2 7.5-5.1 7.5-9.6V6Z"/><path d="m8.6 12.2 2.4 2.4 4.6-5"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',
+  crown: '<path d="m3 8 4.5 4L12 5l4.5 7L21 8l-2 11H5Z"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>', x: '<path d="M6 6l12 12M18 6 6 18"/>',
   home: '<path d="m3 11 9-7 9 7"/><path d="M5 10v10h14V10"/>',
   upload: '<path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
@@ -68,6 +72,7 @@ const S = {
   cadernos: [], activeCaderno: null, cadernoBusy: false, cadernoNewOpen: false, cadForm: null,
   cadernoFeedTab: '', cadFeedBusy: false, cadFilter: { status: 'all', origem: 'all', materia: '', q: '' },
   cadNoteOpen: null, materiaisDisponiveis: [], provasDisponiveis: [], bancoTab: 'cadernos',
+  conta: null, contaBusy: false, planosData: null, planoPeriodo: 'mensal',
 };
 const BANCA = () => Object.fromEntries(S.bancas.map((b) => [b.id, b]));
 const isAdmin = () => S.user?.role === 'ADMIN';
@@ -93,6 +98,8 @@ function viewBody() {
     case 'contribuir': return viewContribuir();
     case 'estrelas': return viewEstrelas();
     case 'edital': return viewEdital();
+    case 'conta': return viewConta();
+    case 'planos': return viewPlanos();
     default: return viewHome();
   }
 }
@@ -131,7 +138,7 @@ function viewAuth() {
   }
   return `<div class="login">
     <aside class="login-side">
-      <div class="logo"><span class="logo-mark">${ic('logo')}</span> HelpConcurso</div>
+      <div class="logo"><span class="logo-mark">${ic('logo')}</span><span class="logo-txt">Help<b>Concurso</b></span></div>
       <div>
         <h1>Transforme seus resumos em questões no estilo da sua banca.</h1>
         <p>Envie seu material de estudo, escolha a banca e treine com questões inéditas feitas a partir do que você estudou.</p>
@@ -141,7 +148,7 @@ function viewAuth() {
           <li><span class="dot">${ic('target', 'sm')}</span><span>Gabarito comentado com o trecho do seu material que fundamenta a resposta</span></li>
         </ul>
       </div>
-      <div class="hint" style="color:#8D97A2">Versão 1.1</div>
+      <div class="hint" style="color:#8D97A2">© HelpConcurso · versão 2.0</div>
     </aside>
     <main class="login-main">
       <form class="login-card" id="authForm" novalidate>
@@ -195,23 +202,159 @@ function bindAuth() {
 function viewShell(body) {
   const u = S.user;
   const nav = [['home', 'Início', 'home'], ['gerar', 'Gerar questões', 'spark'], ['questoes', 'Cadernos de questões', 'book'], ['edital', 'Meu edital', 'target'], ['contribuir', 'Enviar provas', 'upload'], ['estrelas', 'Minhas estrelas', 'star'], ['bancas', 'Bancas e estilos', 'layers']];
-  const item = ([v, l, i]) => `<button class="nav-item ${S.view === v || (v === 'questoes' && ['simulado', 'caderno'].includes(S.view)) ? 'on' : ''}" data-go="${v}">${ic(i)} ${l}${v === 'questoes' && (S.cadernos.length || S.sets.length) ? `<span class="badge">${S.cadernos.length || S.sets.length}</span>` : ''}${v === 'edital' && S.activeEdital ? `<span class="badge brand">${S.activeEdital.resumo?.coberturaPct ?? 0}%</span>` : ''}</button>`;
+  const ativo = (v) => S.view === v || (v === 'questoes' && ['simulado', 'caderno'].includes(S.view));
+  const item = ([v, l, i]) => `<button class="nav-item ${ativo(v) ? 'on' : ''}" data-go="${v}" ${ativo(v) ? 'aria-current="page"' : ''}>${ic(i)} <span>${l}</span>${v === 'questoes' && (S.cadernos.length || S.sets.length) ? `<span class="badge">${S.cadernos.length || S.sets.length}</span>` : ''}${v === 'edital' && S.activeEdital ? `<span class="badge brand">${S.activeEdital.resumo?.coberturaPct ?? 0}%</span>` : ''}</button>`;
+  const navHtml = `${nav.map(item).join('')}
+    <div class="nav-sep">Sua conta</div>${item(['conta', 'Minha conta', 'user'])}${item(['planos', 'Planos', 'crown'])}
+    ${isAdmin() ? `<div class="nav-sep">Administração</div>${item(['provas', 'Base de provas (Treinar IA)', 'brain'])}` : ''}`;
+  const plano = u.plano && !isAdmin() ? `<button class="plan-chip p-${esc(u.plano.id)}" data-go="planos" title="Seu plano: ${esc(u.plano.nome)}">${ic('crown', 'sm')}<span>${esc(u.plano.nome)}</span></button>` : '';
+  const tabs = [['home', 'Início', 'home'], ['gerar', 'Gerar', 'spark'], ['questoes', 'Cadernos', 'book'], ['edital', 'Edital', 'target'], ['conta', 'Conta', 'user']];
   return `<header class="header"><div class="header-in">
-      <div class="logo" data-go="home"><span class="logo-mark">${ic('logo')}</span><span>HelpConcurso</span></div>
+      <div class="logo" data-go="home"><span class="logo-mark">${ic('logo')}</span><span class="logo-txt">Help<b>Concurso</b></span></div>
       <div class="spacer"></div>
       ${S.stars ? `<button class="star-chip" data-go="estrelas" title="${esc(S.stars.level.nome)} · ${S.stars.total} estrelas no total"><span class="star-ic" id="starIc">★</span><b>${S.stars.balance}</b><span class="lvl">${esc(S.stars.level.nome)}</span></button>` : ''}
-      <div class="user-chip" title="${esc(u.email)}"><span class="avatar" aria-hidden="true">${esc(initials(u.name))}</span><span class="nm">${esc(u.name)}</span></div>
-      <button class="icon-btn" id="openMenu" aria-label="Abrir menu">${ic('menu')}</button>
+      ${plano}
+      <button class="user-chip" data-go="conta" title="Minha conta · ${esc(u.email)}"><span class="avatar" aria-hidden="true">${esc(initials(u.name))}</span><span class="nm">${esc(u.name)}</span></button>
+      <button class="icon-btn menu-btn" id="openMenu" aria-label="Abrir menu">${ic('menu')}</button>
     </div></header>
+    <div class="layout">
+      <aside class="sidebar" aria-label="Navegação principal"><nav>${navHtml}</nav><div class="sidebar-foot"><button class="nav-item" data-logout>${ic('logout')} <span>Sair</span></button></div></aside>
+      <main class="main" id="conteudo">${body}</main>
+    </div>
     <div class="drawer-bg" data-close></div>
     <aside class="drawer" aria-label="Menu">
       <div class="drawer-head"><span class="avatar lg">${esc(initials(u.name))}</span><div style="min-width:0"><div style="font-weight:800">${esc(u.name)}${isAdmin() ? '<span class="admin-badge">ADMIN</span>' : ''}</div><div class="em">${esc(u.email)}</div></div><button class="icon-btn" style="margin-left:auto;width:36px;height:36px" data-close aria-label="Fechar menu">${ic('x', 'sm')}</button></div>
-      <nav>${nav.map(item).join('')}
-        ${isAdmin() ? `<div class="nav-sep">Administração</div>${item(['provas', 'Base de provas (Treinar IA)', 'brain'])}` : ''}
-      </nav>
-      <div class="drawer-foot"><button class="nav-item" id="logout">${ic('logout')} Sair</button></div>
+      <nav>${navHtml}</nav>
+      <div class="drawer-foot"><button class="nav-item" data-logout>${ic('logout')} <span>Sair</span></button></div>
     </aside>
-    <main class="main">${body}</main>`;
+    <nav class="tabbar" aria-label="Atalhos">${tabs.map(([v, l, i]) => `<button class="${ativo(v) ? 'on' : ''}" data-go="${v}" ${ativo(v) ? 'aria-current="page"' : ''}>${ic(i)}<span>${l}</span></button>`).join('')}</nav>`;
+}
+
+// ---------- Minha conta ----------
+async function loadConta() {
+  try {
+    S.conta = await api('/me/conta');
+    if (S.user) Object.assign(S.user, { name: S.conta.perfil.name, plano: { id: S.conta.plano.id, nome: S.conta.plano.nome } });
+  } catch (e) { toast(e.message); }
+  if (['conta', 'planos'].includes(S.view)) render();
+}
+async function loadPlanos() {
+  try { S.planosData = await api('/me/planos'); } catch (e) { toast(e.message); }
+  await loadConta();
+}
+const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const diasAte = (iso) => { if (!iso) return null; const d = Math.ceil((new Date(iso + 'T12:00:00') - new Date()) / 86400000); return d; };
+
+function viewConta() {
+  const c = S.conta;
+  if (!c) return '<div class="progress-box"><div class="spinner"></div><div class="hint">Carregando sua conta…</div></div>';
+  const p = c.perfil, pl = c.plano, uso = c.uso;
+  const faltam = diasAte(p.dataProva);
+  const uso1 = (rotulo, usado, limite) => limite === null || limite === undefined
+    ? `<div class="use-row"><div class="use-head"><span>${rotulo}</span><b>${usado} · sem limite</b></div></div>`
+    : `<div class="use-row"><div class="use-head"><span>${rotulo}</span><b>${usado} de ${limite}</b></div><div class="use-track ${usado >= limite ? 'full' : ''}"><i style="width:${Math.min(100, Math.round((usado / Math.max(1, limite)) * 100))}%"></i></div></div>`;
+  const bancas = S.bancas || [];
+  return `<div class="profile-hero card">
+      <span class="avatar xl">${esc(initials(p.name))}</span>
+      <div class="ph-main">
+        <div class="eyebrow">Minha conta</div>
+        <h1 class="page-title" style="margin:2px 0">${esc(p.name)}</h1>
+        <div class="hint">${esc(p.email)} · membro desde ${p.membroDesde ? new Date(p.membroDesde).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) : '—'}</div>
+      </div>
+      <div class="ph-side">
+        <span class="plan-pill p-${esc(pl.id)}">${ic('crown', 'sm')} Plano ${esc(pl.nome)}</span>
+        ${faltam !== null ? `<div class="countdown ${faltam < 0 ? 'past' : ''}">${ic('calendar', 'sm')} ${faltam > 1 ? `Faltam <b>${faltam}</b> dias para a prova` : faltam === 1 ? 'A prova é <b>amanhã</b>' : faltam === 0 ? 'A prova é <b>hoje</b>. Boa prova!' : 'Data da prova já passou'}</div>` : ''}
+      </div>
+    </div>
+    <div class="account-grid">
+      <form class="card card-pad" id="contaForm" novalidate>
+        <h3 class="card-title">${ic('user', 'sm')} Dados pessoais</h3>
+        <div class="field"><label for="cNome">Nome</label><input class="input" id="cNome" maxlength="80" autocomplete="name" value="${esc(p.name)}" required></div>
+        <div class="field"><label for="cEmail">E-mail</label><input class="input" id="cEmail" value="${esc(p.email)}" disabled><span class="hint">Para trocar o e-mail, fale com o suporte.</span></div>
+        <div class="form-2">
+          <div class="field"><label for="cTel">Telefone <span class="hint">(opcional)</span></label><input class="input" id="cTel" inputmode="tel" maxlength="20" autocomplete="tel" placeholder="(61) 99999-0000" value="${esc(p.telefone)}"></div>
+          <div class="field"><label for="cMeta">Meta diária de questões</label><input class="input" id="cMeta" type="number" min="0" max="500" inputmode="numeric" placeholder="Ex.: 30" value="${p.metaDiaria ?? ''}"></div>
+        </div>
+        <div class="field"><label for="cAlvo">Concurso que você está mirando</label><input class="input" id="cAlvo" maxlength="120" placeholder="Ex.: TRF-1 · Técnico Judiciário" value="${esc(p.concursoAlvo)}"></div>
+        <div class="form-2">
+          <div class="field"><label for="cBanca">Banca preferida</label><select class="select" id="cBanca"><option value="">Nenhuma</option>${bancas.map((b) => `<option value="${b.id}" ${p.bancaPreferida === b.id ? 'selected' : ''}>${esc(b.nome)}</option>`).join('')}</select></div>
+          <div class="field"><label for="cData">Data da prova</label><input class="input" id="cData" type="date" value="${esc(p.dataProva)}"></div>
+        </div>
+        <button class="btn btn-primary" type="submit" ${S.contaBusy ? 'disabled' : ''}>${S.contaBusy ? '<span class="spinner sm"></span>' : ic('check', 'sm')} Salvar alterações</button>
+      </form>
+      <div class="stack">
+        <div class="card card-pad plan-card-mini p-${esc(pl.id)}">
+          <h3 class="card-title">${ic('crown', 'sm')} Seu plano: ${esc(pl.nome)}</h3>
+          ${pl.ate ? `<div class="hint" style="margin:-6px 0 12px">Válido até ${new Date(pl.ate).toLocaleDateString('pt-BR')}</div>` : ''}
+          ${uso1('Simulados hoje', uso.simuladosHoje, pl.limites.simuladosDia)}
+          ${uso1('Difícil/Misto hoje', uso.dificeisHoje, pl.limites.dificeisDia)}
+          ${uso1('Editais', uso.editais, pl.limites.editais)}
+          ${uso1('Cadernos', uso.cadernos, pl.limites.cadernos)}
+          ${uso.creditosExtras ? `<div class="hint" style="margin-top:8px">+ ${uso.creditosExtras} geração(ões) extra(s) por estrelas e provas aprovadas</div>` : ''}
+          ${c.pedidoPendente ? `<div class="banner warn" style="margin:14px 0 0">${ic('info', 'sm')}<div>Pedido do plano <b>${esc(c.pedidoPendente.planoNome)}</b> (${esc(c.pedidoPendente.periodicidade)}, ${brl(c.pedidoPendente.valor)}) aguardando confirmação do pagamento. <button type="button" class="link-btn" id="cancelPedido">Cancelar pedido</button></div></div>`
+            : pl.id !== 'aprovacao' && pl.id !== 'admin' ? `<button class="btn btn-accent btn-block" data-go="planos" style="margin-top:14px">${ic('crown', 'sm')} Ver planos e ampliar</button>` : ''}
+        </div>
+        <form class="card card-pad" id="senhaForm" novalidate>
+          <h3 class="card-title">${ic('lock', 'sm')} Segurança</h3>
+          <div class="field"><label for="sAtual">Senha atual</label><input class="input" id="sAtual" type="password" autocomplete="current-password" required></div>
+          <div class="field"><label for="sNova">Nova senha</label><input class="input" id="sNova" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo 8 caracteres" required></div>
+          <button class="btn btn-ghost" type="submit">${ic('lock', 'sm')} Trocar senha</button>
+        </form>
+        <button class="btn btn-ghost btn-block danger-soft" data-logout>${ic('logout', 'sm')} Sair da conta</button>
+      </div>
+    </div>`;
+}
+
+// ---------- Planos ----------
+function viewPlanos() {
+  const d = S.planosData;
+  if (!d) return '<div class="progress-box"><div class="spinner"></div><div class="hint">Carregando planos…</div></div>';
+  const anual = S.planoPeriodo === 'anual';
+  const ordem = d.planos.map((p) => p.id);
+  const atual = d.atual;
+  const pend = S.conta?.pedidoPendente;
+  const lim = (v, un) => (v === null ? 'Ilimitado' : `${v}${un ? ' ' + un : ''}`);
+  const preco = (p) => {
+    if (!p.precoMensal) return '<div class="price"><span class="cur">R$</span><b>0</b><span class="per">para sempre</span></div>';
+    if (!anual) return `<div class="price"><span class="cur">R$</span><b>${p.precoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b><span class="per">/mês</span></div>`;
+    return `<div class="price"><span class="cur">R$</span><b>${(p.precoAnual / 12).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b><span class="per">/mês</span></div><div class="price-note">${brl(p.precoAnual)} por ano · economize ${brl(p.precoMensal * 12 - p.precoAnual)}</div>`;
+  };
+  const cta = (p) => {
+    if (atual === 'admin') return '<button class="btn btn-ghost btn-block" disabled>Acesso de administrador</button>';
+    if (p.id === atual) return '<button class="btn btn-ghost btn-block" disabled>' + ic('check', 'sm') + ' Seu plano atual</button>';
+    if (ordem.indexOf(p.id) < ordem.indexOf(atual)) return '<button class="btn btn-ghost btn-block" disabled>Incluído no seu plano</button>';
+    if (pend && pend.plano === p.id) return `<button class="btn btn-ghost btn-block" disabled>Pedido enviado · aguardando pagamento</button><button type="button" class="link-btn" id="cancelPedido" style="margin-top:8px">Cancelar pedido</button>`;
+    return `<button class="btn ${p.destaque ? 'btn-accent' : 'btn-primary'} btn-block" data-upgrade="${p.id}">Quero o ${esc(p.nome)}</button>`;
+  };
+  return `<div class="planos-head">
+      <div class="eyebrow">Planos</div>
+      <h1 class="page-title">Escolha o ritmo da sua aprovação</h1>
+      <p class="page-sub">Todos os planos têm questões no estilo da banca, gabarito comentado com o trecho do seu material, questões reais por tópico do edital e revisão espaçada dos erros.</p>
+      <div class="seg period" role="tablist" aria-label="Período"><button type="button" class="${!anual ? 'on' : ''}" data-periodo="mensal">Mensal</button><button type="button" class="${anual ? 'on' : ''}" data-periodo="anual">Anual <span class="save">2 meses grátis</span></button></div>
+    </div>
+    <div class="plan-grid">${d.planos.map((p) => `<article class="plan ${p.destaque ? 'featured' : ''} ${p.id === atual ? 'current' : ''}">
+        ${p.destaque ? '<div class="ribbon">Mais escolhido</div>' : ''}
+        <h3>${esc(p.nome)}</h3>
+        <p class="plan-sub">${esc(p.resumo)}</p>
+        ${preco(p)}
+        ${cta(p)}
+        <ul class="benefits">${p.beneficios.map((b) => `<li>${ic('check', 'sm')}<span>${esc(b)}</span></li>`).join('')}</ul>
+      </article>`).join('')}</div>
+    <div class="card card-pad compare">
+      <h3 class="card-title">Compare os limites</h3>
+      <table class="tbl cmp"><thead><tr><th></th>${d.planos.map((p) => `<th>${esc(p.nome)}</th>`).join('')}</tr></thead><tbody>
+        <tr><td>Simulados por dia</td>${d.planos.map((p) => `<td>${lim(p.limites.simuladosDia)}</td>`).join('')}</tr>
+        <tr><td>Simulados Difícil/Misto por dia</td>${d.planos.map((p) => `<td>${lim(p.limites.dificeisDia)}</td>`).join('')}</tr>
+        <tr><td>Editais acompanhados</td>${d.planos.map((p) => `<td>${lim(p.limites.editais)}</td>`).join('')}</tr>
+        <tr><td>Cadernos de questões</td>${d.planos.map((p) => `<td>${lim(p.limites.cadernos)}</td>`).join('')}</tr>
+        <tr><td>Questões reais por tópico · revisão espaçada</td>${d.planos.map(() => `<td class="yes">${ic('check', 'sm')}</td>`).join('')}</tr>
+      </tbody></table>
+    </div>
+    <div class="faq">
+      <details class="card card-pad"><summary>Como funciona o pagamento?</summary><p>Ao pedir o plano, nossa equipe recebe o pedido e envia as instruções de pagamento para o seu e-mail. O plano é ativado assim que o pagamento é confirmado, e você recebe um aviso. O pagamento direto no app (Pix e cartão) chega em breve.</p></details>
+      <details class="card card-pad"><summary>A assinatura renova sozinha?</summary><p>Não. O plano vale até o fim do período pago (1 mês ou 1 ano). Depois, se você não renovar, a conta volta para o plano Grátis sem perder nada do que já criou.</p></details>
+      <details class="card card-pad"><summary>Ganho gerações extras sem pagar?</summary><p>Sim. Cada prova que você envia e é aprovada na base, e as estrelas que você acumula, viram simulados extras em qualquer plano.</p></details>
+    </div>`;
 }
 
 // ---------- Home ----------
@@ -1144,7 +1287,7 @@ function viewProvas() {
       ${m.sec.blockedUsers.length ? `<div class="banner warn">${ic('alert', 'sm')}<div>Envios pausados: ${m.sec.blockedUsers.map((u) => esc(u.name) + ' (' + esc(u.email) + ')').join(', ')}</div></div>` : ''}
       ${m.sec.events.length ? `<table class="tbl"><thead><tr><th>Quando</th><th>Tipo</th><th>Nível</th><th>Usuário</th><th>Arquivo</th><th>Motivos</th></tr></thead><tbody>${m.sec.events.slice(0, 80).map((e) => `<tr><td>${new Date(e.created_at).toLocaleString('pt-BR')}</td><td>${esc(e.kind)}</td><td><span class="sev ${e.severity}">${SEV_LABEL[e.severity] || esc(e.severity)}</span></td><td>${esc(e.name || '—')}</td><td>${esc(e.file_name || '—')}</td><td class="hint">${esc(((e.details?.findings || []).filter((f) => !['info', 'low'].includes(f.severity)).map((f) => f.message).concat(e.details?.reasons || [], e.details?.alertas || [])).slice(0, 3).join(' · '))}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Nenhum evento.</p>'}</div>`;
   }
-  return `<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h1 class="page-title">Base de provas</h1><p class="page-sub">Revise as provas enviadas, acompanhe o treino da IA e monitore segurança e custos.</p></div><div class="row" style="gap:8px"><button class="btn btn-ghost" id="admDiverg" title="Questões em que os dois modelos discordaram do gabarito">${ic('alert', 'sm')} Divergências</button><button class="btn btn-ghost" id="admLote" title="Importa várias provas de links oficiais de uma vez">${ic('download', 'sm')} Importar em lote</button><button class="btn btn-ghost" id="admRotular" title="Completa tópico, comando e pegadinha das questões de provas antigas usando as IAs grátis (provas são públicas)">${ic('brain', 'sm')} Rotular provas antigas</button><button class="btn btn-primary" data-go="contribuir">${ic('upload', 'sm')} Enviar provas</button></div></div>
+  return `<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h1 class="page-title">Base de provas</h1><p class="page-sub">Revise as provas enviadas, acompanhe o treino da IA e monitore segurança e custos.</p></div><div class="row" style="gap:8px"><button class="btn btn-ghost" id="admPedidos" title="Pedidos de upgrade de plano">${ic('crown', 'sm')} Pedidos de plano</button><button class="btn btn-ghost" id="admDiverg" title="Questões em que os dois modelos discordaram do gabarito">${ic('alert', 'sm')} Divergências</button><button class="btn btn-ghost" id="admLote" title="Importa várias provas de links oficiais de uma vez">${ic('download', 'sm')} Importar em lote</button><button class="btn btn-ghost" id="admRotular" title="Completa tópico, comando e pegadinha das questões de provas antigas usando as IAs grátis (provas são públicas)">${ic('brain', 'sm')} Rotular provas antigas</button><button class="btn btn-primary" data-go="contribuir">${ic('upload', 'sm')} Enviar provas</button></div></div>
   <div class="tabs" style="max-width:520px">${tabs.map(([k, l]) => `<button type="button" class="${tab === k ? 'on' : ''}" data-atab="${k}">${l}</button>`).join('')}</div>${body}`;
 }
 
@@ -1497,12 +1640,14 @@ function viewModal() {
 const confirmBox = (title, text, ok, danger, fn) => { S.modal = { title, text, ok, danger, fn }; render(); };
 
 // ---------- Navegação e eventos ----------
-const ROUTES = ['home', 'gerar', 'edital', 'questoes', 'bancas', 'contribuir', 'estrelas', 'provas'];
+const ROUTES = ['home', 'gerar', 'edital', 'questoes', 'bancas', 'contribuir', 'estrelas', 'provas', 'conta', 'planos'];
 function go(v) {
   S.view = v; S.drawer = false;
   if (ROUTES.includes(v)) { try { if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v); } catch {} }
   if (v === 'provas' && isAdmin()) loadAdmin(S.adminTab === 'monitor').then(() => { if (S.view === 'provas') render(); }).catch((e) => toast(e.message));
   if (v === 'estrelas') refreshStars({ silent: true });
+  if (v === 'conta') loadConta();
+  if (v === 'planos') loadPlanos();
   if (v === 'edital') { refreshEditais(); api('/provas/minhas').then((r) => { S.minhas = r.provas; if (S.view === 'edital') render(); }).catch(() => {}); }
   if (v === 'simulado' && S.active) loadFeedback(S.active);
   if (v === 'contribuir') {
@@ -1522,10 +1667,58 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (S.drawe
 
 function bindApp() {
   const on = (sel, ev, fn) => document.querySelectorAll(sel).forEach((el) => el.addEventListener(ev, fn));
+  if (S.view === 'conta') {
+    const cf = $('#contaForm');
+    if (cf) cf.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const body = { name: $('#cNome').value.trim(), telefone: $('#cTel').value.trim(), concursoAlvo: $('#cAlvo').value.trim(), bancaPreferida: $('#cBanca').value, dataProva: $('#cData').value, metaDiaria: $('#cMeta').value ? Number($('#cMeta').value) : null };
+      S.contaBusy = true; render();
+      try { S.conta = await api('/me/conta', { method: 'PATCH', body }); Object.assign(S.user, { name: S.conta.perfil.name }); toast('Dados salvos.'); }
+      catch (e) { toast(e.message); }
+      S.contaBusy = false; render();
+    };
+    const sf = $('#senhaForm');
+    if (sf) sf.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const senhaAtual = $('#sAtual').value, novaSenha = $('#sNova').value;
+      if (novaSenha.length < 8) return toast('A nova senha precisa ter ao menos 8 caracteres.');
+      try { await api('/me/conta/senha', { method: 'POST', body: { senhaAtual, novaSenha } }); toast('Senha alterada.'); $('#sAtual').value = ''; $('#sNova').value = ''; }
+      catch (e) { toast(e.message); }
+    };
+  }
+  if (S.view === 'planos') {
+    on('[data-periodo]', 'click', (e) => { S.planoPeriodo = e.currentTarget.dataset.periodo; render(); });
+    on('[data-upgrade]', 'click', (e) => {
+      const p = S.planosData.planos.find((x) => x.id === e.currentTarget.dataset.upgrade);
+      const anual = S.planoPeriodo === 'anual';
+      S.modal = {
+        title: `Plano ${p.nome} · ${anual ? 'anual' : 'mensal'}`,
+        html: `<p style="margin-top:0">Valor: <b>${brl(anual ? p.precoAnual : p.precoMensal)}</b> ${anual ? 'por ano' : 'por mês'}.</p>
+          <div class="banner info">${ic('info', 'sm')}<div>Ao confirmar, nossa equipe recebe o seu pedido e envia as instruções de pagamento para <b>${esc(S.user.email)}</b>. O plano é ativado assim que o pagamento for confirmado.</div></div>
+          <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn btn-ghost" data-mclose2>Voltar</button><button class="btn btn-primary" id="confirmUpgrade" data-plano="${p.id}">${ic('check', 'sm')} Confirmar pedido</button></div>`,
+      };
+      render();
+    });
+  }
+  if (S.view === 'planos' || S.view === 'conta') {
+    on('#confirmUpgrade', 'click', async (e) => {
+      const plano = e.currentTarget.dataset.plano;
+      try {
+        const r = await api('/me/conta/upgrade', { method: 'POST', body: { plano, periodicidade: S.planoPeriodo } });
+        S.conta = r.conta; S.modal = null;
+        toast('Pedido enviado! Você vai receber as instruções de pagamento por e-mail.');
+      } catch (err) { toast(err.message); }
+      render();
+    });
+    on('#cancelPedido', 'click', async () => {
+      try { S.conta = await api('/me/conta/upgrade', { method: 'DELETE' }); toast('Pedido cancelado.'); } catch (err) { toast(err.message); }
+      render();
+    });
+  }
   on('[data-go]', 'click', (e) => go(e.currentTarget.dataset.go));
   on('#openMenu', 'click', () => { S.drawer = true; render(); });
   on('[data-close]', 'click', () => { S.drawer = false; render(); });
-  on('#logout', 'click', async () => { await api('/auth/logout', { method: 'POST' }).catch(() => {}); Object.assign(S, { screen: 'auth', auth: 'entrar', user: null, sets: [], cadernos: [], activeCaderno: null, drawer: false, loaded: false }); render(); });
+  on('[data-logout]', 'click', async () => { await api('/auth/logout', { method: 'POST' }).catch(() => {}); Object.assign(S, { screen: 'auth', auth: 'entrar', user: null, sets: [], cadernos: [], activeCaderno: null, drawer: false, loaded: false }); render(); });
   on('[data-open]', 'click', (e) => { S.active = e.currentTarget.dataset.open; go('simulado'); });
   on('[data-open-caderno]', 'click', (e) => { S.cadernoFeedTab = ''; openCaderno(e.currentTarget.dataset.openCaderno); });
   on('[data-cad-feed-mat]', 'click', (e) => { S.cadernoFeedTab = 'material'; openCaderno(e.currentTarget.dataset.cadFeedMat); });
@@ -2016,6 +2209,30 @@ function bindApp() {
     schedulePoll();
   }
   if (S.view === 'provas' && isAdmin()) {
+    const abrirPedidos = async () => {
+      try {
+        const { pedidos } = await api('/admin/pedidos');
+        const pend = pedidos.filter((p) => p.status === 'pendente');
+        S.modal = {
+          title: `Pedidos de plano (${pend.length} pendente${pend.length === 1 ? '' : 's'})`,
+          html: pedidos.length ? `<p class="hint" style="margin-top:0">Confirme o pagamento antes de aprovar. Aprovar soma 1 mês (ou 1 ano) ao período do aluno.</p>
+            <table class="tbl"><thead><tr><th>Aluno</th><th>Plano</th><th>Valor</th><th>Pedido em</th><th>Situação</th><th></th></tr></thead><tbody>${pedidos.map((p) => `<tr>
+              <td><b>${esc(p.name)}</b><div class="hint">${esc(p.email)}</div></td>
+              <td>${esc(p.planoNome)} <span class="hint">(${esc(p.periodicidade)})</span></td>
+              <td>${brl(p.valor)}</td><td>${new Date(p.created_at).toLocaleString('pt-BR')}</td>
+              <td><span class="badge ${p.status === 'pendente' ? 'accent' : p.status === 'aprovado' ? 'brand' : ''}">${esc(p.status)}</span></td>
+              <td>${p.status === 'pendente' ? `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn btn-primary" style="padding:7px 12px" data-pedido="${p.id}:aprovar">Aprovar</button><button class="btn btn-ghost" style="padding:7px 12px" data-pedido="${p.id}:recusar">Recusar</button></div>` : ''}</td>
+            </tr>`).join('')}</tbody></table>` : '<p class="hint">Nenhum pedido ainda.</p>',
+        };
+        render();
+      } catch (err) { toast(err.message); }
+    };
+    on('#admPedidos', 'click', abrirPedidos);
+    on('[data-pedido]', 'click', async (e) => {
+      const [pid, acao] = e.currentTarget.dataset.pedido.split(':');
+      try { await api(`/admin/pedidos/${pid}/${acao}`, { method: 'POST' }); toast(acao === 'aprovar' ? 'Plano ativado e aluno avisado por e-mail.' : 'Pedido recusado.'); await abrirPedidos(); }
+      catch (err) { toast(err.message); }
+    });
     const abrirDivergencias = async () => {
       try {
         const { divergencias } = await api('/admin/divergencias');
@@ -2231,7 +2448,7 @@ async function enterApp(user) {
     const [b, s] = await Promise.all([api('/bancas'), api('/sets')]);
     Object.assign(S, { bancas: b.bancas, materias: b.materias, niveis: b.niveis, sets: s.sets, loaded: true });
     await Promise.all([refreshStars({ silent: true }), refreshEditais({ silent: true }), refreshCadernos({ silent: true })]);
-    if (['provas', 'contribuir', 'gerar', 'edital'].includes(S.view)) return go(S.view);
+    if (['provas', 'contribuir', 'gerar', 'edital', 'conta', 'planos', 'estrelas'].includes(S.view)) return go(S.view);
   } catch (e) { toast(e.message); }
   render();
 }
