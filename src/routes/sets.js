@@ -55,7 +55,28 @@ export function normalizeQ(q, formato) {
   return out;
 }
 
-const view = (s) => ({ id: s.id, banca: s.banca, materia: s.materia, assunto: s.assunto, nivel: s.nivel, formato: s.formato, arquivo: s.arquivo, editalId: s.edital_id || null, cadernoId: s.caderno_id || null, questoes: s.questoes, respostas: s.respostas, finalizado: s.finalizado, revisao: s.review_stats ? { ...s.review_stats, motivos: undefined } : null, createdAt: s.created_at });
+const view = (s) => ({
+  id: s.id,
+  banca: s.banca,
+  materia: s.materia,
+  assunto: s.assunto,
+  nivel: s.nivel,
+  formato: s.formato,
+  arquivo: s.arquivo,
+  editalId: s.edital_id || null,
+  cadernoId: s.caderno_id || null,
+  questoes: s.questoes,
+  respostas: s.respostas,
+  finalizado: s.finalizado,
+  modoProva: s.modo_prova || false,
+  tempoLimiteMinutos: s.tempo_limite_minutos || null,
+  tempoGastoSegundos: s.tempo_gasto_segundos || 0,
+  duvidas: Array.isArray(s.duvidas) ? s.duvidas : [],
+  estatisticas: s.estatisticas || {},
+  origem: s.origem || 'ia',
+  revisao: s.review_stats ? { ...s.review_stats, motivos: undefined } : null,
+  createdAt: s.created_at,
+});
 
 r.get('/cota', ah(async (req, res) => res.json({ quota: await generationQuota(req.user) })));
 
@@ -184,14 +205,124 @@ r.get('/:id', ah(async (req, res) => {
 }));
 
 r.patch('/:id', ah(async (req, res) => {
-  const b = parseBody(z.object({ respostas: z.record(z.string().regex(/^\d{1,2}$/), z.enum(LET)).optional(), finalizado: z.boolean().optional() }), req.body);
-  const antes = b.respostas ? await one('SELECT respostas, questoes, caderno_id FROM question_sets WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]) : null;
-  const s = await one(`UPDATE question_sets SET respostas=COALESCE($3, respostas), finalizado=COALESCE($4, finalizado), updated_at=now()
-                       WHERE id=$1 AND user_id=$2 RETURNING *`, [req.params.id, req.user.id, b.respostas ? JSON.stringify(b.respostas) : null, b.finalizado ?? null]);
+  const b = parseBody(z.object({
+    respostas: z.record(z.string().regex(/^\d{1,3}$/), z.enum(LET)).optional(),
+    finalizado: z.boolean().optional(),
+    tempoGastoSegundos: z.number().int().min(0).max(86400).optional(),
+    duvidas: z.array(z.number().int().min(0).max(500)).optional(),
+  }), req.body);
+
+  const antes = await one(
+    'SELECT id, respostas, questoes, caderno_id, modo_prova, formato, tempo_limite_minutos, tempo_gasto_segundos, duvidas, estatisticas FROM question_sets WHERE id=$1 AND user_id=$2',
+    [req.params.id, req.user.id]
+  );
+  if (!antes) throw new HttpError(404, 'Simulado não encontrado.');
+
+  let statsObj = antes.estatisticas || {};
+  if (b.finalizado) {
+    const qs = antes.questoes || [];
+    const resp = b.respostas !== undefined ? b.respostas : (antes.respostas || {});
+    let acertos = 0;
+    let erros = 0;
+    let emBranco = 0;
+
+    for (let i = 0; i < qs.length; i++) {
+      const q = qs[i];
+      const r = resp[String(i)];
+      if (!r) {
+        emBranco++;
+      } else if (r === q.gabarito) {
+        acertos++;
+      } else {
+        erros++;
+      }
+    }
+
+    const total = qs.length;
+    const notaLiquida = antes.formato === 'ce' ? acertos - erros : acertos;
+    const notaBruta = total > 0 ? Math.round((acertos / total) * 100) : 0;
+    const aproveitamentoLiquido = (antes.formato === 'ce' && total > 0)
+      ? Math.round((Math.max(0, notaLiquida) / total) * 100)
+      : notaBruta;
+
+    // Desempenho por disciplina do edital
+    const porMateria = {};
+    for (let i = 0; i < qs.length; i++) {
+      const q = qs[i];
+      const mat = q.materia || 'Geral';
+      if (!porMateria[mat]) {
+        porMateria[mat] = { materia: mat, total: 0, respondidas: 0, acertos: 0, erros: 0 };
+      }
+      porMateria[mat].total++;
+      const r = resp[String(i)];
+      if (r) {
+        porMateria[mat].respondidas++;
+        if (r === q.gabarito) porMateria[mat].acertos++;
+        else porMateria[mat].erros++;
+      }
+    }
+
+    const disciplinasStats = Object.values(porMateria).map((m) => ({
+      ...m,
+      taxaAcerto: m.respondidas > 0 ? Math.round((m.acertos / m.respondidas) * 100) : 0,
+      taxaTotal: m.total > 0 ? Math.round((m.acertos / m.total) * 100) : 0,
+    }));
+
+    statsObj = {
+      ...statsObj,
+      resultadoFinal: {
+        total,
+        respondidas: acertos + erros,
+        acertos,
+        erros,
+        emBranco,
+        notaLiquida,
+        notaBruta,
+        aproveitamentoLiquido,
+        tempoGastoSegundos: b.tempoGastoSegundos !== undefined ? b.tempoGastoSegundos : (antes.tempo_gasto_segundos || 0),
+        disciplinas: disciplinasStats,
+        concluidoEm: new Date().toISOString(),
+      },
+    };
+  }
+
+  const s = await one(
+    `UPDATE question_sets SET
+       respostas = COALESCE($3, respostas),
+       finalizado = COALESCE($4, finalizado),
+       tempo_gasto_segundos = COALESCE($5, tempo_gasto_segundos),
+       duvidas = COALESCE($6, duvidas),
+       estatisticas = COALESCE($7, estatisticas),
+       updated_at = now()
+     WHERE id=$1 AND user_id=$2 RETURNING *`,
+    [
+      req.params.id,
+      req.user.id,
+      b.respostas ? JSON.stringify(b.respostas) : null,
+      b.finalizado ?? null,
+      b.tempoGastoSegundos !== undefined ? b.tempoGastoSegundos : null,
+      b.duvidas ? JSON.stringify(b.duvidas) : null,
+      b.finalizado ? JSON.stringify(statsObj) : null,
+    ]
+  );
+
   // Erro/acerto no simulado de um caderno entra no ciclo de revisão espaçada (C4)
-  if (s && antes?.caderno_id) await registrarRespostasNaRevisao({ cadernoId: antes.caderno_id, userId: req.user.id, setId: s.id, questoes: antes.questoes || [], antes: antes.respostas || {}, depois: b.respostas });
-  if (!s) throw new HttpError(404, 'Simulado não encontrado.');
-  if (antes && b.respostas) await registrarAtividade(req.user.id, contarNovas(antes.questoes, antes.respostas, b.respostas)); // meta diária e sequência
+  if (s && antes.caderno_id && b.respostas) {
+    await registrarRespostasNaRevisao({
+      cadernoId: antes.caderno_id,
+      userId: req.user.id,
+      setId: s.id,
+      questoes: antes.questoes || [],
+      antes: antes.respostas || {},
+      depois: b.respostas,
+    });
+  }
+
+  if (b.respostas) {
+    await registrarAtividade(req.user.id, contarNovas(antes.questoes, antes.respostas, b.respostas));
+  }
+
+  s.questoes = await aplicarSituacaoOficial(s.questoes);
   res.json({ set: view(s) });
 }));
 

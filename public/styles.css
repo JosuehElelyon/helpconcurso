@@ -559,3 +559,183 @@ img.avatar{object-fit:cover;display:block;border-radius:50%}
 .hoje-task .ht-main{flex:1;min-width:0}
 .hoje-task .ht-main .hint{display:block;margin-top:1px}
 @media (max-width:700px){.hoje-card{padding:16px}.hoje-meta{min-width:0}.hoje-streak{width:100%;justify-content:space-between}.hd-day i{width:24px;height:24px}}
+
+/* ==========================================================================
+   Modo Prova: Simulado no Formato da Prova Real (F3)
+   ========================================================================== */
+.modo-prova-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--brand);
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.modo-prova-timer-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.modo-prova-timer {
+  font-family: var(--font-mono, monospace);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--brand);
+  background: var(--brand-soft);
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--brand);
+}
+.modo-prova-timer.warn {
+  color: #B45309;
+  background: #FEF3C7;
+  border-color: #F59E0B;
+}
+.modo-prova-timer.danger {
+  color: #B91C1C;
+  background: #FEE2E2;
+  border-color: #EF4444;
+  animation: pulse-danger 1.5s infinite;
+}
+@keyframes pulse-danger {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.modo-prova-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13.5px;
+}
+.modo-prova-nav-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 18px;
+}
+.q-nav-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  position: relative;
+  transition: all .15s;
+}
+.q-nav-btn:hover {
+  border-color: var(--brand);
+  transform: translateY(-1px);
+}
+.q-nav-btn.ans {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.q-nav-btn.duvida {
+  border-color: #F59E0B;
+  background: #FEF3C7;
+  color: #92400E;
+}
+.q-nav-btn.duvida.ans {
+  background: #F59E0B;
+  border-color: #D97706;
+  color: #fff;
+}
+.q-nav-btn.duvida::after {
+  content: '🚩';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  font-size: 8px;
+}
+.q-prova-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.alt.selected-prova {
+  background: var(--brand-soft) !important;
+  border-color: var(--brand) !important;
+  color: var(--brand) !important;
+  font-weight: 700;
+}
+.alt.selected-prova .lt {
+  background: var(--brand) !important;
+  color: #fff !important;
+}
+.prova-resultado-card {
+  padding: 24px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-md);
+}
+.prova-score-main {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.prova-score-badge {
+  padding: 16px 24px;
+  border-radius: 14px;
+  background: var(--brand-soft);
+  border: 2px solid var(--brand);
+  text-align: center;
+}
+.prova-score-badge .score-val {
+  font-size: 38px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--brand);
+}
+.prova-score-badge .score-lbl {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-top: 4px;
+}
+.prova-disc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.prova-disc-item {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+

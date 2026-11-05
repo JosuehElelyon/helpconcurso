@@ -651,3 +651,212 @@ export async function criarSimuladoQuestoesReais({ user, edital, topicoIdOrCode,
   const doTopico = formattedQuestoes.filter((q) => q.topico_edital).length;
   return { created: true, set: setRow, count: formattedQuestoes.length, doTopico, daDisciplina: formattedQuestoes.length - doTopico, topico, disciplina, cadernoId: targetCadernoId };
 }
+
+/**
+ * Cria um simulado completo no formato da prova real (F3):
+ * - Distribui as questões entre as disciplinas do edital verticalizado conforme os pesos
+ * - Prioriza questões reais da banca de provas anteriores (custo US$ 0 de IA)
+ * - Define formato da banca (ex: CEBRASPE = C/E, FGV/FCC = Múltipla Escolha)
+ * - Configura modo_prova = true com tempo limite (cronômetro) e rastreamento de dúvidas
+ */
+export async function criarSimuladoProvaReal({
+  user,
+  edital,
+  qtdTotal = 30,
+  tempoMinutos = 120,
+  cadernoId = null,
+}) {
+  let targetCadernoId = null;
+  if (cadernoId) {
+    const cad = UUID_RE.test(String(cadernoId)) ? await one('SELECT id FROM cadernos WHERE id=$1 AND user_id=$2', [cadernoId, user.id]) : null;
+    if (!cad) throw new HttpError(404, 'Caderno não encontrado.');
+    targetCadernoId = cad.id;
+  }
+  if (!targetCadernoId) {
+    const cad = await one('SELECT id FROM cadernos WHERE user_id=$1 AND edital_id=$2 ORDER BY updated_at DESC LIMIT 1', [user.id, edital.id]);
+    if (cad) targetCadernoId = cad.id;
+  }
+
+  let formato = BANCA[edital.banca]?.formato || null;
+  if (!formato) {
+    formato = (edital.banca && edital.banca.toLowerCase().includes('cebraspe')) ? 'ce' : 'me';
+  }
+
+  const vert = Array.isArray(edital.verticalizado) ? edital.verticalizado : [];
+  if (!vert.length) {
+    throw new HttpError(422, 'O edital não possui disciplinas verticalizadas para montar o simulado.');
+  }
+
+  const totalPeso = vert.reduce((acc, d) => acc + Math.max(1, Number(d.peso) || 1), 0);
+  const metasPorDisciplina = vert.map((d) => {
+    const p = Math.max(1, Number(d.peso) || 1);
+    const alvo = Math.max(1, Math.round((p / totalPeso) * qtdTotal));
+    return { disciplina: d, peso: p, alvo };
+  });
+
+  let somaAlvos = metasPorDisciplina.reduce((a, b) => a + b.alvo, 0);
+  while (somaAlvos > qtdTotal) {
+    const maior = metasPorDisciplina.filter((m) => m.alvo > 1).sort((a, b) => b.alvo - a.alvo)[0];
+    if (!maior) break;
+    maior.alvo--;
+    somaAlvos--;
+  }
+  while (somaAlvos < qtdTotal) {
+    const maiorPeso = [...metasPorDisciplina].sort((a, b) => b.peso - a.peso)[0];
+    if (!maiorPeso) break;
+    maiorPeso.alvo++;
+    somaAlvos++;
+  }
+
+  const selectedQuestoes = [];
+  const questoesUsadasIds = new Set();
+  const resumoDisciplinas = [];
+
+  for (const meta of metasPorDisciplina) {
+    const d = meta.disciplina;
+    const pool = await many(
+      `SELECT q.id, q.numero, q.materia, q.topico, q.topico_id, q.comando, q.pegadinha_tipo,
+              q.dispositivos, q.habilidade, q.enunciado, q.alternativas, q.gabarito,
+              p.id AS prova_id, p.titulo AS prova_titulo, p.file_name, p.ano AS prova_ano, p.banca,
+              (p.edital_id = $1 OR p.id = $2) AS vinculada
+       FROM prova_questoes q
+       JOIN provas p ON p.id = q.prova_id
+       WHERE p.status = 'READY' AND ${questaoValida('q')}
+         AND q.gabarito IS NOT NULL AND length(trim(q.gabarito)) > 0
+         AND (($3::text IS NOT NULL AND q.banca = $3) OR p.edital_id = $1 OR p.id = $2)
+         AND (q.materia ILIKE $4 OR q.topico ILIKE $4 OR q.materia ILIKE $5)
+       ORDER BY q.id
+       LIMIT 300`,
+      [edital.id, edital.prova_id || null, edital.banca || null, `%${d.materia}%`, `%${d.materia.split(' ')[0]}%`]
+    );
+
+    const validas = pool
+      .map((q) => ({ ...q, formato: formatoDaQuestao(q) }))
+      .filter((q) => q.formato === formato && !questoesUsadasIds.has(q.id));
+
+    const pontuadas = validas.map((q) => {
+      const qText = norm(`${q.topico || ''} ${q.enunciado || ''}`);
+      let bestTopico = null;
+      let bestHits = 0;
+      for (const t of (d.topicos || [])) {
+        const kw = norm(t.nome).split(' ').filter((w) => w.length >= 4 && !STOP_WORDS.has(w));
+        const hits = kw.filter((w) => qText.includes(w)).length;
+        if (hits > bestHits) {
+          bestHits = hits;
+          bestTopico = t;
+        }
+      }
+      return {
+        ...q,
+        topicoEdital: bestTopico ? `${bestTopico.codigo ? bestTopico.codigo + ' ' : ''}${bestTopico.nome}` : '',
+        topicoNome: bestTopico ? bestTopico.nome : (q.topico || d.materia),
+        _score: (bestHits > 0 ? 50 : 0) + (q.vinculada ? 20 : 0),
+      };
+    });
+
+    pontuadas.sort((a, b) => b._score - a._score || String(a.id).localeCompare(String(b.id)));
+
+    const escolhidas = pontuadas.slice(0, meta.alvo);
+    for (const q of escolhidas) {
+      questoesUsadasIds.add(q.id);
+      selectedQuestoes.push({
+        ...q,
+        disciplinaMateria: d.materia,
+        disciplinaId: d.id,
+      });
+    }
+
+    resumoDisciplinas.push({
+      disciplinaId: d.id,
+      materia: d.materia,
+      peso: meta.peso,
+      alvo: meta.alvo,
+      obtidas: escolhidas.length,
+    });
+  }
+
+  if (!selectedQuestoes.length) {
+    return {
+      created: false,
+      message: 'Nenhuma questão real da banca encontrada para as matérias deste edital no momento.',
+      resumoDisciplinas,
+    };
+  }
+
+  const formattedQuestoes = selectedQuestoes.map((q, idx) => ({
+    id: q.id,
+    numero: idx + 1,
+    provaId: q.prova_id,
+    provaTitulo: q.prova_titulo || q.file_name || 'Prova anterior',
+    provaAno: q.prova_ano || null,
+    banca: q.banca,
+    materia: q.disciplinaMateria,
+    tema: q.topicoNome || q.disciplinaMateria,
+    topico_edital: q.topicoEdital || '',
+    enunciado: q.enunciado,
+    alternativas: formato === 'ce' ? [] : (Array.isArray(q.alternativas) ? q.alternativas : []),
+    gabarito: String(q.gabarito).trim().toUpperCase(),
+    comentario: `Questão real de ${q.prova_titulo || 'prova anterior'}${q.prova_ano ? ' (' + q.prova_ano + ')' : ''}.${q.comando && COMANDOS[q.comando] ? ' Comando: ' + COMANDOS[q.comando] + '.' : ''}`,
+    nivel: 'Prova real',
+    pegadinha: q.pegadinha_tipo && PEGADINHAS[q.pegadinha_tipo] ? PEGADINHAS[q.pegadinha_tipo] : '',
+    dispositivos: Array.isArray(q.dispositivos) ? q.dispositivos : [],
+    verificada: true,
+    ancorada: true,
+  }));
+
+  const estatisticasIniciais = {
+    distribuicaoDisciplinas: resumoDisciplinas.map((r) => ({
+      disciplinaId: r.disciplinaId,
+      materia: r.materia,
+      peso: r.peso,
+      totalQuestoes: formattedQuestoes.filter((q) => q.materia === r.materia).length,
+      respondidas: 0,
+      acertos: 0,
+      erros: 0,
+    })),
+    tempoLimiteMinutos: tempoMinutos > 0 ? Number(tempoMinutos) : null,
+    tempoGastoSegundos: 0,
+  };
+
+  const setRow = await one(
+    `INSERT INTO question_sets (
+       user_id, caderno_id, edital_id, banca, materia, assunto, nivel, formato,
+       arquivo, questoes, respostas, finalizado, model, origem,
+       modo_prova, tempo_limite_minutos, tempo_gasto_segundos, duvidas, estatisticas
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+     RETURNING *`,
+    [
+      user.id,
+      targetCadernoId,
+      edital.id,
+      edital.banca || 'cebraspe',
+      edital.titulo || 'Simulado Geral',
+      `${edital.orgao || ''} ${edital.cargo || ''} · Simulado Prova Real`.trim(),
+      'Prova real',
+      formato,
+      `Simulado Prova Real · ${edital.titulo || 'Edital'}`,
+      JSON.stringify(formattedQuestoes),
+      JSON.stringify({}),
+      false,
+      'prova_real',
+      'prova_real',
+      true,
+      tempoMinutos > 0 ? Number(tempoMinutos) : null,
+      0,
+      JSON.stringify([]),
+      JSON.stringify(estatisticasIniciais),
+    ]
+  );
+
+  if (targetCadernoId) await query('UPDATE cadernos SET updated_at=now() WHERE id=$1', [targetCadernoId]);
+
+  return {
+    created: true,
+    set: setRow,
+    count: formattedQuestoes.length,
+    formato,
+    tempoMinutos: tempoMinutos > 0 ? Number(tempoMinutos) : null,
+    distribuicao: resumoDisciplinas,
+    cadernoId: targetCadernoId,
+  };
+}

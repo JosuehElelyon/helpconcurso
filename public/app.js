@@ -766,30 +766,208 @@ async function generate() {
   finally { w.generating = false; }
 }
 
+function formatTempo(segundos) {
+  const s = Math.max(0, Math.floor(segundos || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
+let modoProvaTimer = null;
+function initModoProvaTimer(s) {
+  if (modoProvaTimer) clearInterval(modoProvaTimer);
+  if (!s || !s.modoProva || s.finalizado || !s.tempoLimiteMinutos) return;
+  modoProvaTimer = setInterval(() => {
+    if (S.view !== 'simulado' || S.active !== s.id || s.finalizado) {
+      clearInterval(modoProvaTimer);
+      return;
+    }
+    s.tempoGastoSegundos = (s.tempoGastoSegundos || 0) + 1;
+    const totalSeg = s.tempoLimiteMinutos * 60;
+    const restante = Math.max(0, totalSeg - s.tempoGastoSegundos);
+    const el = $('#modoProvaCountdown');
+    if (el) {
+      el.textContent = formatTempo(restante);
+      el.className = 'modo-prova-timer' + (restante <= 300 ? ' danger' : restante <= 900 ? ' warn' : '');
+    }
+    if (s.tempoGastoSegundos % 20 === 0) {
+      saveSetSoon(s, { tempoGastoSegundos: s.tempoGastoSegundos });
+    }
+    if (restante <= 0) {
+      clearInterval(modoProvaTimer);
+      toast('Tempo limite atingido! Entregando a sua prova...');
+      s.finalizado = true;
+      api(`/sets/${s.id}`, { method: 'PATCH', body: { finalizado: true, respostas: s.respostas || {}, tempoGastoSegundos: s.tempoGastoSegundos } })
+        .then((r) => { Object.assign(s, r.set); render(); })
+        .catch(() => {});
+    }
+  }, 1000);
+}
+
 // ---------- Resolver simulado ----------
 function viewPratica() {
   const s = S.sets.find((x) => x.id === S.active);
   if (!s) return `<div class="empty">Simulado não encontrado. <button class="btn btn-quiet" data-go="questoes">Voltar</button></div>`;
-  const b = BANCA()[s.banca], r = s.respostas || {}, n = s.questoes.length;
+  const b = BANCA()[s.banca] || { nome: s.banca || 'Banca', cor: 'var(--brand)', formatoLabel: s.formato === 'ce' ? 'Certo / Errado' : 'Múltipla Escolha' };
+  const r = s.respostas || {}, n = s.questoes.length;
   const { resp, ac, er, anuladas } = placar(s), ce = s.formato === 'ce';
+
+  if (s.modoProva && !s.finalizado) {
+    setTimeout(() => initModoProvaTimer(s), 50);
+    const duvidas = s.duvidas || [];
+    const restante = s.tempoLimiteMinutos ? Math.max(0, s.tempoLimiteMinutos * 60 - (s.tempoGastoSegundos || 0)) : null;
+
+    return `<div class="row" style="gap:8px;margin:-6px 0 10px -10px">
+      <button class="btn btn-quiet" data-go="questoes">${ic('arrowL', 'sm')} Sair da prova</button>
+      ${s.cadernoId ? `<button class="btn btn-quiet" data-open-caderno="${s.cadernoId}">${ic('book', 'sm')} Caderno</button>` : ''}
+    </div>
+    <div class="modo-prova-header">
+      <div>
+        <div class="row" style="gap:8px;margin-bottom:4px">
+          <span class="badge brand" style="font-weight:800">MODO PROVA OFICIAL</span>
+          <span class="badge" style="background:${b.cor};color:#fff">${b.nome}</span>
+          <span class="badge">${b.formatoLabel}</span>
+        </div>
+        <h2 style="margin:0;font-size:18px">${esc(s.materia)}</h2>
+        <div class="hint">${esc(s.assunto || 'Simulado completo no padrão da banca')}</div>
+      </div>
+      <div class="modo-prova-timer-box">
+        ${restante !== null ? `
+          <div style="text-align:right">
+            <div class="hint" style="font-size:11px;text-transform:uppercase;font-weight:700">Tempo restante</div>
+            <div class="modo-prova-timer ${restante <= 300 ? 'danger' : restante <= 900 ? 'warn' : ''}" id="modoProvaCountdown">${formatTempo(restante)}</div>
+          </div>
+        ` : ''}
+        <button class="btn btn-ghost" id="toggleNavGrid" style="padding:8px 12px">${ic('grid', 'sm')} Mapa (${resp}/${n})</button>
+        <button class="btn btn-primary" id="finishProva">${ic('check', 'sm')} Entregar prova</button>
+      </div>
+    </div>
+
+    <div class="card card-pad" id="navGridCard" style="${S.navGridOpen ? '' : 'display:none;'}margin-bottom:18px">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <div style="font-weight:800;font-size:14px">Mapa de Questões / Cartão-Resposta</div>
+        <div class="edital-legend" style="font-size:12px">
+          <span><i style="background:var(--brand)"></i>Respondida (${resp})</span>
+          <span><i style="background:#F59E0B"></i>Dúvida 🚩 (${duvidas.length})</span>
+          <span><i style="background:var(--line-2)"></i>Em branco (${n - resp})</span>
+        </div>
+      </div>
+      <div class="modo-prova-nav-grid">
+        ${s.questoes.map((q, idx) => {
+          const isAns = r[idx] != null;
+          const isDuv = duvidas.includes(idx);
+          return `<button type="button" class="q-nav-btn ${isAns ? 'ans' : ''} ${isDuv ? 'duvida' : ''}" data-goto-q="${idx}" title="Questão ${idx + 1}">${idx + 1}</button>`;
+        }).join('')}
+      </div>
+    </div>
+
+    ${ce ? `<div class="banner info">${ic('info', 'sm')}<div><b>Regra CEBRASPE ativa:</b> Cada item errado desconta 1 acerto. Deixar em branco (sem marcar) não desconta nem pontua. Para deixar em branco, basta clicar na alternativa marcada para desmarcar.</div></div>` : ''}
+
+    ${s.questoes.map((q, i) => viewQModoProva(q, i, r[i], ce, duvidas.includes(i))).join('')}
+
+    <div class="row no-print" style="justify-content:space-between;margin-top:24px">
+      <div class="row"><button class="btn btn-ghost" id="copySet">${ic('copy', 'sm')} Copiar questões</button></div>
+      <button class="btn btn-primary btn-lg" id="finishProva">${ic('check', 'sm')} Entregar prova oficial</button>
+    </div>`;
+  }
+
+  // Se modoProva e finalizado:
+  let resultadoHeader = '';
+  if (s.modoProva && s.finalizado) {
+    const rf = s.estatisticas?.resultadoFinal;
+    const tempoGasto = s.tempoGastoSegundos || rf?.tempoGastoSegundos || 0;
+    const disciplinas = rf?.disciplinas || [];
+
+    resultadoHeader = `<div class="prova-resultado-card">
+      <div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+        <div>
+          <span class="badge brand" style="font-weight:800">RESULTADO OFICIAL DO SIMULADO</span>
+          <h2 style="margin:4px 0;font-size:22px">${esc(s.materia)}</h2>
+          <div class="hint">Banca ${b.nome} · Formato ${b.formatoLabel}</div>
+        </div>
+        ${s.cadernoId ? `<button class="btn btn-primary" data-open-caderno="${s.cadernoId}">${ic('book', 'sm')} Revisar erros no Caderno</button>` : ''}
+      </div>
+      <div class="prova-score-main">
+        <div class="prova-score-badge">
+          <div class="score-val" style="color:${ce ? (ac - er >= 0 ? 'var(--brand)' : 'var(--bad)') : 'var(--brand)'}">
+            ${ce ? `${ac - er > 0 ? '+' : ''}${ac - er}` : `${Math.round((ac / Math.max(1, n)) * 100)}%`}
+          </div>
+          <div class="score-lbl">${ce ? 'Pontos Líquidos' : `${ac} de ${n} acertos`}</div>
+        </div>
+        <div style="flex:1;min-width:220px">
+          <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px">
+            <div class="card stat"><div class="v" style="color:var(--ok)">+${ac}</div><div class="l">Acertos</div></div>
+            <div class="card stat"><div class="v" style="color:var(--bad)">-${er}</div><div class="l">Erros</div></div>
+            <div class="card stat"><div class="v">${n - resp}</div><div class="l">Em Branco (0)</div></div>
+            <div class="card stat"><div class="v">${formatTempo(tempoGasto)}</div><div class="l">Tempo Gasto</div></div>
+          </div>
+        </div>
+      </div>
+      ${disciplinas.length ? `
+        <div style="font-weight:800;font-size:14px;margin-bottom:8px">Desempenho por Disciplina do Edital</div>
+        <div class="prova-disc-grid">
+          ${disciplinas.map((d) => `
+            <div class="prova-disc-item">
+              <div class="row" style="justify-content:space-between;margin-bottom:4px;font-size:13px">
+                <b>${esc(d.materia)}</b>
+                <span>${d.acertos}/${d.total} (${d.taxaAcerto ?? Math.round((d.acertos / Math.max(1, d.total)) * 100)}%)</span>
+              </div>
+              <div class="edital-track"><i style="width:${Math.round((d.acertos / Math.max(1, d.total)) * 100)}%;background:${(d.acertos / Math.max(1, d.total)) >= 0.7 ? 'var(--ok)' : 'var(--accent)'}"></i></div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>`;
+  }
+
   return `<div class="row" style="gap:8px;margin:-6px 0 10px -10px">
     <button class="btn btn-quiet" data-go="questoes">${ic('arrowL', 'sm')} Cadernos e simulados</button>
     ${s.cadernoId ? `<button class="btn btn-quiet" data-open-caderno="${s.cadernoId}">${ic('book', 'sm')} Abrir Caderno de Questões</button>` : ''}
   </div>
+  ${resultadoHeader}
+  ${!resultadoHeader ? `
   <div class="set-head">
     <div><div class="row" style="margin-bottom:6px"><span class="badge" style="background:${b.cor};color:#fff">${b.nome}</span><span class="badge">${esc(s.nivel)}</span><span class="badge">${b.formatoLabel}</span></div>
       <h1 class="page-title">${esc(s.materia)}${s.assunto ? ` <span style="color:var(--muted);font-weight:700">· ${esc(s.assunto)}</span>` : ''}</h1>
       <div class="hint">${n} questões · gerado de ${esc(s.arquivo || 'texto colado')} em ${fmtDate(s.createdAt)}</div>
       ${s.revisao ? `<div class="hint" style="margin-top:4px">${s.revisao.revisor === 'ok' ? `${ic('check', 'sm')} Revisão automática: ${s.revisao.aprovadas} aprovada(s)${s.revisao.descartadas ? `, ${s.revisao.descartadas} descartada(s) e ${s.revisao.refeitas} refeita(s)` : ''}` : s.revisao.revisor === 'indisponivel' ? '⚠ O revisor automático estava indisponível: confira as questões com atenção' : ''}</div>` : ''}</div>
     <div class="score-box"><div><b>${resp}/${n - anuladas}</b><span>Respondidas</span></div><div><b style="color:var(--ok)">${ac}</b><span>Acertos</span></div><div><b style="color:var(--bad)">${er}</b><span>Erros</span></div>${ce ? `<div><b>${ac - er}</b><span>Nota líquida</span></div>` : ''}</div>
-  </div>
-  ${ce ? `<div class="banner info">${ic('info', 'sm')}<div>No estilo CEBRASPE, cada item errado anula um certo. Na dúvida, você pode deixar o item em branco.</div></div>` : ''}
-  <div class="banner info">${ic('info', 'sm')}<div>As questões seguem o conteúdo do <b>seu material</b>. Se ele estiver desatualizado (ex.: lei alterada), a questão também estará. Achou um erro? Use <b>Reportar erro</b> — se a IA confirmar, você ganha estrelas.</div></div>
+  </div>` : ''}
+  ${ce && !resultadoHeader ? `<div class="banner info">${ic('info', 'sm')}<div>No estilo CEBRASPE, cada item errado anula um certo. Na dúvida, você pode deixar o item em branco.</div></div>` : ''}
+  ${!s.modoProva ? `<div class="banner info">${ic('info', 'sm')}<div>As questões seguem o conteúdo do <b>seu material</b>. Se ele estiver desatualizado (ex.: lei alterada), a questão também estará. Achou um erro? Use <b>Reportar erro</b> — se a IA confirmar, você ganha estrelas.</div></div>` : ''}
   ${s.questoes.map((q, i) => viewQ(q, i, r[i], ce, (S.feedback[s.id] || {})[i])).join('')}
   <div class="row no-print" style="justify-content:space-between;margin-top:20px">
     <div class="row"><button class="btn btn-ghost" id="copySet">${ic('copy', 'sm')} Copiar questões</button><button class="btn btn-ghost" id="printSet">${ic('download', 'sm')} Imprimir / PDF</button><button class="btn btn-danger" id="delSet">${ic('trash', 'sm')} Excluir</button></div>
     <div class="row">${resp ? `<button class="btn btn-ghost" id="resetSet">${ic('refresh', 'sm')} Refazer</button>` : ''}<button class="btn btn-primary" id="finish">${s.finalizado ? 'Ver resultado' : 'Finalizar simulado'}</button></div>
   </div>`;
+}
+
+function viewQModoProva(q, i, ans, ce, isDuvida) {
+  const opts = ce
+    ? `<div class="ce">${[['C', 'Certo'], ['E', 'Errado']].map(([L, t]) => `<button type="button" class="alt ${ans === L ? 'selected-prova' : ''}" data-ans="${i}:${L}"><span class="tx">${t}</span></button>`).join('')}</div>`
+    : `<div class="alts">${q.alternativas.map((a, j) => `<button type="button" class="alt ${ans === LETRAS[j] ? 'selected-prova' : ''}" data-ans="${i}:${LETRAS[j]}"><span class="lt">${LETRAS[j]}</span><span class="tx">${esc(a)}</span></button>`).join('')}</div>`;
+
+  return `<article class="card q" id="q${i}">
+    <div class="q-top">
+      <div class="row" style="gap:6px;flex-wrap:wrap">
+        <span class="q-num">${ce ? 'Item' : 'Questão'} ${i + 1}</span>
+        ${q.materia ? `<span class="badge" style="background:var(--brand-soft);color:var(--brand);font-weight:700">${esc(q.materia)}</span>` : ''}
+        ${q.tema && q.tema !== q.materia ? `<span class="badge">${esc(q.tema)}</span>` : ''}
+        ${q.topico_edital ? `<span class="badge edital-tag">${ic('target', 'sm')} ${esc(q.topico_edital)}</span>` : ''}
+      </div>
+      <button type="button" class="btn btn-quiet btn-duvida ${isDuvida ? 'active' : ''}" data-toggle-duvida="${i}">
+        ${isDuvida ? '🚩 Marcada como dúvida' : '⚐ Marcar dúvida'}
+      </button>
+    </div>
+    <p class="q-text">${esc(q.enunciado)}</p>
+    ${opts}
+    <div class="q-prova-actions">
+      <span class="hint">${ans ? `Marcada: <b>${ans === 'C' ? 'Certo' : ans === 'E' && ce ? 'Errado' : ans}</b>` : 'Não respondida'}</span>
+      ${ce && ans ? `<button type="button" class="btn btn-quiet" data-clear-ans="${i}" style="font-size:12px;padding:4px 8px">Deixar em branco</button>` : ''}
+    </div>
+  </article>`;
 }
 function viewQ(q, i, ans, ce, fb) {
   const answered = ans != null, ok = ans === q.gabarito;
@@ -1656,7 +1834,8 @@ function viewEdital() {
       <h1 class="page-title">${esc(ed.titulo)}</h1>
       <p class="page-sub" style="margin-bottom:0">${rs.totalDisciplinas} disciplina(s) · ${rs.totalTopicos} tópicos mapeados pela IA · ${provasVinc.length} prova(s) e ${matVinc.length} material(is) vinculado(s)</p>
     </div>
-    <div class="row">
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" id="btnSimuladoProvaReal" style="display:inline-flex;align-items:center;gap:6px">${ic('timer', 'sm')} <b>Simulado Prova Real</b></button>
       ${list.length > 1 ? `<select class="select" id="edSwitch" style="width:auto;min-width:210px">${list.map((x) => `<option value="${x.id}" ${x.id === ed.id ? 'selected' : ''}>${esc(x.titulo)}</option>`).join('')}</select>` : ''}
       <button class="btn btn-ghost" id="edNewBtn">${ic('upload', 'sm')} Novo edital</button>
       <button class="btn btn-danger" id="edDelBtn" title="Remover edital">${ic('trash', 'sm')}</button>
@@ -2084,7 +2263,68 @@ function bindApp() {
       } catch (err) { toast(err.message); e.currentTarget.disabled = false; return; }
       const y = window.scrollY; render(); window.scrollTo({ top: y });
     });
-    on('[data-ans]', 'click', (e) => { const [i, L] = e.currentTarget.dataset.ans.split(':'); s.respostas = { ...(s.respostas || {}), [i]: L }; const y = window.scrollY; render(); window.scrollTo({ top: y }); saveSetSoon(s, { respostas: s.respostas }); });
+    on('[data-ans]', 'click', (e) => {
+      const [i, L] = e.currentTarget.dataset.ans.split(':');
+      if (s.modoProva && !s.finalizado && s.formato === 'ce' && s.respostas?.[i] === L) {
+        delete s.respostas[i];
+      } else {
+        s.respostas = { ...(s.respostas || {}), [i]: L };
+      }
+      const y = window.scrollY; render(); window.scrollTo({ top: y });
+      saveSetSoon(s, { respostas: s.respostas, tempoGastoSegundos: s.tempoGastoSegundos });
+    });
+    on('[data-clear-ans]', 'click', (e) => {
+      const i = e.currentTarget.dataset.clearAns;
+      if (s.respostas) delete s.respostas[i];
+      const y = window.scrollY; render(); window.scrollTo({ top: y });
+      saveSetSoon(s, { respostas: s.respostas, tempoGastoSegundos: s.tempoGastoSegundos });
+    });
+    on('[data-toggle-duvida]', 'click', (e) => {
+      const idx = Number(e.currentTarget.dataset.toggleDuvida);
+      const duv = new Set(s.duvidas || []);
+      if (duv.has(idx)) duv.delete(idx);
+      else duv.add(idx);
+      s.duvidas = Array.from(duv);
+      const y = window.scrollY; render(); window.scrollTo({ top: y });
+      saveSetSoon(s, { duvidas: s.duvidas, tempoGastoSegundos: s.tempoGastoSegundos });
+    });
+    on('#toggleNavGrid', 'click', () => {
+      S.navGridOpen = !S.navGridOpen;
+      const card = $('#navGridCard');
+      if (card) card.style.display = S.navGridOpen ? 'block' : 'none';
+    });
+    on('[data-goto-q]', 'click', (e) => {
+      const idx = e.currentTarget.dataset.gotoQ;
+      const el = $(`#q${idx}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    on('#finishProva', 'click', () => {
+      const { n, resp } = placar(s);
+      const duvCount = (s.duvidas || []).length;
+      const ce = s.formato === 'ce';
+      const msg = `Você respondeu ${resp} de ${n} questões.${duvCount ? ` Restam ${duvCount} marcada(s) como dúvida.` : ''}${ce ? ' No estilo CEBRASPE, cada erro desconta 1 acerto. Deixar em branco não desconta nem pontua.' : ''} Deseja entregar sua prova agora?`;
+      confirmBox('Entregar Prova Real?', msg, 'Entregar agora', false, async () => {
+        s.finalizado = true;
+        if (modoProvaTimer) clearInterval(modoProvaTimer);
+        try {
+          const r = await api(`/sets/${s.id}`, {
+            method: 'PATCH',
+            body: {
+              respostas: s.respostas || {},
+              finalizado: true,
+              tempoGastoSegundos: s.tempoGastoSegundos || 0,
+              duvidas: s.duvidas || [],
+            },
+          });
+          Object.assign(s, r.set);
+          render();
+          window.scrollTo({ top: 0 });
+          toast('Prova entregue com sucesso! Confira seu resultado oficial.');
+        } catch (err) {
+          toast(err.message || 'Erro ao finalizar a prova.');
+        }
+      });
+    });
     on('#copySet', 'click', async () => { try { await navigator.clipboard.writeText(setText(s)); toast('Questões copiadas com o gabarito'); } catch { toast('Não foi possível copiar'); } });
     on('#printSet', 'click', () => window.print());
     on('#delSet', 'click', () => confirmBox('Excluir simulado?', 'As questões deste simulado serão removidas.', 'Excluir', true, async () => { await api(`/sets/${s.id}`, { method: 'DELETE' }).catch(() => {}); S.sets = S.sets.filter((x) => x.id !== s.id); go('questoes'); toast('Simulado excluído'); }));
@@ -2153,6 +2393,71 @@ function bindApp() {
         await api(`/editais/${ed.id}`, { method: 'DELETE' }).catch(() => {});
         await refreshEditais();
         toast('Edital removido');
+      });
+    });
+    on('#btnSimuladoProvaReal', 'click', () => {
+      const ed = S.activeEdital;
+      if (!ed) return;
+      const vert = ed.disciplinas || ed.verticalizado || [];
+      modal('Simulado no Formato da Prova Real', `
+        <div style="margin-bottom:14px">
+          <p style="margin:0 0 12px;font-size:14px">Simule as condições reais do seu concurso com questões oficiais da banca distribuídas conforme o peso das disciplinas do edital.</p>
+          <div class="field" style="margin-bottom:12px">
+            <label for="prQtdTotal">Quantidade total de questões</label>
+            <select class="select" id="prQtdTotal">
+              <option value="20">20 questões (Simulado rápido)</option>
+              <option value="30" selected>30 questões (Padrão)</option>
+              <option value="50">50 questões (Simulado intermediário)</option>
+              <option value="70">70 questões (Simulado extenso)</option>
+              <option value="100">100 questões (Prova completa)</option>
+              <option value="120">120 questões (Padrão CEBRASPE)</option>
+            </select>
+          </div>
+          <div class="field" style="margin-bottom:12px">
+            <label for="prTempoMin">Tempo de prova (Cronômetro regressivo)</label>
+            <select class="select" id="prTempoMin">
+              <option value="60">1 hora (60 minutos)</option>
+              <option value="90">1 hora e 30 minutos (90 minutos)</option>
+              <option value="120" selected>2 horas (120 minutos)</option>
+              <option value="180">3 horas (180 minutos)</option>
+              <option value="210">3 horas e 30 minutos (210 minutos)</option>
+              <option value="240">4 horas (240 minutos)</option>
+              <option value="0">Sem limite de tempo (Livre)</option>
+            </select>
+          </div>
+          <div class="field" style="margin-bottom:6px">
+            <label>Disciplinas verticalizadas do edital</label>
+            <div style="max-height:120px;overflow-y:auto;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:13px">
+              ${vert.map((d) => `<div>• <b>${esc(d.materia)}</b> <span class="hint">(peso ${Number(d.peso) || 1})</span></div>`).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="row" style="justify-content:flex-end;gap:8px">
+          <button type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+          <button type="button" class="btn btn-primary" id="btnIniciarProvaReal">${ic('timer', 'sm')} Iniciar Prova Real</button>
+        </div>
+      `);
+
+      on('#btnIniciarProvaReal', 'click', async (e) => {
+        e.currentTarget.disabled = true;
+        e.currentTarget.innerHTML = '<span class="spinner sm"></span> Montando prova...';
+        try {
+          const qtdTotal = Number(v('#prQtdTotal')) || 30;
+          const tempoMinutos = Number(v('#prTempoMin')) || 120;
+          const res = await api(`/editais/${ed.id}/simulado-prova-real`, {
+            method: 'POST',
+            body: { qtdTotal, tempoMinutos },
+          });
+          closeModal();
+          S.sets.unshift(res.set);
+          S.active = res.set.id;
+          go('simulado');
+          toast(`Simulado Prova Real iniciado (${res.count} questões). Boa prova!`);
+        } catch (err) {
+          toast(err.message || 'Não foi possível gerar a prova real.');
+          e.currentTarget.disabled = false;
+          e.currentTarget.textContent = 'Iniciar Prova Real';
+        }
       });
     });
   }

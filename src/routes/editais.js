@@ -8,7 +8,7 @@ import { deleteFile } from '../lib/storage.js';
 import { linkOficialDeclarado } from '../lib/bancas.js';
 import { baixarDaFonteOficial } from '../lib/fonte-oficial.js';
 import { assertCanUpload } from '../services/quota.js';
-import { createEditalForUser, buildEditalDashboard, getQuestoesReaisDoTopico, criarSimuladoQuestoesReais } from '../services/edital.js';
+import { createEditalForUser, buildEditalDashboard, getQuestoesReaisDoTopico, criarSimuladoQuestoesReais, criarSimuladoProvaReal } from '../services/edital.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -118,6 +118,26 @@ r.post('/:id/topicos/:topicoId/praticar-reais', ah(async (req, res) => {
   });
   if (!out.created) {
     throw new HttpError(404, out.message || 'Nenhuma questão encontrada para este tópico.');
+  }
+  res.status(201).json(out);
+}));
+
+r.post('/:id/simulado-prova-real', ah(async (req, res) => {
+  const e = await one('SELECT * FROM editais WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
+  if (!e) throw new HttpError(404, 'Edital não encontrado.');
+  const qtdTotal = Math.min(120, Math.max(5, Number(req.body?.qtdTotal) || 30));
+  const tempoMinutos = req.body?.tempoMinutos !== undefined && req.body?.tempoMinutos !== null
+    ? Math.max(0, Math.min(360, Number(req.body.tempoMinutos) || 0))
+    : 120;
+  const out = await criarSimuladoProvaReal({
+    user: req.user,
+    edital: e,
+    qtdTotal,
+    tempoMinutos,
+    cadernoId: req.body?.cadernoId || null,
+  });
+  if (!out.created) {
+    throw new HttpError(404, out.message || 'Nenhuma questão encontrada para montar a prova real.');
   }
   res.status(201).json(out);
 }));

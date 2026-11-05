@@ -396,4 +396,27 @@ chamadas/429 por provedor; cache de prompt medido. Decisões de modelo e prompt 
   Base: tabela `atividade_diaria` (migração 014, dia de Brasília), alimentada ao responder no simulado e no caderno
   (`src/services/atividade.js`, `GET /api/me/hoje`). A sequência começa a contar a partir de agora (não há histórico com data).
 - **Amanda** (conta real) no plano Aprovação até 01/02/2027.
-- Próximo: simulado no formato da prova real (F3) e lembrete diário por e-mail (N2).
+
+## Sprint 5 (parte 2) — Simulado no Formato da Prova Real (F3) — 05/11/2026
+- **Migração 015 (`015_simulado_prova_real.sql`):**
+  - Colunas adicionadas em `question_sets`: `modo_prova` (boolean), `tempo_limite_minutos` (int), `tempo_gasto_segundos` (int), `duvidas` (jsonb), `estatisticas` (jsonb).
+- **Backend (`src/services/edital.js` e `src/routes/editais.js`):**
+  - Endpoint `POST /api/editais/:id/simulado-prova-real`: monta o simulado ponderado pelas disciplinas do edital verticalizado (`d.peso`).
+  - Prioriza questões reais da banca de provas anteriores a **custo US$ 0 de IA** (`origem = 'prova_real'`, `model = 'prova_real'`).
+  - Formato coerente com a banca: CEBRASPE = Certo/Errado (`ce`), FGV/FCC/VUNESP = Múltipla Escolha (`me`).
+  - Proteção estrita contra IDOR no caderno associado.
+- **Resolução de Prova & Pontuação (`src/routes/sets.js`):**
+  - Em `PATCH /api/sets/:id`, suporte a `tempoGastoSegundos`, marcação de dúvidas (`duvidas`), e chave expandida até 3 dígitos para simulados com até 120 itens.
+  - Regra oficial CEBRASPE: cálculo de **Nota Líquida** = `acertos - erros` (questões em branco pontuam 0 e não descontam).
+  - Regra Múltipla Escolha: Nota Bruta (%) e proporção de acertos.
+  - Relatório estatístico consolidado por disciplina em `estatisticas.resultadoFinal.disciplinas`.
+  - Integração com repetição espaçada (erros entram na Fase 1) e `atividade_diaria`.
+- **Front-End (`public/app.js` e `public/styles.css`):**
+  - Botão "Simulado Prova Real" com modal de configuração (escolha de 20 a 120 questões, tempo de 1h a 4h ou livre, e prévia das matérias).
+  - Barra superior destacada com cronômetro regressivo digital em tempo real (alertas visuais em 15m e 5m, auto-submissão se zerar).
+  - Mapa de Questões / Cartão-Resposta interativo com status (respondida, dúvida 🚩, em branco).
+  - Na resolução, as questões não revelam gabarito nem explicação imediatamente; aluno pode desmarcar itens em C/E para deixar em branco.
+  - Card final pós-prova com nota líquida/bruta oficial, tempo gasto e barras de desempenho por matéria do edital.
+- **Testes automatizados:** 113 testes passando com 100% de sucesso (`npm test`).
+
+- Próximo: "Por que errei?" sob demanda (F4) e lembrete diário por e-mail (N2).
