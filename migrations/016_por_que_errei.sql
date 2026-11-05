@@ -24,3 +24,4 @@ CREATE TABLE IF NOT EXISTS questao_explicacoes (
 
 CREATE INDEX IF NOT EXISTS idx_questao_explicacoes_hash_resp ON questao_explicacoes(questao_hash, resposta_aluno);
 CREATE INDEX IF NOT EXISTS idx_questao_explicacoes_qid_resp ON questao_explicacoes(questao_id, resposta_aluno);
+

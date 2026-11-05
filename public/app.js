@@ -1895,6 +1895,94 @@ function viewEdital() {
   const b = ed.banca && BANCA()[ed.banca];
   const provasVinc = ed.provasVinculadas || [];
   const matVinc = ed.materiaisVinculados || [];
+  const radar = rs.radar || {};
+  const filter = S.editalTopicFilter || 'todos';
+
+  const filterTopic = (t) => {
+    if (filter === 'critica') return t.prioridade === 'critica';
+    if (filter === 'reforco') return t.prioridade === 'reforco';
+    if (filter === 'segura') return t.prioridade === 'segura';
+    if (filter === 'quentes') return (t.questoesNaBanca || 0) > 0;
+    return true;
+  };
+
+  const radarHtml = `
+    <div class="radar-card" role="region" aria-label="Radar de Desempenho e Probabilidade da Banca">
+      <div class="radar-head">
+        <div class="radar-title-group">
+          <div class="row" style="gap:6px;align-items:center">
+            <span class="badge brand" style="font-weight:800">🎯 Radar de Prontidão</span>
+            ${b ? `<span class="badge" style="background:${b.cor};color:#fff">${esc(b.nome)}</span>` : ''}
+          </div>
+          <h3 style="margin:2px 0 0;font-size:18px">Afinidade & Probabilidade da Prova Real</h3>
+          <div class="hint">Cruzamento inteligente entre a frequência histórica da banca e seu aproveitamento real.</div>
+        </div>
+        <div class="row" style="gap:10px;align-items:center">
+          <span class="badge" style="background:${radar.prontidaoCor || 'var(--brand)'};color:#fff;font-weight:800;font-size:12px;padding:4px 10px">
+            ${esc(radar.prontidaoFaixa || 'Em Análise')}
+          </span>
+        </div>
+      </div>
+
+      <div class="radar-score-container">
+        <div class="radar-score-row">
+          <span><b>Índice de Prontidão da Prova:</b> <span class="radar-score-val" style="color:${radar.prontidaoCor || 'var(--brand)'}">${radar.indiceProntidao || 0}%</span></span>
+          <span class="hint">${radar.totalQuestoesNaBanca ? `🔥 ${radar.totalQuestoesNaBanca} questões da banca catalogadas` : 'Sem questões de prova registradas'}</span>
+        </div>
+        <div class="radar-track" title="Prontidão da Prova: ${radar.indiceProntidao || 0}%">
+          <i class="radar-bar" style="width:${Math.max(3, radar.indiceProntidao || 0)}%;background:${radar.prontidaoCor || 'var(--brand)'}"></i>
+        </div>
+      </div>
+
+      <div class="radar-summary-grid">
+        <div class="radar-sum-card critica">
+          <span class="radar-sum-num" style="color:#B91C1C">${radar.distribuicaoPrioridades?.critica || 0}</span>
+          <span class="radar-sum-lbl">🚨 Prioridade Máxima (Urgentes)</span>
+        </div>
+        <div class="radar-sum-card reforco">
+          <span class="radar-sum-num" style="color:#B45309">${radar.distribuicaoPrioridades?.reforco || 0}</span>
+          <span class="radar-sum-lbl">⚠️ Reforçar (< 75%)</span>
+        </div>
+        <div class="radar-sum-card segura">
+          <span class="radar-sum-num" style="color:#15803D">${radar.distribuicaoPrioridades?.segura || 0}</span>
+          <span class="radar-sum-lbl">✅ Zona Segura (Dominados)</span>
+        </div>
+        <div class="radar-sum-card secundaria">
+          <span class="radar-sum-num" style="color:var(--ink-2)">${radar.distribuicaoPrioridades?.secundaria || 0}</span>
+          <span class="radar-sum-lbl">☕ Secundários</span>
+        </div>
+      </div>
+
+      ${(radar.topUrgentes || []).length ? `
+      <div class="radar-urgentes-title">
+        <span>🚨 Tópicos Críticos para Sua Aprovação</span>
+        <span class="hint" style="font-weight:normal">(caem muito na banca e seu rendimento precisa subir)</span>
+      </div>
+      <div class="radar-urgentes-grid">
+        ${radar.topUrgentes.map((t) => `
+          <div class="radar-urgente-card">
+            <div>
+              <div class="row" style="justify-content:space-between;margin-bottom:4px">
+                <span class="badge" style="background:var(--brand-soft);color:var(--brand);font-size:11px">${esc(t.materia)}</span>
+                <span class="prio-badge prio-critica">Urgente</span>
+              </div>
+              <div style="font-weight:700;font-size:13.5px;color:var(--ink);line-height:1.35;margin-bottom:4px">${esc(t.nome)}</div>
+              <div class="hint" style="font-size:12px">
+                ${t.questoesNaBanca ? `🔥 <b>${t.questoesNaBanca} q. na banca</b> (${t.probBancaPct}% da matéria)` : 'Incidência relevante'} ·
+                <span style="color:${t.taxaAcerto != null ? (t.taxaAcerto >= 70 ? 'var(--ok)' : 'var(--bad)') : 'var(--muted)'};font-weight:700">
+                  ${t.taxaAcerto != null ? t.taxaAcerto + '% acerto' : 'Não praticado'}
+                </span>
+              </div>
+            </div>
+            <div class="row" style="gap:6px;margin-top:6px">
+              ${t.questoesNaBanca ? `<button type="button" class="btn btn-primary" style="padding:5px 10px;font-size:12px;flex:1" data-treinar-reais="${t.id}">${ic('book', 'sm')} Resolver Reais</button>` : ''}
+              <button type="button" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;flex:1" data-train-topic="${esc(t.materia)}||${esc(t.nome)}">${ic('spark', 'sm')} Gerar Questões</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>` : ''}
+    </div>
+  `;
   return `<div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:18px">
     <div>
       <div class="row" style="gap:8px;margin-bottom:4px">
@@ -1936,6 +2024,8 @@ function viewEdital() {
       <div class="card stat"><div class="v">${rs.taxaAcertoGeral != null ? rs.taxaAcertoGeral + '%' : '—'}</div><div class="l">Taxa de acerto no edital</div></div>
     </div>
   </div>
+
+  ${radarHtml}
 
   <div class="train-grid" style="margin-bottom:18px">
     <div class="card card-pad">
@@ -1986,24 +2076,31 @@ function viewEdital() {
 
   <div class="section-h"><h3>Edital verticalizado tópico a tópico</h3>
     <button class="btn btn-primary" data-go="gerar">${ic('upload', 'sm')} Enviar resumo para avançar no edital</button></div>
+  ${filterTabs}
   <div class="grid">
-    ${(ed.disciplinas || []).map((d) => `<div class="card card-pad">
+    ${(ed.disciplinas || []).map((d) => {
+      const topicosFiltrados = (d.topicos || []).filter(filterTopic);
+      if (filter !== 'todos' && !topicosFiltrados.length) return '';
+      return `<div class="card card-pad">
       <div class="row" style="justify-content:space-between;margin-bottom:10px">
         <div><h3 style="margin:0;font-size:17px">${esc(d.materia)}</h3>
           <div class="hint">${d.estudados} de ${d.totalTopicos} tópicos estudados · ${d.dominados} dominado(s)${d.questoesNaBanca ? ` · <b style="color:#B45309">🔥 ${d.questoesNaBanca} q. na prova da banca</b>` : ''}</div></div>
         <span class="badge ${d.coberturaPct >= 70 ? 'brand' : ''}">${d.coberturaPct}% concluído</span>
       </div>
       <div class="edital-topic-table">
-        ${(d.topicos || []).map((t) => {
+        ${topicosFiltrados.map((t) => {
           const st = TOPIC_STATUS[t.status] || TOPIC_STATUS.pendente;
           return `<div class="edital-topic-row">
             <div style="flex:1;min-width:200px">
-              <div style="font-weight:700;font-size:14px"><span class="hint" style="margin-right:6px">${esc(t.codigo)}.</span>${esc(t.nome)}</div>
+              <div class="row" style="gap:6px;align-items:baseline;flex-wrap:wrap">
+                <span style="font-weight:700;font-size:14px"><span class="hint" style="margin-right:6px">${esc(t.codigo)}.</span>${esc(t.nome)}</span>
+                <span class="prio-badge prio-${t.prioridade || 'secundaria'}">${esc(t.prioridadeLabel || 'Secundário')}</span>
+              </div>
               ${t.resumo ? `<div class="hint" style="margin-top:2px">${esc(t.resumo)}</div>` : ''}
               ${(t.materiaisNomes || []).length ? `<div class="hint" style="margin-top:3px;color:var(--brand)">📄 Material: ${t.materiaisNomes.map(esc).join(', ')} (${t.cobertura === 'completo' ? 'completo' : 'parcial'})</div>` : ''}
             </div>
             <div class="row" style="gap:8px;flex-wrap:nowrap">
-              ${t.questoesNaBanca ? `<span class="badge ${t.incidenciaBanca === 'alta' ? 'accent' : ''}" title="Questões reais das provas da banca neste tópico">${t.incidenciaBanca === 'alta' ? '🔥 ' : '📌 '}${t.questoesNaBanca} na banca</span>` : ''}
+              ${t.questoesNaBanca ? `<span class="badge ${t.incidenciaBanca === 'alta' ? 'accent' : ''}" title="Questões reais das provas da banca neste tópico: ${t.questoesNaBanca} (${t.probBancaPct}% da matéria)">${t.incidenciaBanca === 'alta' ? '🔥 ' : '📌 '}${t.questoesNaBanca} na banca (${t.probBancaPct}%)</span>` : ''}
               ${t.questoesGeradas ? `<span class="badge" title="Questões resolvidas / geradas neste tópico">${t.questoesRespondidas}/${t.questoesGeradas} q.${t.taxaAcerto != null ? ` · ${t.taxaAcerto}%` : ''}</span>` : ''}
               <span class="st ${st.cls}">${st.label}</span>
               ${t.questoesNaBanca ? `<button type="button" class="btn btn-ghost" data-treinar-reais="${t.id}" title="Treinar com questões reais da banca neste tópico (custo US$ 0)">${ic('book', 'sm')} Reais (${t.questoesNaBanca})</button>` : ''}
@@ -2012,7 +2109,9 @@ function viewEdital() {
           </div>`;
         }).join('')}
       </div>
-    </div>`).join('')}
+    </div>`;
+    }).join('')}
+    ${(ed.disciplinas || []).every((d) => !(d.topicos || []).filter(filterTopic).length) ? `<div class="card card-pad" style="text-align:center;padding:32px"><div class="empty">${ic('search')}<div>Nenhum tópico encontrado para o filtro selecionado.</div><div class="hint">Alterne para "Todos os Tópicos" para ver o edital completo.</div></div></div>` : ''}
   </div>`;
 }
 
@@ -2121,6 +2220,10 @@ function bindApp() {
     });
   }
   on('[data-go]', 'click', (e) => go(e.currentTarget.dataset.go));
+  on('[data-radar-filter]', 'click', (e) => {
+    S.editalTopicFilter = e.currentTarget.dataset.radarFilter;
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+  });
   on('#openMenu', 'click', () => { S.drawer = true; render(); });
   on('[data-close]', 'click', () => { S.drawer = false; render(); });
   on('[data-logout]', 'click', async () => { await api('/auth/logout', { method: 'POST' }).catch(() => {}); Object.assign(S, { screen: 'auth', auth: 'entrar', user: null, sets: [], cadernos: [], activeCaderno: null, drawer: false, loaded: false }); render(); });

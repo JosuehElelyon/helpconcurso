@@ -235,7 +235,8 @@ export async function buildEditalDashboard(edital, userId) {
   // Cruza questões reais da banca/provas vinculadas com os tópicos do edital (Mapa de Calor da Banca)
   for (const rq of realQuestions) {
     const rqMat = norm(rq.materia);
-    const rqText = norm(`${rq.materia || ''} ${rq.enunciado || ''}`);
+    const rqTop = norm(rq.topico);
+    const rqText = norm(`${rq.materia || ''} ${rq.topico || ''} ${rq.enunciado || ''}`);
     const disc = vert.find((d) => {
       const dm = norm(d.materia);
       return dm && rqMat && (dm === rqMat || dm.includes(rqMat) || rqMat.includes(dm));
@@ -243,6 +244,11 @@ export async function buildEditalDashboard(edital, userId) {
     const candidates = disc ? (disc.topicos || []) : vert.flatMap((d) => d.topicos || []);
     let bestKey = null, bestHits = 0;
     for (const t of candidates) {
+      if (rqTop && (norm(t.nome) === rqTop || norm(t.nome).includes(rqTop) || rqTop.includes(norm(t.nome)))) {
+        bestKey = t.id.toUpperCase();
+        bestHits = 999;
+        break;
+      }
       const info = allTopicsById.get(t.id.toUpperCase());
       if (!info || !info.kw.length) continue;
       let hits = 0;
@@ -293,12 +299,19 @@ export async function buildEditalDashboard(edital, userId) {
     });
   }
 
-  // 3) Consolida por disciplina e geral
+  // 3) Consolida por disciplina e geral com Radar de Probabilidade da Banca (F6)
   let totalTopicos = 0, topicosEstudados = 0, topicosPraticados = 0, topicosDominados = 0;
   let pontosEstudo = 0, totalQuestoes = 0, totalRespondidas = 0, totalAcertos = 0;
+  let totalQuestoesNaBancaEdital = 0;
+  let sumRadarWeight = 0;
+  let sumRadarScore = 0;
+  const allEnrichedTopics = [];
 
   const disciplinas = vert.map((d) => {
     let dEstudados = 0, dPraticados = 0, dDominados = 0, dPontos = 0, dQGeradas = 0, dQResp = 0, dQAcertos = 0, dQBanca = 0;
+    const rawDQBanca = (d.topicos || []).reduce((acc, t) => acc + (topicStats.get(t.id.toUpperCase())?.questoesNaBanca || 0), 0);
+    const dPeso = Number(d.peso) || 1;
+
     const topicos = (d.topicos || []).map((t) => {
       const st = topicStats.get(t.id.toUpperCase());
       const estudado = !!st.cobertura;
@@ -307,6 +320,40 @@ export async function buildEditalDashboard(edital, userId) {
       const dominado = praticado && taxaAcerto >= 70 && (st.questoesRespondidas >= 2 || estudado);
       const status = dominado ? 'dominado' : praticado ? 'praticado' : estudado ? 'estudado' : 'pendente';
       const incidenciaBanca = st.questoesNaBanca >= 3 ? 'alta' : st.questoesNaBanca >= 1 ? 'media' : null;
+
+      // Radar F6: Probabilidade na banca e Prioridade de estudo
+      const probBancaPct = rawDQBanca > 0
+        ? Math.round((st.questoesNaBanca / rawDQBanca) * 100)
+        : Math.round(100 / Math.max(1, (d.topicos || []).length));
+
+      let relevanciaBanca = 'baixa';
+      if (st.questoesNaBanca >= 5 || (rawDQBanca > 0 && probBancaPct >= 30 && st.questoesNaBanca >= 2)) relevanciaBanca = 'muito_alta';
+      else if (st.questoesNaBanca >= 2 || (rawDQBanca > 0 && probBancaPct >= 15 && st.questoesNaBanca >= 1)) relevanciaBanca = 'alta';
+      else if (st.questoesNaBanca >= 1 || (rawDQBanca > 0 && probBancaPct >= 8 && st.questoesNaBanca >= 1)) relevanciaBanca = 'media';
+
+      let prioridade = 'secundaria';
+      if ((relevanciaBanca === 'muito_alta' || relevanciaBanca === 'alta') && (taxaAcerto === null || taxaAcerto < 60)) {
+        prioridade = 'critica';
+      } else if (((relevanciaBanca === 'muito_alta' || relevanciaBanca === 'alta') && taxaAcerto >= 60 && taxaAcerto < 75) ||
+                 (relevanciaBanca === 'media' && (taxaAcerto === null || taxaAcerto < 70))) {
+        prioridade = 'reforco';
+      } else if (taxaAcerto !== null && taxaAcerto >= 75 && praticado) {
+        prioridade = 'segura';
+      }
+
+      const prioridadeLabels = {
+        critica: '🚨 Prioridade Máxima',
+        reforco: '⚠️ Reforçar',
+        segura: '✅ Zona Segura',
+        secundaria: '☕ Secundário',
+      };
+      const prioridadeLabel = prioridadeLabels[prioridade] || '☕ Secundário';
+
+      // Ponderação para o Índice de Prontidão da Prova
+      const topicWeight = Math.max(1, st.questoesNaBanca) * dPeso;
+      const studentScore = taxaAcerto != null ? taxaAcerto : (estudado ? 35 : 0);
+      sumRadarWeight += topicWeight;
+      sumRadarScore += topicWeight * studentScore;
 
       totalTopicos++;
       const pt = st.cobertura === 'completo' ? 1 : st.cobertura === 'parcial' ? 0.5 : praticado ? 0.5 : 0;
@@ -322,15 +369,31 @@ export async function buildEditalDashboard(edital, userId) {
       totalQuestoes += st.questoesGeradas;
       totalRespondidas += st.questoesRespondidas;
       totalAcertos += st.questoesAcertos;
+      totalQuestoesNaBancaEdital += st.questoesNaBanca;
 
-      return { ...st, taxaAcerto, status, incidenciaBanca };
+      const topicItem = {
+        ...st,
+        materia: d.materia,
+        disciplinaId: d.id,
+        pesoDisciplina: dPeso,
+        taxaAcerto,
+        status,
+        incidenciaBanca,
+        probBancaPct,
+        relevanciaBanca,
+        prioridade,
+        prioridadeLabel,
+      };
+
+      allEnrichedTopics.push(topicItem);
+      return topicItem;
     });
 
     const nTop = topicos.length || 1;
     return {
       id: d.id,
       materia: d.materia,
-      peso: d.peso || 1,
+      peso: dPeso,
       totalTopicos: topicos.length,
       estudados: dEstudados,
       praticados: dPraticados,
@@ -346,6 +409,39 @@ export async function buildEditalDashboard(edital, userId) {
   });
 
   const denom = totalTopicos || 1;
+  const indiceProntidao = sumRadarWeight > 0 ? Math.min(100, Math.round(sumRadarScore / sumRadarWeight)) : 0;
+  let prontidaoFaixa = 'Risco Alto';
+  let prontidaoCor = 'var(--bad)';
+  if (indiceProntidao >= 85) { prontidaoFaixa = 'Zona de Aprovação'; prontidaoCor = 'var(--ok)'; }
+  else if (indiceProntidao >= 70) { prontidaoFaixa = 'Competitivo'; prontidaoCor = 'var(--brand)'; }
+  else if (indiceProntidao >= 50) { prontidaoFaixa = 'Em Evolução'; prontidaoCor = 'var(--accent)'; }
+
+  const topUrgentes = allEnrichedTopics
+    .filter((t) => t.prioridade === 'critica')
+    .sort((a, b) => b.questoesNaBanca - a.questoesNaBanca || (a.taxaAcerto ?? 0) - (b.taxaAcerto ?? 0))
+    .slice(0, 6);
+
+  const topMaisCobrados = allEnrichedTopics
+    .filter((t) => t.questoesNaBanca > 0)
+    .sort((a, b) => b.questoesNaBanca - a.questoesNaBanca)
+    .slice(0, 6);
+
+  const distribuicaoPrioridades = {
+    critica: allEnrichedTopics.filter((t) => t.prioridade === 'critica').length,
+    reforco: allEnrichedTopics.filter((t) => t.prioridade === 'reforco').length,
+    segura: allEnrichedTopics.filter((t) => t.prioridade === 'segura').length,
+    secundaria: allEnrichedTopics.filter((t) => t.prioridade === 'secundaria').length,
+  };
+
+  const radar = {
+    indiceProntidao,
+    prontidaoFaixa,
+    prontidaoCor,
+    totalQuestoesNaBanca: totalQuestoesNaBancaEdital,
+    distribuicaoPrioridades,
+    topUrgentes,
+    topMaisCobrados,
+  };
   const materiaisVinculados = materials
     .filter((m) => m.edital_id === edital.id)
     .map((m) => ({
@@ -396,6 +492,7 @@ export async function buildEditalDashboard(edital, userId) {
       questoesRespondidas: totalRespondidas,
       questoesAcertos: totalAcertos,
       taxaAcertoGeral: totalRespondidas > 0 ? Math.round((totalAcertos / totalRespondidas) * 100) : null,
+      radar,
     },
     disciplinas,
   };

@@ -372,6 +372,36 @@ details summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--brand)
 .form-sec-title{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px;margin-bottom:4px;color:var(--ink)}
 .form-sec-num{width:24px;height:24px;border-radius:7px;background:var(--brand-soft);color:var(--brand-ink);display:inline-grid;place-items:center;font-size:12.5px;font-weight:800;flex:none}
 .edital-subbox{border:1px solid #C6E2DA;background:#F3FAF7;border-radius:12px;padding:16px}
+
+/* ---------- F6: Radar de Desempenho e Probabilidade da Banca ---------- */
+.radar-card{background:linear-gradient(135deg,#FFFFFF 0%,#F8FCF9 100%);border:1.5px solid var(--line);border-radius:14px;padding:20px;margin-bottom:18px;box-shadow:0 4px 14px rgba(14,122,101,.06)}
+.radar-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+.radar-title-group{display:flex;flex-direction:column;gap:4px}
+.radar-score-container{display:flex;flex-direction:column;gap:6px;margin:12px 0 16px}
+.radar-score-row{display:flex;justify-content:space-between;align-items:baseline;font-size:14px}
+.radar-score-val{font-size:22px;font-weight:800}
+.radar-track{height:10px;border-radius:999px;background:var(--line-2);overflow:hidden}
+.radar-bar{display:block;height:100%;border-radius:999px;transition:width .5s ease}
+.radar-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+.radar-sum-card{background:var(--surface);border:1px solid var(--line-2);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.radar-sum-card.critica{border-color:#FCA5A5;background:#FEF2F2}
+.radar-sum-card.reforco{border-color:#FCD34D;background:#FFFBEB}
+.radar-sum-card.segura{border-color:#86EFAC;background:#F0FDF4}
+.radar-sum-card.secundaria{border-color:var(--line);background:var(--surface)}
+.radar-sum-num{font-size:18px;font-weight:800}
+.radar-sum-lbl{font-size:11.5px;color:var(--ink-2);font-weight:600}
+.radar-urgentes-title{font-size:14px;font-weight:800;color:var(--ink);margin:14px 0 10px;display:flex;align-items:center;gap:6px}
+.radar-urgentes-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.radar-urgente-card{background:var(--surface);border:1px solid var(--line);border-left:4px solid #EF4444;border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;justify-content:space-between;gap:8px}
+.radar-filter-bar{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin:14px 0}
+.radar-ftab{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-size:12.5px;font-weight:700;color:var(--ink);cursor:pointer;white-space:nowrap;transition:all .15s}
+.radar-ftab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.radar-ftab:hover:not(.on){background:var(--surface-2)}
+.prio-badge{font-size:11px;font-weight:800;padding:2px 7px;border-radius:999px;display:inline-flex;align-items:center;gap:3px;text-transform:uppercase;letter-spacing:.3px}
+.prio-critica{background:#FEE2E2;color:#991B1B;border:1px solid #FCA5A5}
+.prio-reforco{background:#FEF3C7;color:#92400E;border:1px solid #FCD34D}
+.prio-segura{background:#DCFCE7;color:#166534;border:1px solid #86EFAC}
+.prio-secundaria{background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line-2)}
 @media (max-width:640px){.contrib-row{flex-wrap:wrap}}
 @media print{
   body{background:#fff;color:#000}
