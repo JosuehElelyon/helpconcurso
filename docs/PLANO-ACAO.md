@@ -419,4 +419,35 @@ chamadas/429 por provedor; cache de prompt medido. Decisões de modelo e prompt 
   - Card final pós-prova com nota líquida/bruta oficial, tempo gasto e barras de desempenho por matéria do edital.
 - **Testes automatizados:** 113 testes passando com 100% de sucesso (`npm test`).
 
-- Próximo: "Por que errei?" sob demanda (F4) e lembrete diário por e-mail (N2).
+## Sprint 5 (parte 3) — "Por que errei?" sob Demanda (F4) — 05/11/2026
+- **Migração 016 (`016_por_que_errei.sql`):**
+  - Tabela `questao_explicacoes` com cache global multi-aluno por `questao_hash` determinístico + `resposta_aluno`.
+  - Campos pedagógicos: `diagnostico`, `pegadinha`, `exemplo_cotidiano`, `fundamentacao` (artigo de lei/jurisprudência/súmula), `dica_ouro` e `visual_svg`.
+- **Serviço (`src/services/explicacao.js`):**
+  - Prompt calibrado com pedagogia assertiva, humor leve, analogias da vida real e sanitização estrita de SVG (bloqueio de scripts e eventos).
+  - Cache global: se outro aluno errou a mesma alternativa da mesma questão, o custo de IA é **US$ 0**.
+- **Front-end (`public/app.js` e `public/styles.css`):**
+  - Botão "Por que errei esta questão?" nas alternativas erradas em simulados e cadernos.
+  - Card pedagógico com 6 blocos estruturados e visual SVG limpo.
+
+## Sprint 5 (parte 4) — Radar de Desempenho, Probabilidade da Banca (F6) & Cockpit Visual — 05/11/2026
+- **Backend (`src/services/edital.js`, `src/services/desempenho.js`, `src/routes/me.js`):**
+  - Endpoint `GET /api/me/desempenho` (com suporte opcional a `?editalId=...`):
+    - Métricas de tempo líquido dedicado (horas e minutos) em `question_sets`, média de velocidade por questão (segundos/questão) e ritmo horário (questões/hora).
+    - Histórico diário de evolução dos últimos 14 a 30 dias de `atividade_diaria` (volume de questões, acertos, erros e taxa diária %).
+    - Cruzamento com `buildEditalDashboard`: cálculo de probabilidade na banca por tópico (`probBancaPct`), relevância histórica (`muito_alta`, `alta`, `media`, `baixa`) e priorização de estudo (`critica`, `reforco`, `segura`, `secundaria`).
+    - Matriz 2D de Relevância × Desempenho (Quadrantes de Pareto: Zona de Perigo, Fortaleza, Reforço e Zona Secundária).
+    - Índice de Prontidão da Prova (0 a 100%) ponderado por frequência da banca e peso da matéria.
+- **Front-End (`public/app.js` e `public/styles.css`):**
+  - Tela completa **Desempenho & Radar** (`#desempenho`) no menu lateral desktop e gaveta mobile.
+  - Botão de atalho rápido direto no card do Radar em **Meu Edital**.
+  - **4 KPIs Cockpit** com medidores gráficos:
+    - Velocímetro / Gauge SVG de Prontidão da Prova com arco gradiente.
+    - Card de Horas Estudadas e Ritmo Ideal de Prova (alerta de velocidade ideal ≤ 2m30s).
+    - Balanço Acertos × Erros com Donut SVG Duplo.
+    - Card de Simulados e Modo Prova com dias seguidos de estudo 🔥.
+  - **Gráfico Interativo de Evolução Diária (14 dias):** barras empilhadas de acertos (verde) e erros (vermelho) + linha suave de taxa de acerto + linha de corte de aprovação (80% em dourado).
+  - **Gráfico Comparativo de Disciplinas vs Linha de Corte (80%):** barras horizontais personalizadas com badges de acertos, erros e incidência na banca.
+  - **Matriz de Pareto da Banca (4 Quadrantes Visuais):** tópicos críticos com botões rápidos de ação (`Resolver Reais (US$ 0)` e `Gerar IA`).
+- **Testes automatizados:** 124 testes passando com 100% de sucesso (`npm test`).
+
