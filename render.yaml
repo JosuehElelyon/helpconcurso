@@ -1,16 +1,11 @@
 # Blueprint do Render (https://render.com): New > Blueprint > escolha este repositório.
-# Cria o serviço web (Docker) e o PostgreSQL. Preencha as variáveis marcadas com sync:false no painel.
-services:
-  - type: web
-    name: helpconcurso
-    runtime: docker
-    plan: starter
-    healthCheckPath: /api/health
+# Cria a API (web), o worker da fila de IA e o PostgreSQL. As variáveis comuns ficam no grupo "helpconcurso-comum";
+# preencha as marcadas com sync:false no painel. API e worker escalam separados (numInstances / autoscaling).
+envVarGroups:
+  - name: helpconcurso-comum
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATABASE_URL
-        fromDatabase: { name: helpconcurso-db, property: connectionString }
       - key: DATABASE_SSL
         value: "false"
       - key: JWT_SECRET
@@ -47,6 +42,34 @@ services:
         sync: false
       - key: S3_SECRET_ACCESS_KEY
         sync: false
+
+services:
+  # API HTTP
+  - type: web
+    name: helpconcurso
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - fromGroup: helpconcurso-comum
+      - key: PROCESS_ROLE
+        value: api
+      - key: DATABASE_URL
+        fromDatabase: { name: helpconcurso-db, property: connectionString }
+
+  # Worker da fila de IA (mesma imagem, outro comando)
+  - type: worker
+    name: helpconcurso-worker
+    runtime: docker
+    plan: starter
+    dockerCommand: node src/worker.js
+    envVars:
+      - fromGroup: helpconcurso-comum
+      - key: PROCESS_ROLE
+        value: worker
+      - key: DATABASE_URL
+        fromDatabase: { name: helpconcurso-db, property: connectionString }
+
 databases:
   - name: helpconcurso-db
     plan: basic-256mb

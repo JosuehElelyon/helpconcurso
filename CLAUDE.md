@@ -89,6 +89,13 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
 - Pasta: `C:\helpconcursos\helpconcurso` (fora do OneDrive). Repositório git local já criado (branch `main`).
 - Tudo sobe com `docker compose up -d --build` (a imagem reaproveita o `node_modules` do host — sem dependências nativas).
   Alternativa: serviços no Docker (`docker compose up -d db minio mailpit`) e app no host com `npm start`.
+- **Processos (A1, 05/11/2026):** `src/app.js` monta o Express; `src/server.js` é a API; `src/worker.js` roda a fila de IA
+  (saúde em :3001/health). Papel por `PROCESS_ROLE` ou `--papel=`: `api`, `worker` ou `all` (padrão: API + fila no mesmo
+  processo — usado no `npm start` e nos testes). No compose, `app` = api e `worker` = worker (`--scale worker=2`).
+  Fila com vários workers: batimento a cada 30 s, órfã (sem batimento há 2 min) volta para a fila, NOTIFY acorda os workers.
+  Nova tarefa com `registerJob`: importe o módulo em `src/jobs/tarefas.js`.
+- **Sprint 5.1 e reestruturação:** ver o fim de `docs/PLANO-ACAO.md` (A1 feito; próximos A2–A6). Teste de funcionalidade
+  chama a rota HTTP, nunca uma cópia da lógica.
 - App: http://localhost:3000 · Mailpit: http://localhost:8025 · S3 local (SeaweedFS no serviço `minio`): http://localhost:9000
 - A imagem `minio/minio` saiu do Docker Hub; o compose usa `chrislusf/seaweedfs`. Arquivos antigos do MinIO ficaram em `data/minio`.
 - Se o Docker Desktop fechar com "com.docker.build: exit status 1": encerre o processo órfão `com.docker.build`
@@ -98,7 +105,7 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
   e colocar a URL em `APP_URL` no `.env`.
 
 ## Pendências
-1. `git push -u origin main` (remote `JosuehElelyon/helpconcurso` já configurado).
+1. Reestruturação A2–A6 (`docs/PLANO-ACAO.md`).
 2. Arquitetura de conhecimento (`docs/ARQUITETURA-CONHECIMENTO.md`). **Fase 1 pronta** (migração 007): taxonomia própria
    (`src/services/taxonomia.js`, semente na subida), vocabulário fechado de cobrança (`src/lib/cobranca.js`), `prova_extract` v2
    rotula cada questão real (tópico, comando, pegadinha, habilidade, leis), `editais_canonicos` (edital lido uma vez; chave =

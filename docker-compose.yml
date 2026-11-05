@@ -1,32 +1,62 @@
 # Sobe o HelpConcurso completo no seu computador:
 #   docker compose up -d --build
+# Dois processos com a mesma imagem: "app" (API HTTP) e "worker" (fila de IA) — escalam separados:
+#   docker compose up -d --scale worker=2
 # App: http://localhost:3000 · E-mails (Mailpit): http://localhost:8025 · Arquivos (MinIO): http://localhost:9001
 # Para deixar público pela internet: docker compose --profile publico up -d   (veja docs/DEPLOY.md)
 
+x-ambiente: &ambiente
+  DATABASE_URL: postgresql://helpconcurso:helpconcurso@db:5432/helpconcurso
+  DATABASE_SSL: "false"
+  # SMTP: usa o do .env (ex.: Brevo); se SMTP_HOST estiver vazio, usa o Mailpit local (http://localhost:8025)
+  SMTP_HOST: ${SMTP_HOST:-mailpit}
+  SMTP_PORT: ${SMTP_PORT:-1025}
+  # Arquivos: MinIO local (troque por S3_ENDPOINT_COMPOSE=https://... para usar R2/S3 na nuvem)
+  S3_ENDPOINT: ${S3_ENDPOINT_COMPOSE:-http://minio:9000}
+  # Só desenvolvimento: proxy Free Claude Code (FCC_ENABLED) e Ollama (OLLAMA_ENABLED) rodando no host Windows
+  FCC_BASE_URL: ${FCC_BASE_URL:-http://host.docker.internal:8082}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+
+x-codigo: &codigo
+  - ./src:/app/src
+  - ./public:/app/public
+  - ./migrations:/app/migrations
+
 services:
+  # API HTTP (rotas /api e arquivos do front)
   app:
     build: .
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://helpconcurso:helpconcurso@db:5432/helpconcurso
-      DATABASE_SSL: "false"
-      # SMTP: usa o do .env (ex.: Brevo); se SMTP_HOST estiver vazio, usa o Mailpit local (http://localhost:8025)
-      SMTP_HOST: ${SMTP_HOST:-mailpit}
-      SMTP_PORT: ${SMTP_PORT:-1025}
-      # Arquivos: MinIO local (troque por S3_ENDPOINT_COMPOSE=https://... para usar R2/S3 na nuvem)
-      S3_ENDPOINT: ${S3_ENDPOINT_COMPOSE:-http://minio:9000}
-      # Só desenvolvimento: proxy Free Claude Code (FCC_ENABLED) e Ollama (OLLAMA_ENABLED) rodando no host Windows
-      FCC_BASE_URL: ${FCC_BASE_URL:-http://host.docker.internal:8082}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      <<: *ambiente
+      PROCESS_ROLE: api
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
       - "3000:3000"
-    volumes:
-      - ./src:/app/src
-      - ./public:/app/public
-      - ./migrations:/app/migrations
+    volumes: *codigo
+    depends_on:
+      db: { condition: service_healthy }
+      minio: { condition: service_started }
+
+  # Worker da fila de IA (provas, lote, rotulagem, erro reportado). Sem porta pública.
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["node", "src/worker.js"]
+    env_file: .env
+    environment:
+      <<: *ambiente
+      PROCESS_ROLE: worker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes: *codigo
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
     depends_on:
       db: { condition: service_healthy }
       minio: { condition: service_started }

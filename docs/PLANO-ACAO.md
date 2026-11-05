@@ -543,9 +543,16 @@ Escopo escolhido: **API + worker + camadas** (o front atual continua, servido à
 
 | Etapa | O que muda | Por quê |
 |---|---|---|
-| A1 | `src/worker.js` separado: a fila de IA sai do processo da API (`ROLE=api|worker|all`; `all` mantém o modo atual no dev) | Escalar API e processamento de IA independentemente |
+| A1 ✅ | `src/worker.js` separado: a fila de IA sai do processo da API (`ROLE=api|worker|all`; `all` mantém o modo atual no dev) | Escalar API e processamento de IA independentemente |
 | A2 | Limites de requisição num armazenamento compartilhado (Postgres) em vez da memória | Com 2+ instâncias da API, os limites continuam valendo |
 | A3 | `/api/v1` com contrato OpenAPI (`docs/openapi.yaml`) e `/api/*` como apelido durante a transição | Front e futuros clientes (app móvel) consomem um contrato estável |
 | A4 | Camadas: `routes` (HTTP) → `controllers` → `services` (regra) → `repositories` (SQL). Começando por sets, cadernos e editais | Rotas finas e regra de negócio testável sem HTTP |
 | A5 | Front servido à parte (Nginx no compose; CORS/cookies por `APP_URL`/`API_URL`) | Publicar o front num CDN e a API em outro lugar |
 | A6 | Docs (CLAUDE.md, DEPLOY.md, ARQUITETURA) e CI com os dois processos | A próxima sessão entende o desenho |
+
+### A1 — concluída (05/11/2026)
+`src/app.js` (Express), `src/server.js` (API), `src/worker.js` (fila, saúde em :3001), `src/bootstrap.js` (migração, semente,
+S3, SMTP), `src/jobs/tarefas.js` (registro das tarefas). Fila segura para vários workers: o processo não devolve mais à fila
+**todas** as tarefas "running" ao subir (roubaria tarefas de outro worker); usa batimento (30 s) e só recupera órfãs (2 min).
+NOTIFY acorda os workers na hora. Compose com `app` + `worker`; Render com web + worker. Teste: `test/arquitetura.test.js`.
+Validado no Docker local. 137 testes.

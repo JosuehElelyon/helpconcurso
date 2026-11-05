@@ -86,7 +86,7 @@ Uma combinação simples e de baixo custo:
 ### Passo a passo (Render + R2 + Brevo)
 1. **R2**: Cloudflare → R2 → crie o bucket `helpconcurso` → *Manage API tokens* → crie um token com permissão de leitura e escrita. Anote o *Access Key ID*, o *Secret* e o endpoint `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`.
 2. **Brevo**: crie a conta → *SMTP & API* → anote o login e a chave SMTP. Verifique seu domínio (SPF/DKIM).
-3. **Render**: *New → Blueprint* → escolha o repositório do GitHub. O `render.yaml` cria o app e o banco. Preencha as variáveis pedidas:
+3. **Render**: *New → Blueprint* → escolha o repositório do GitHub. O `render.yaml` cria a API (web), o **worker da fila de IA** (mesma imagem, `node src/worker.js`) e o banco; as variáveis comuns ficam no grupo `helpconcurso-comum`. API e worker escalam separados. Preencha as variáveis pedidas:
    - `APP_URL` = a URL do Render (ou o seu domínio)
    - `ADMIN_EMAILS`, `ANTHROPIC_API_KEY`
    - `SMTP_HOST=smtp-relay.brevo.com`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
