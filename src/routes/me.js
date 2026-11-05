@@ -8,6 +8,7 @@ import { requireAuth, hashPassword, checkPassword, publicUser } from '../lib/aut
 import { summary, redeem } from '../services/stars.js';
 import { generationQuota } from '../services/quota.js';
 import { resumoHoje } from '../services/atividade.js';
+import { obterDesempenhoCompleto } from '../services/desempenho.js';
 import { PLANOS, catalogoPlanos, planoDoUsuario } from '../lib/planos.js';
 import { BANCA } from '../lib/bancas.js';
 import { scanText, SEV } from '../security/index.js';
@@ -31,6 +32,9 @@ r.post('/estrelas/trocar', ah(async (req, res) => {
 
 // Tela "Hoje": meta diária, sequência de dias de estudo, últimos 7 dias e contagem até a prova
 r.get('/hoje', ah(async (req, res) => res.json(await resumoHoje(req.user))));
+
+// Painel Visual de Desempenho, Produtividade, Horas e Radar da Banca
+r.get('/desempenho', ah(async (req, res) => res.json(await obterDesempenhoCompleto(req.user, req.query.editalId))));
 
 // ---------- Minha conta ----------
 const perfil = (u) => ({
