@@ -9,6 +9,25 @@ import { runJSON } from '../ai/index.js';
 import { explainMistakeSchema } from '../ai/schemas.js';
 import { promptExplainMistake } from '../lib/prompts.js';
 import { HttpError } from '../lib/http.js';
+import { planoDoUsuario } from '../lib/planos.js';
+
+const LETRAS = ['A', 'B', 'C', 'D', 'E'];
+/** Respostas possíveis para a questão: C/E no CEBRASPE; A.. até o número de alternativas na múltipla escolha. */
+export function respostasValidas(questao, formato) {
+  if (formato === 'ce') return ['C', 'E'];
+  const n = Array.isArray(questao?.alternativas) && questao.alternativas.length ? Math.min(5, questao.alternativas.length) : 5;
+  return LETRAS.slice(0, n);
+}
+
+/** Explicações NOVAS (geradas pela IA) pedidas pelo aluno hoje, no dia de Brasília. Cache não conta. */
+export async function explicacoesNovasHoje(userId) {
+  const r = await one(
+    `SELECT count(*)::int AS n FROM questao_explicacoes
+      WHERE criado_por=$1 AND (created_at AT TIME ZONE 'America/Sao_Paulo')::date = (now() AT TIME ZONE 'America/Sao_Paulo')::date`,
+    [userId]
+  );
+  return r?.n || 0;
+}
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 
@@ -32,6 +51,9 @@ export function sanitizeSvg(svg) {
   clean = clean.replace(/\son\w+="[^"]*"/gi, '');
   clean = clean.replace(/\son\w+='[^']*'/gi, '');
   clean = clean.replace(/href=["']javascript:[^"']*["']/gi, 'href="#"');
+  // Elementos que carregam conteúdo/script, atributos de evento, links (só "#" é aceito), url() e DTD
+  const PERIGO = /<\s*\/?\s*(script|foreignObject|iframe|object|embed|image|use|animate\w*|set|style|link|meta|a)\b|\son[a-z]+\s*=|href\s*=\s*["']?\s*(?!#["'\s>])|url\s*\(|<!ENTITY|<!DOCTYPE|javascript\s*:/i;
+  if (PERIGO.test(clean)) return '';
   return clean;
 }
 
@@ -55,6 +77,8 @@ export async function obterOuGerarExplicacao({
   if (!resp) {
     throw new HttpError(400, 'Informe a alternativa que você marcou.');
   }
+  if (questao.anulada) throw new HttpError(400, 'Esta questão foi anulada pela banca e não conta como erro.');
+  if (!respostasValidas(questao, formato).includes(resp)) throw new HttpError(400, 'Resposta inválida para esta questão.');
   if (resp === gab) {
     throw new HttpError(400, 'Você acertou esta questão! O recurso "Por que errei?" é dedicado a diagnosticar e corrigir respostas incorretas.');
   }
@@ -70,9 +94,9 @@ export async function obterOuGerarExplicacao({
             diagnostico, pegadinha, exemplo_cotidiano, fundamentacao, dica_ouro, visual_svg,
             model, created_at
      FROM questao_explicacoes
-     WHERE (questao_id = $1 OR questao_hash = $2) AND resposta_aluno = $3
+     WHERE (questao_id = $1 OR questao_hash = $2) AND resposta_aluno = $3 AND gabarito_oficial = $4
      ORDER BY created_at DESC LIMIT 1`,
-    [questaoId, questaoHash, resp]
+    [questaoId, questaoHash, resp, gab]
   );
 
   if (cachedRow) {
@@ -92,7 +116,13 @@ export async function obterOuGerarExplicacao({
     };
   }
 
-  // 2. Não está no cache: gera com a IA (Haiku com raciocínio ou Sonnet)
+  // 2. Não está no cache: confere o limite diário do plano antes de gastar com a IA
+  const limite = planoDoUsuario(user).limites.explicacoesDia;
+  if (limite != null && (await explicacoesNovasHoje(user.id)) >= limite) {
+    throw new HttpError(429, `Você usou as ${limite} explicações novas de hoje do seu plano. Explicações já prontas continuam liberadas; amanhã o limite renova.`);
+  }
+
+  // Gera com a IA (Haiku com raciocínio ou Sonnet)
   const promptData = promptExplainMistake({
     q: questao,
     formato,
@@ -119,8 +149,8 @@ export async function obterOuGerarExplicacao({
     `INSERT INTO questao_explicacoes (
        questao_id, questao_hash, resposta_aluno, gabarito_oficial, formato,
        diagnostico, pegadinha, exemplo_cotidiano, fundamentacao, dica_ouro, visual_svg,
-       model, tokens_in, tokens_out
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       model, tokens_in, tokens_out, criado_por
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
      RETURNING id, diagnostico, pegadinha, exemplo_cotidiano, fundamentacao, dica_ouro, visual_svg, model, created_at`,
     [
       questaoId,
@@ -137,6 +167,7 @@ export async function obterOuGerarExplicacao({
       meta ? `${meta.provider}:${meta.model}` : 'ia',
       meta?.tokensIn || 0,
       meta?.tokensOut || 0,
+      user.id,
     ]
   );
 

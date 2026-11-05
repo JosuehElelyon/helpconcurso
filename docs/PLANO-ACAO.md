@@ -468,3 +468,84 @@ chamadas/429 por provedor; cache de prompt medido. Decisões de modelo e prompt 
   - Botão geral de Revanche de erros no Caderno de Questões e botão individual por questão do caderno.
 - **Testes automatizados:** 126 testes passando com 100% de sucesso (`npm test`).
 
+
+---
+
+# Revisão do Sprint 5 (partes 2–5) e plano ajustado — 05/11/2026
+
+Escopo: F3 (Simulado Prova Real), F4 ("Por que errei?"), Radar/Cockpit, Revanche + varredura geral de segurança.
+`npm test`: 126/126 passando — mas o teste da Revanche **copia a lógica da rota** em vez de chamá-la, e por isso não pegou o R1.
+
+## O que está bom
+- Dono conferido em toda consulta (`AND user_id=$2`), inclusive caderno do Simulado Prova Real (`criarSimuladoProvaReal`).
+- Texto das questões entra no prompt por `untrusted()`; respostas da IA validadas por schema (`explainMistakeSchema`).
+- Front escapa tudo com `esc()` — exceto o SVG da explicação (R5). CSP sem `unsafe-inline` em script.
+- Migrações novas (015–017) sem editar as aplicadas; `push` já feito (`main` = `origin/main`).
+
+## Problemas encontrados
+
+| # | Gravidade | Problema | Correção |
+|---|---|---|---|
+| R1 | **Alta (função quebrada)** | Revanche nunca é "superada": o `PATCH /api/sets/:id` não seleciona `origem` (`sets.js:436`), então `antes.origem === 'revanche'` é sempre falso | Incluir `origem` no SELECT; teste chamando a rota |
+| R2 | **Alta (dado corrompido)** | Ao vencer a revanche, só `fase` muda (sem `proximaRevisao`, `intervaloDias`, `acertosSeguidos`); pode chegar a fase 5 sem `dominada`. Cada novo `finalizado:true` avança de novo | Usar `calcularRevisao({ acerto: true })`; aplicar só na 1ª finalização |
+| R3 | **Alta (custo)** | "Por que errei?": `resposta` livre no corpo (`sets.js:593` sem validação) → cada valor fura o cache e chama a IA; não conta cota; 40/min. Entra no prompt **fora** do `untrusted()`. Um aluno pode esgotar o teto diário e travar a IA de todos | Resposta ∈ formato (C/E ou A–E) e igual à gravada; limite diário de explicações **novas** por plano (cache não conta) |
+| R4 | **Alta (custo/injeção)** | Revanche aceita `questoes` no corpo sem tamanho máximo e sem `scanText`; `materia`/`assunto`/`banca` sem varredura (a geração normal varre) | Remover o modo "questões do corpo" (usar só `setId`/`cadernoId` do servidor) ou limitar + varrer |
+| R5 | Média (XSS/phishing) | SVG da explicação vai cru para `innerHTML` (`app.js:1122`); o sanitizador por regex fura (`onload=x` sem aspas, `&#106;avascript:`, `<foreignObject>`, links externos). A explicação é cache **global** e a prova vem de upload de qualquer aluno | Renderizar como `<img src="data:image/svg+xml;base64,…">` + sanitizador por lista de permitidos |
+| R6 | Média (qualidade) | Revanche: se o revisor reprova todas, entrega todas assim mesmo (`sets.js:366`) | Sem aprovadas → erro + estorno (como na geração) |
+| R7 | Média (vazamento) | `POST /cadernos/:id/questoes/por-que-errei` com `extra:<id>` busca qualquer `prova_questoes` sem `questaoValida()` nem `status='READY'` (anuladas, divergentes, provas pendentes/recusadas). Id não-UUID → 500 | Só questões do próprio caderno (ou com filtro válido); validar UUID |
+| R8 | Média | Chave do cache da explicação não inclui o gabarito: após gabarito definitivo, serve explicação do gabarito antigo; `aplicarSituacaoOficial` não é aplicada antes de explicar | Incluir gabarito na chave; aplicar situação oficial; anulada → não explica |
+| R9 | Média | Nota do simulado (`PATCH finalizado`) conta questão anulada (o resto do app já ignora) | Aplicar situação oficial antes de pontuar |
+| R10 | Média (produto) | Simulado Prova Real: seleção determinística → **todo simulado do mesmo edital traz as mesmas questões**; filtro pela 1ª palavra (`%Direito%`, `%Noções%`) mistura disciplinas; edital sem banca grava `banca='cebraspe'` com formato `me` | Priorizar questões ainda não feitas pelo aluno; casar matéria pela taxonomia; banca nula quando não houver |
+| R11 | Baixa (IDOR) | Revanche grava `cadernoId`/`editalId` do corpo sem conferir o dono (mesma classe do C1); UUID inexistente → 500 | Conferir dono, como em `criarSimuladoProvaReal` |
+| R12 | Média (sessão) | Trocar/redefinir senha não derruba outras sessões (JWT 7 dias sem versão) | `users.sessao_versao` no token (migração 018) |
+| R13 | Baixa | `GET /api/me/desempenho?editalId=xyz` → 500; sem `editalId` usa o mais recente, não o ativo | Validar UUID; usar `active=true` |
+| R14 | Baixa (desempenho) | `obterDesempenhoCompleto` carrega **todos** os simulados com o JSON inteiro | Agregar em SQL ou limitar ao período |
+| R15 | Baixa | `cadernos/interagir` regrava `revisao_espacada` inteiro; `PATCH /sets` faz merge → corrida perde atualização | Merge atômico (`||`) também no caderno |
+| R16 | Baixa (higiene) | Pastas vazias `package.json;A` e `package-lock.json;A` na raiz; CLAUDE.md sem F3–F6/Revanche e com "push" ainda pendente | Apagar; atualizar CLAUDE.md |
+
+## Arquitetura e processo
+- `sets.js` (613 linhas) mistura geração, revanche, pontuação e explicação; `cadernos.js` 760; `app.js` 3.858. Extrair
+  `services/revanche.js` e `services/pontuacao.js` (funções puras, testáveis) — sem reescrever o resto.
+- **Regra de teste:** teste de funcionalidade chama a **rota HTTP** (como `v1.test.js`), nunca uma cópia da lógica.
+- Pendências antigas ainda abertas: S5 (termos/LGPD), D4/D9 (qualidade por modelo), O3 (trocar chave OpenRouter),
+  `provas.edital_id` × tabela de ligação, remover `QUOTA_GERACOES_DIA` no lançamento.
+
+## Plano ajustado
+1. **Sprint 5.1 (correções, antes da Amanda usar Revanche e "Por que errei?"):** R1–R11 com testes pela rota.
+2. **Sprint 5.2 (segurança e dívida):** R12 (migração 018), R13–R16, extrair revanche/pontuação.
+3. **Sprint 6 (medir — já planejado, agora com uso real):** custo por funcionalidade no `ai_usage` (explicação, revanche,
+   geração), % descartada pelo revisor e 👍/👎 por modelo/prompt, acerto do cache → base para **decidir preços e limites**.
+4. **Antes de abrir para mais alunos:** S5 (termos/privacidade), gateway de pagamento (decisão do Josueh), O3.
+5. **Depois:** Fase 2 (`perfil_banca` consolidado), D6, tabela de ligação prova↔edital.
+
+## Sprint 5.1 — concluída (05/11/2026)
+- **R1** `PATCH /api/sets/:id` lê `origem`: a revanche vencida (≥ 65%) agora é marcada.
+- **R2** vitória da revanche avança a questão-base pelo algoritmo normal (`calcularRevisao`: fase, intervalo, próxima revisão e
+  acertos seguidos coerentes), só as questões-base (`revancheDe.keys`) e só na 1ª finalização (`aplicarVitoriaRevanche`).
+- **R3** "Por que errei?": resposta validada pelo formato (C/E ou A..E) e a gravada prevalece; limite por minuto (10) e
+  **limite diário de explicações novas por plano** (`explicacoesDia`: Grátis 5, Essencial 30, Aprovação 60; cache não conta;
+  migração 018 grava `criado_por`).
+- **R4** revanche só usa questões do servidor (`setId` ou `cadernoId` + `keys`); o corpo não manda mais enunciado/gabarito;
+  matéria/assunto passam pela varredura; textos cortados.
+- **R5** SVG da explicação mostrado como `<img>` (data URI) e descartado inteiro se tiver qualquer resto perigoso.
+- **R6** revanche reprovada pelo revisor não chega ao aluno (erro + estorno). **Achado:** o revisor da revanche nunca rodava
+  (`promptReview` quebrava sem material e o serviço tratava como "indisponível"); agora revisa com o material, se houver, ou por
+  lei/doutrina.
+- **R7** "Por que errei?" do caderno só alcança questões do próprio caderno; chave malformada → 404 (antes 500).
+- **R8** cache da explicação considera o gabarito; questão anulada não é explicada.
+- **R9** nota do simulado ignora questão anulada (`services/pontuacao.js`).
+- **R11** revanche confere o dono do caderno e do edital.
+- Testes: 133 (novo `test/sprint5_1.test.js` chama as rotas HTTP; o teste antigo da revanche, que copiava a lógica, foi trocado).
+- Fica para depois: R10 (variedade e matérias do Simulado Prova Real), R12–R16.
+
+# Reestruturação da arquitetura (decisão do Josueh, 05/11/2026)
+Escopo escolhido: **API + worker + camadas** (o front atual continua, servido à parte). Sem microsserviços.
+
+| Etapa | O que muda | Por quê |
+|---|---|---|
+| A1 | `src/worker.js` separado: a fila de IA sai do processo da API (`ROLE=api|worker|all`; `all` mantém o modo atual no dev) | Escalar API e processamento de IA independentemente |
+| A2 | Limites de requisição num armazenamento compartilhado (Postgres) em vez da memória | Com 2+ instâncias da API, os limites continuam valendo |
+| A3 | `/api/v1` com contrato OpenAPI (`docs/openapi.yaml`) e `/api/*` como apelido durante a transição | Front e futuros clientes (app móvel) consomem um contrato estável |
+| A4 | Camadas: `routes` (HTTP) → `controllers` → `services` (regra) → `repositories` (SQL). Começando por sets, cadernos e editais | Rotas finas e regra de negócio testável sem HTTP |
+| A5 | Front servido à parte (Nginx no compose; CORS/cookies por `APP_URL`/`API_URL`) | Publicar o front num CDN e a API em outro lugar |
+| A6 | Docs (CLAUDE.md, DEPLOY.md, ARQUITETURA) e CI com os dois processos | A próxima sessão entende o desenho |

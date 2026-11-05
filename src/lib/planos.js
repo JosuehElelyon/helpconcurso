@@ -14,6 +14,7 @@ export const PLANOS = {
       // Na fase de testes, QUOTA_GERACOES_DIA no .env continua valendo para o plano grátis
       simuladosDia: Number(env('QUOTA_GERACOES_DIA')) || 3,
       dificeisDia: 1, editais: 1, cadernos: 3,
+      explicacoesDia: 5, // "Por que errei?" novas por dia (explicação já pronta no cache não conta)
     },
     beneficios: [
       'Simulados gerados do seu material no estilo da banca',
@@ -26,7 +27,7 @@ export const PLANOS = {
   essencial: {
     id: 'essencial', nome: 'Essencial', precoMensal: 29.9, precoAnual: 299, destaque: true,
     resumo: 'Para quem estuda todo dia para um concurso.',
-    limites: { simuladosDia: 8, dificeisDia: 3, editais: 3, cadernos: null },
+    limites: { simuladosDia: 8, dificeisDia: 3, editais: 3, cadernos: null, explicacoesDia: 30 },
     beneficios: [
       'Tudo do Grátis',
       '8 simulados por dia, até 3 no nível Difícil',
@@ -38,7 +39,7 @@ export const PLANOS = {
   aprovacao: {
     id: 'aprovacao', nome: 'Aprovação', precoMensal: 59.9, precoAnual: 599,
     resumo: 'Para a reta final: volume alto e vários concursos.',
-    limites: { simuladosDia: 20, dificeisDia: 10, editais: null, cadernos: null },
+    limites: { simuladosDia: 20, dificeisDia: 10, editais: null, cadernos: null, explicacoesDia: 60 },
     beneficios: [
       'Tudo do Essencial',
       '20 simulados por dia, até 10 no nível Difícil',
@@ -52,7 +53,7 @@ export const ORDEM_PLANOS = ['gratis', 'essencial', 'aprovacao'];
 
 /** Plano em vigor: o contratado, se não venceu; senão, Grátis. Admin não tem limites. */
 export function planoDoUsuario(u) {
-  if (u?.role === 'ADMIN') return { ...PLANOS.aprovacao, id: 'admin', nome: 'Administrador', limites: { simuladosDia: null, dificeisDia: null, editais: null, cadernos: null } };
+  if (u?.role === 'ADMIN') return { ...PLANOS.aprovacao, id: 'admin', nome: 'Administrador', limites: { simuladosDia: null, dificeisDia: null, editais: null, cadernos: null, explicacoesDia: null } };
   const vigente = PLANOS[u?.plano] && (!u.plano_ate || new Date(u.plano_ate) > new Date()) ? u.plano : 'gratis';
   return PLANOS[vigente];
 }

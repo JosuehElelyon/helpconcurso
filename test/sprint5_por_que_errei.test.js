@@ -25,7 +25,7 @@ async function getOrCreateTestUser(role = 'USER') {
   return u;
 }
 
-test('F4: sanitizeSvg remove scripts, handlers de eventos e links javascript perigosos', () => {
+test('F4: sanitizeSvg descarta SVG perigoso (inclusive variações que furavam a regex) e preserva o legítimo', () => {
   const dangerous = `
     <svg viewBox="0 0 500 200" xmlns="http://www.w3.org/2000/svg">
       <script>alert('xss')</script>
@@ -33,13 +33,16 @@ test('F4: sanitizeSvg remove scripts, handlers de eventos e links javascript per
       <a href="javascript:steal()"><text x="10" y="20">Link perigoso</text></a>
     </svg>
   `;
-  const clean = sanitizeSvg(dangerous);
-  assert.ok(clean.includes('<svg'));
-  assert.ok(clean.includes('</svg>'));
-  assert.ok(!clean.includes('<script>'), 'Não deve conter tags script');
-  assert.ok(!clean.includes('onclick='), 'Não deve conter handlers onclick');
-  assert.ok(!clean.includes('javascript:'), 'Não deve conter links javascript:');
-  assert.ok(clean.includes('rect'), 'Deve preservar elementos SVG legítimos');
+  assert.equal(sanitizeSvg(dangerous), '', 'SVG com script/evento/link perigoso é descartado inteiro');
+  const bypasses = [
+    '<svg><rect onload=alert(1) /></svg>',
+    '<svg><a href=" &#106;avascript:x"><text>x</text></a></svg>',
+    '<svg><foreignObject><div>x</div></foreignObject></svg>',
+    '<svg><image href="https://evil.example/x.png"/></svg>',
+  ];
+  for (const b of bypasses) assert.equal(sanitizeSvg(b), '', b);
+  const ok = sanitizeSvg('<svg viewBox="0 0 10 10"><rect width="5" height="5" fill="#fff"/><text x="1" y="2">Data: art. 5º</text></svg>');
+  assert.ok(ok.includes('<rect') && ok.includes('art. 5º'), 'SVG legítimo é preservado');
 });
 
 test('F4: calcularQuestaoHash gera hash determinístico e estável para enunciados iguais', () => {

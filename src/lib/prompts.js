@@ -161,9 +161,12 @@ Formato da resposta (JSON):
 
 ${untrusted('QUESTÕES', questoes.map((q, i) => qBlock(q, i, ce)).join('\n\n'))}
 
-${untrusted('MATERIAL DE REFERÊNCIA', text.slice(0, MAX_MATERIAL_CHARS))}`,
+${text ? untrusted('MATERIAL DE REFERÊNCIA', text.slice(0, MAX_MATERIAL_CHARS)) : SEM_MATERIAL}`,
   };
 }
+// Revanche sem material (questões inéditas a partir de erros): o revisor usa lei, doutrina e jurisprudência consolidadas
+const SEM_MATERIAL = `NÃO HÁ MATERIAL DE REFERÊNCIA para estas questões. Resolva com base na legislação, doutrina majoritária e jurisprudência
+consolidada, e considere "respondivel_pelo_material": true sempre que a resposta for determinável por essas fontes.`;
 
 /**
  * "Por que errei?": diagnóstico do erro do aluno com humor, analogia do cotidiano,

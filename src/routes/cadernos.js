@@ -10,6 +10,8 @@ import { z } from 'zod';
 import { one, many, query } from '../db.js';
 import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
 import { requireAuth } from '../lib/auth.js';
+import { explainLimit } from '../middleware/limites.js';
+import { questaoDoCaderno } from '../services/revanche.js';
 import { uploader, fileOf } from '../lib/upload.js';
 import { BANCA } from '../lib/bancas.js';
 import { submitProva, publicStatus } from '../services/provas.js';
@@ -707,7 +709,7 @@ r.patch('/:id/interagir', ah(async (req, res) => {
   res.json({ caderno: await buildCadernoDetail(updated, req.user.id) });
 }));
 
-r.post('/:id/questoes/por-que-errei', perUser, ah(async (req, res) => {
+r.post('/:id/questoes/por-que-errei', explainLimit, ah(async (req, res) => {
   const c = await one('SELECT * FROM cadernos WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
   if (!c) throw new HttpError(404, 'Caderno não encontrado.');
   const b = parseBody(z.object({
@@ -715,28 +717,13 @@ r.post('/:id/questoes/por-que-errei', perUser, ah(async (req, res) => {
     resposta: z.string().max(10).optional(),
   }), req.body);
 
-  let q = null;
-  let formato = BANCA[c.banca]?.formato || 'me';
-  let materia = c.titulo || 'Geral';
-
-  if (b.key.startsWith('set:')) {
-    const [, setId, sIdx] = b.key.split(':');
-    const s = await one('SELECT * FROM question_sets WHERE id=$1 AND user_id=$2', [setId, req.user.id]);
-    if (!s) throw new HttpError(404, 'Simulado não encontrado.');
-    q = (s.questoes || [])[Number(sIdx)];
-    formato = s.formato;
-    materia = q?.materia || s.materia;
-  } else if (b.key.startsWith('extra:')) {
-    const qid = b.key.slice(6);
-    q = (c.questoes_extras || []).find((x) => x.id === qid);
-    if (!q) {
-      const dbQ = await one('SELECT * FROM prova_questoes WHERE id=$1', [qid]);
-      if (dbQ) q = dbQ;
-    }
-  }
-
-  if (!q) throw new HttpError(404, 'Questão não encontrada.');
-  const respostaAluno = b.resposta || '';
+  // Só questões que estão neste caderno (R7): nada de buscar qualquer questão da base pelo id
+  const found = await questaoDoCaderno(c, b.key, req.user.id);
+  if (!found) throw new HttpError(404, 'Questão não encontrada.');
+  const q = found.q;
+  const formato = found.set ? found.set.formato : (q.alternativas?.length ? 'me' : 'ce');
+  const materia = q.materia || found.set?.materia || c.titulo || 'Geral';
+  const respostaAluno = found.resposta || b.resposta || '';
 
   const result = await obterOuGerarExplicacao({
     user: req.user,

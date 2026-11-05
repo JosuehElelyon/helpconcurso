@@ -782,7 +782,7 @@ async function generate() {
 }
 
 // BATERIA DE REVANCHE DA IA: Dispara geração focada em destruir pontos cegos
-async function dispararRevanche({ setId, cadernoId, indices = [], questoes = [], banca, materia, assunto, qtd = 3 }) {
+async function dispararRevanche({ setId, cadernoId, indices = [], keys = [], banca, materia, assunto, qtd = 3 }) {
   S.modal = {
     title: '⚡ Gerando Bateria de Revanche da IA',
     html: `
@@ -800,7 +800,7 @@ async function dispararRevanche({ setId, cadernoId, indices = [], questoes = [],
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ setId, cadernoId, indices, questoes, banca, materia, assunto, qtd }),
+      body: JSON.stringify({ setId, cadernoId, indices, keys, banca, materia, assunto, qtd }),
     });
 
     if (!res.ok) {
@@ -1119,7 +1119,7 @@ function renderExplicacaoCard(expData) {
         ${exp.visualSvg ? `
         <div class="pq-section pq-visual">
           <div class="pq-sec-title">🎨 Diagrama Visual Conceitual</div>
-          <div class="pq-svg-container">${exp.visualSvg}</div>
+          <div class="pq-svg-container"><img alt="Diagrama da explicação" style="max-width:100%;height:auto" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(exp.visualSvg)}"></div>
         </div>` : ''}
 
         <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #CBD5E1;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
@@ -3474,16 +3474,7 @@ function bindApp() {
       if (!q) return;
       dispararRevanche({
         cadernoId: c.id,
-        questoes: [{
-          enunciado: q.enunciado,
-          alternativas: q.alternativas || [],
-          gabarito: q.gabarito,
-          respostaAluno: q.ans || '',
-          pegadinha: q.pegadinha || '',
-          comentario: q.comentario || '',
-          materia: q.materia,
-          topico: q.topico_edital || q.assunto,
-        }],
+        keys: [q.key],
         banca: q.banca || c.banca,
         materia: q.materia,
         qtd: 3,

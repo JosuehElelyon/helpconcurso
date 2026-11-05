@@ -19,6 +19,9 @@ import { aplicarSituacaoOficial, carregarSituacaoOficial } from '../services/sit
 import { registrarAtividade, contarNovas } from '../services/atividade.js';
 import { obterOuGerarExplicacao } from '../services/explicacao.js';
 import { config } from '../config.js';
+import { explainLimit } from '../middleware/limites.js';
+import { pontuarSimulado } from '../services/pontuacao.js';
+import { coletarQuestoesErradas, aplicarVitoriaRevanche, MAX_BASE } from '../services/revanche.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -191,114 +194,36 @@ r.post('/', perUser, ah(async (req, res) => {
   }
 }));
 
-// Gera uma BATERIA DE REVANCHE DA IA: cria questões inéditas focadas nos pontos cegos e pegadinhas onde o aluno errou.
+// Gera uma BATERIA DE REVANCHE DA IA: questões inéditas focadas nos pontos cegos onde o aluno errou.
+// A base (questões erradas) vem sempre do servidor: simulado (setId) ou caderno (cadernoId + keys) do próprio aluno.
 r.post('/revanche', perUser, ah(async (req, res) => {
   const b = parseBody(z.object({
     setId: z.string().uuid().optional().nullable(),
     cadernoId: z.string().uuid().optional().nullable(),
     editalId: z.string().uuid().optional().nullable(),
-    indices: z.array(z.number().int().min(0)).optional().default([]),
-    banca: z.string().optional(),
-    materia: z.string().trim().max(100).optional(),
-    assunto: z.string().trim().max(150).optional(),
-    questoes: z.array(z.object({
-      enunciado: z.string().min(5),
-      alternativas: z.array(z.string()).optional().default([]),
-      gabarito: z.string(),
-      respostaAluno: z.string().optional().default(''),
-      pegadinha: z.string().optional().default(''),
-      comentario: z.string().optional().default(''),
-      materia: z.string().optional().default(''),
-      topico: z.string().optional().default(''),
-    })).optional().default([]),
+    indices: z.array(z.number().int().min(0).max(500)).max(50).optional().default([]),
+    keys: z.array(z.string().max(120)).max(MAX_BASE).optional().default([]),
+    banca: z.string().max(40).optional().nullable(),
+    materia: z.string().trim().max(100).optional().nullable(),
+    assunto: z.string().trim().max(150).optional().nullable(),
     qtd: z.coerce.number().int().min(1).max(10).optional().default(3),
   }), req.body);
+  for (const v of [b.materia, b.assunto]) if (v && SEV[scanText(v).severity] >= SEV.medium) throw new HttpError(422, 'Matéria/assunto com conteúdo não permitido.');
+  if (b.editalId && !(await one('SELECT id FROM editais WHERE id=$1 AND user_id=$2', [b.editalId, req.user.id]))) throw new HttpError(404, 'Edital não encontrado.');
 
-  let questoesErradas = [];
-  let banca = b.banca;
-  let materia = b.materia;
-  let assunto = b.assunto;
-  let materialId = null;
-  let originalSet = null;
+  const { base: questoesErradas, originalSet, caderno } = await coletarQuestoesErradas({
+    userId: req.user.id, setId: b.setId, indices: b.indices, cadernoId: b.cadernoId, keys: b.keys,
+  });
+  if (!questoesErradas.length) throw new HttpError(400, 'Nenhuma questão errada foi encontrada para gerar a revanche.');
 
-  if (b.setId) {
-    originalSet = await one('SELECT * FROM question_sets WHERE id=$1 AND user_id=$2', [b.setId, req.user.id]);
-    if (originalSet) {
-      banca = banca || originalSet.banca;
-      materia = materia || originalSet.materia;
-      assunto = assunto || originalSet.assunto;
-      materialId = originalSet.material_id;
-      const qs = originalSet.questoes || [];
-      const resp = originalSet.respostas || {};
-      const targetIndices = b.indices.length ? b.indices : qs.map((_, i) => i);
-
-      for (const idx of targetIndices) {
-        const q = qs[idx];
-        const rAluno = resp[String(idx)];
-        if (q && rAluno !== undefined && rAluno !== q.gabarito) {
-          questoesErradas.push({
-            enunciado: q.enunciado,
-            alternativas: q.alternativas || [],
-            gabarito: q.gabarito,
-            respostaAluno: rAluno,
-            pegadinha: q.pegadinha || '',
-            comentario: q.comentario || '',
-            materia: q.materia || materia,
-            topico: q.topico || q.tema || assunto,
-          });
-        }
-      }
-    }
-  }
-
-  if (!questoesErradas.length && b.questoes.length) {
-    questoesErradas = b.questoes;
-  }
-
-  if (!questoesErradas.length && b.cadernoId) {
-    const c = await one('SELECT * FROM cadernos WHERE id=$1 AND user_id=$2', [b.cadernoId, req.user.id]);
-    if (c) {
-      banca = banca || c.banca;
-      materia = materia || c.materia;
-      const cSets = await many('SELECT questoes, respostas FROM question_sets WHERE caderno_id=$1 AND user_id=$2 ORDER BY created_at DESC LIMIT 5', [c.id, req.user.id]);
-      for (const cs of cSets) {
-        const qs = cs.questoes || [];
-        const resp = cs.respostas || {};
-        for (let i = 0; i < qs.length; i++) {
-          if (resp[String(i)] && resp[String(i)] !== qs[i].gabarito) {
-            questoesErradas.push({
-              enunciado: qs[i].enunciado,
-              alternativas: qs[i].alternativas || [],
-              gabarito: qs[i].gabarito,
-              respostaAluno: resp[String(i)],
-              pegadinha: qs[i].pegadinha || '',
-              comentario: qs[i].comentario || '',
-              materia: qs[i].materia || materia,
-              topico: qs[i].topico || qs[i].tema,
-            });
-            if (questoesErradas.length >= 5) break;
-          }
-        }
-        if (questoesErradas.length >= 5) break;
-      }
-    }
-  }
-
-  if (!questoesErradas.length) {
-    throw new HttpError(400, 'Nenhuma questão errada foi encontrada para gerar a revanche.');
-  }
-
-  banca = banca && BANCA[banca] ? banca : (originalSet?.banca || 'fgv');
-  materia = materia || questoesErradas[0]?.materia || 'Geral';
-  assunto = assunto || `Revanche: ${materia}`;
+  const banca = [b.banca, originalSet?.banca, caderno?.banca].find((x) => x && BANCA[x]) || 'fgv';
+  const materia = b.materia || originalSet?.materia || questoesErradas[0].materia || 'Geral';
+  const assunto = b.assunto || `Revanche: ${materia}`;
+  const cadernoId = caderno?.id || originalSet?.caderno_id || null;
 
   const used = await consumeGeneration(req.user, 'Médio');
 
-  res.status(200).set({
-    'Content-Type': 'application/x-ndjson; charset=utf-8',
-    'Cache-Control': 'no-cache',
-    'X-Accel-Buffering': 'no',
-  });
+  res.status(200).set({ 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' });
   res.flushHeaders();
   const send = (o) => { if (!res.writableEnded) res.write(JSON.stringify(o) + '\n'); };
   const ping = setInterval(() => send({ type: 'ping' }), 15000);
@@ -307,103 +232,54 @@ r.post('/revanche', perUser, ah(async (req, res) => {
 
   try {
     let knowledge;
-    try {
-      knowledge = await getKnowledge(banca, materia, 4);
-    } catch {
-      knowledge = { provas: 0, exemplos: [] };
-    }
-
+    try { knowledge = await getKnowledge(banca, materia, 4); } catch { knowledge = { provas: 0, exemplos: [] }; }
     const formato = BANCA[banca].formato;
     let count = 0;
     send({ type: 'stage', stage: 'analisando_pontos_cegos' });
 
-    const pRevanche = promptRevanche({
-      banca,
-      materia,
-      assunto,
-      questoesErradas: questoesErradas.slice(0, 5),
-      qtd: b.qtd,
-      knowledge,
-    });
-
     const { data, meta } = await runJSON('generate', {
-      ...pRevanche,
+      ...promptRevanche({ banca, materia, assunto, questoesErradas, qtd: b.qtd, knowledge }),
       cacheSystem: true,
       maxTokens: Math.min(32000, 1300 * b.qtd + 1500),
       userId: req.user.id,
       signal: ctrl.signal,
       onText: (snap) => {
         const n = (snap.match(/"enunciado"\s*:/g) || []).length;
-        if (n > count) {
-          count = n;
-          send({ type: 'progress', count: Math.min(b.qtd, count) });
-        }
+        if (n > count) { count = n; send({ type: 'progress', count: Math.min(b.qtd, count) }); }
       },
     }, generateSchema);
 
     const out = [];
     for (const q of (data.questoes || []).slice(0, b.qtd)) {
       const n = normalizeQ(q, formato);
-      if (n) out.push(n);
+      if (!n) continue;
+      if (SEV[scanText([n.enunciado, ...n.alternativas, n.comentario].join('\n')).severity] >= SEV.high) continue;
+      out.push(n);
     }
+    if (!out.length) throw Object.assign(new Error('Não foi possível formatar as questões da revanche.'), { code: 'bad_output' });
 
-    if (!out.length) {
-      throw Object.assign(new Error('Não foi possível formatar as questões da revanche.'), { code: 'bad_output' });
-    }
-
-    let qs = out;
+    // Revisor: questão reprovada nunca chega ao aluno (gabarito errado na revanche ensinaria o erro)
+    let qs = out.map((q) => ({ ...q, verificada: null }));
     if (config.review.enabled) {
       send({ type: 'stage', stage: 'revisando' });
-      const rev = await reviewQuestions({
-        questoes: out,
-        formato,
-        userId: req.user.id,
-        signal: ctrl.signal,
-        geradoPor: meta && { provider: meta.provider, model: meta.model },
-      });
-      if (rev.available) {
-        const kept = out.filter((_, i) => rev.verdicts[i]?.ok);
-        if (kept.length > 0) qs = kept;
-      }
+      const mat = originalSet?.material_id ? await one('SELECT text FROM materials WHERE id=$1 AND user_id=$2', [originalSet.material_id, req.user.id]) : null;
+      const rev = await reviewQuestions({ questoes: out, formato, text: mat?.text || '', userId: req.user.id, signal: ctrl.signal, geradoPor: meta && { provider: meta.provider, model: meta.model } });
+      if (rev.available) qs = out.filter((_, i) => rev.verdicts[i]?.ok).map((q) => ({ ...q, verificada: true }));
     }
+    if (!qs.length) throw Object.assign(new Error('Nenhuma questão da revanche passou na revisão automática. Tente novamente.'), { code: 'bad_output' });
 
     const s = await one(
-      `INSERT INTO question_sets(
-         user_id, material_id, edital_id, caderno_id, banca, materia, assunto,
-         nivel, formato, arquivo, questoes, model, origem, estatisticas
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
-      [
-        req.user.id,
-        materialId,
-        b.editalId || originalSet?.edital_id || null,
-        b.cadernoId || originalSet?.caderno_id || null,
-        banca,
-        materia,
-        assunto,
-        'Médio',
-        formato,
-        'Bateria de Revanche',
-        JSON.stringify(qs),
-        `${meta.provider}:${meta.model}`,
-        'revanche',
-        JSON.stringify({
-          revancheDe: {
-            setId: b.setId || null,
-            cadernoId: b.cadernoId || null,
-            totalOriginaisErradas: questoesErradas.length,
-          },
-        }),
-      ]
+      `INSERT INTO question_sets(user_id, material_id, edital_id, caderno_id, banca, materia, assunto, nivel, formato, arquivo, questoes, model, origem, estatisticas)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+      [req.user.id, originalSet?.material_id || null, b.editalId || originalSet?.edital_id || caderno?.edital_id || null, cadernoId,
+        banca, materia, assunto, 'Médio', formato, 'Bateria de Revanche', JSON.stringify(qs), `${meta.provider}:${meta.model}`, 'revanche',
+        JSON.stringify({ revancheDe: { setId: originalSet?.id || null, cadernoId, keys: questoesErradas.map((q) => q.key), totalOriginaisErradas: questoesErradas.length } })]
     );
-
     send({ type: 'done', set: view(s) });
   } catch (e) {
     await refundGeneration(req.user, used).catch(() => {});
     if (e?.code !== 'aborted') console.error('[revanche]', e?.message || e);
-    send({
-      type: 'error',
-      message: e?.name === 'AiError' ? userMessage(e) : e?.code === 'bad_output' ? e.message : 'Não foi possível gerar a bateria de revanche.',
-    });
+    send({ type: 'error', message: e?.name === 'AiError' ? userMessage(e) : e?.code === 'bad_output' ? e.message : 'Não foi possível gerar a bateria de revanche.' });
   } finally {
     clearInterval(ping);
     if (!res.writableEnded) res.end();
@@ -433,98 +309,32 @@ r.patch('/:id', ah(async (req, res) => {
   }), req.body);
 
   const antes = await one(
-    'SELECT id, respostas, questoes, caderno_id, modo_prova, formato, tempo_limite_minutos, tempo_gasto_segundos, duvidas, estatisticas FROM question_sets WHERE id=$1 AND user_id=$2',
+    'SELECT id, respostas, questoes, caderno_id, modo_prova, formato, origem, finalizado, tempo_gasto_segundos, estatisticas FROM question_sets WHERE id=$1 AND user_id=$2',
     [req.params.id, req.user.id]
   );
   if (!antes) throw new HttpError(404, 'Simulado não encontrado.');
 
-  let statsObj = antes.estatisticas || {};
+  let statsObj = null;
   if (b.finalizado) {
-    const qs = antes.questoes || [];
+    statsObj = { ...(antes.estatisticas || {}) };
+    const qs = await aplicarSituacaoOficial(antes.questoes || []); // anulada não conta na nota
     const resp = b.respostas !== undefined ? b.respostas : (antes.respostas || {});
-    let acertos = 0;
-    let erros = 0;
-    let emBranco = 0;
+    const tempo = b.tempoGastoSegundos !== undefined ? b.tempoGastoSegundos : (antes.tempo_gasto_segundos || 0);
+    statsObj.resultadoFinal = pontuarSimulado(qs, resp, antes.formato, tempo);
 
-    for (let i = 0; i < qs.length; i++) {
-      const q = qs[i];
-      const r = resp[String(i)];
-      if (!r) {
-        emBranco++;
-      } else if (r === q.gabarito) {
-        acertos++;
-      } else {
-        erros++;
-      }
-    }
-
-    const total = qs.length;
-    const notaLiquida = antes.formato === 'ce' ? acertos - erros : acertos;
-    const notaBruta = total > 0 ? Math.round((acertos / total) * 100) : 0;
-    const aproveitamentoLiquido = (antes.formato === 'ce' && total > 0)
-      ? Math.round((Math.max(0, notaLiquida) / total) * 100)
-      : notaBruta;
-
-    // Desempenho por disciplina do edital
-    const porMateria = {};
-    for (let i = 0; i < qs.length; i++) {
-      const q = qs[i];
-      const mat = q.materia || 'Geral';
-      if (!porMateria[mat]) {
-        porMateria[mat] = { materia: mat, total: 0, respondidas: 0, acertos: 0, erros: 0 };
-      }
-      porMateria[mat].total++;
-      const r = resp[String(i)];
-      if (r) {
-        porMateria[mat].respondidas++;
-        if (r === q.gabarito) porMateria[mat].acertos++;
-        else porMateria[mat].erros++;
-      }
-    }
-
-    const disciplinasStats = Object.values(porMateria).map((m) => ({
-      ...m,
-      taxaAcerto: m.respondidas > 0 ? Math.round((m.acertos / m.respondidas) * 100) : 0,
-      taxaTotal: m.total > 0 ? Math.round((m.acertos / m.total) * 100) : 0,
-    }));
-
-    statsObj = {
-      ...statsObj,
-      resultadoFinal: {
-        total,
-        respondidas: acertos + erros,
-        acertos,
-        erros,
-        emBranco,
-        notaLiquida,
-        notaBruta,
-        aproveitamentoLiquido,
-        tempoGastoSegundos: b.tempoGastoSegundos !== undefined ? b.tempoGastoSegundos : (antes.tempo_gasto_segundos || 0),
-        disciplinas: disciplinasStats,
-        concluidoEm: new Date().toISOString(),
-      },
-    };
-
-    if (antes.origem === 'revanche') {
-      const superou = total > 0 && acertos / total >= 0.65;
+    // Revanche vencida (≥ 65%) avança as questões-base no caderno — só na 1ª finalização, para não avançar a cada clique
+    if (antes.origem === 'revanche' && !antes.finalizado) {
+      const rf = statsObj.resultadoFinal;
+      const superou = rf.total > 0 && rf.acertos / rf.total >= 0.65;
       statsObj.revancheSuperada = superou;
-      if (superou && antes.caderno_id && statsObj.revancheDe?.setId) {
-        const origSetId = statsObj.revancheDe.setId;
-        const c = await one('SELECT revisao_espacada FROM cadernos WHERE id=$1 AND user_id=$2', [antes.caderno_id, req.user.id]);
-        if (c?.revisao_espacada) {
-          const mapa = c.revisao_espacada;
-          let alterou = false;
-          for (const [k, v] of Object.entries(mapa)) {
-            if (k.startsWith(`set:${origSetId}:`) && v && !v.dominada) {
-              v.revancheVencida = true;
-              v.fase = Math.min(5, (v.fase || 1) + 1);
-              alterou = true;
-            }
-          }
-          if (alterou) {
-            await query('UPDATE cadernos SET revisao_espacada=$2, updated_at=now() WHERE id=$1', [antes.caderno_id, JSON.stringify(mapa)]);
-          }
-        }
+      const de = statsObj.revancheDe || {};
+      if (superou) {
+        await aplicarVitoriaRevanche({
+          userId: req.user.id,
+          cadernoId: de.cadernoId || antes.caderno_id,
+          keys: Array.isArray(de.keys) ? de.keys : [],
+          setIdLegado: de.setId || null,
+        });
       }
     }
   }
@@ -545,7 +355,7 @@ r.patch('/:id', ah(async (req, res) => {
       b.finalizado ?? null,
       b.tempoGastoSegundos !== undefined ? b.tempoGastoSegundos : null,
       b.duvidas ? JSON.stringify(b.duvidas) : null,
-      b.finalizado ? JSON.stringify(statsObj) : null,
+      statsObj ? JSON.stringify(statsObj) : null,
     ]
   );
 
@@ -581,16 +391,17 @@ r.post('/:id/questoes/:i/reportar', fbLimit, ah(async (req, res) => {
   res.status(202).json(await report(req.user, req.params.id, qIndex(req), b.motivo));
 }));
 
-r.post('/:id/questoes/:i/por-que-errei', fbLimit, ah(async (req, res) => {
+r.post('/:id/questoes/:i/por-que-errei', explainLimit, ah(async (req, res) => {
   const s = await one('SELECT * FROM question_sets WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
   if (!s) throw new HttpError(404, 'Simulado não encontrado.');
   const idx = qIndex(req);
-  const qs = Array.isArray(s.questoes) ? s.questoes : [];
+  const qs = await aplicarSituacaoOficial(Array.isArray(s.questoes) ? s.questoes : []);
   const q = qs[idx];
   if (!q) throw new HttpError(404, 'Questão não encontrada.');
 
+  // A resposta gravada vale; a do corpo só cobre o intervalo antes do salvamento (e é validada no serviço)
   const r = (s.respostas || {})[String(idx)];
-  const respostaAluno = req.body?.resposta || r;
+  const respostaAluno = r || (typeof req.body?.resposta === 'string' ? req.body.resposta.slice(0, 3) : '');
   if (!respostaAluno) throw new HttpError(400, 'Nenhuma resposta informada para esta questão.');
 
   const result = await obterOuGerarExplicacao({

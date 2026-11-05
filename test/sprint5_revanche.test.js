@@ -3,8 +3,9 @@
 // =====================================================================
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { pool, one, query } from '../src/db.js';
+import { pool, one } from '../src/db.js';
 import { promptRevanche } from '../src/lib/prompts.js';
+import { aplicarVitoriaRevanche } from '../src/services/revanche.js';
 
 after(() => pool.end());
 
@@ -49,89 +50,29 @@ test('promptRevanche gera prompt pedagógico com diagnóstico de ponto cego e in
   assert.ok(p.prompt.includes('ex nunc'));
 });
 
-test('Revanche vinculada ao caderno avança revisão espaçada ao ser vencida com sucesso', async () => {
+test('aplicarVitoriaRevanche avança só as questões-base, com estado coerente da revisão espaçada', async () => {
   const user = await getOrCreateTestUser();
-
-  // 1) Cria um caderno de teste com uma questão em fase 1
+  const hoje = new Date().toISOString();
   const caderno = await one(
-    `INSERT INTO cadernos (user_id, titulo, banca, revisao_espacada)
-     VALUES ($1, 'Caderno Revanche', 'fgv', $2) RETURNING *`,
-    [
-      user.id,
-      JSON.stringify({
-        'set:orig-123:0': {
-          fase: 1,
-          intervaloDias: 1,
-          dominada: false,
-          ultimoResultado: false,
-        },
-      }),
-    ]
+    `INSERT INTO cadernos (user_id, titulo, banca, revisao_espacada) VALUES ($1, 'Caderno Revanche', 'fgv', $2) RETURNING *`,
+    [user.id, JSON.stringify({
+      'set:orig-123:0': { fase: 1, intervaloDias: 1, acertosSeguidos: 0, proximaRevisao: hoje, dominada: false },
+      'set:orig-123:1': { fase: 1, intervaloDias: 1, acertosSeguidos: 0, proximaRevisao: hoje, dominada: false },
+    })]
   );
 
-  // 2) Cria o simulado de revanche simulado
-  const questoesRevanche = [
-    { numero: 1, materia: 'Direito Administrativo', enunciado: 'Q Revanche 1', alternativas: ['A', 'B', 'C', 'D', 'E'], gabarito: 'A' },
-    { numero: 2, materia: 'Direito Administrativo', enunciado: 'Q Revanche 2', alternativas: ['A', 'B', 'C', 'D', 'E'], gabarito: 'B' },
-    { numero: 3, materia: 'Direito Administrativo', enunciado: 'Q Revanche 3', alternativas: ['A', 'B', 'C', 'D', 'E'], gabarito: 'C' },
-  ];
+  const n = await aplicarVitoriaRevanche({ userId: user.id, cadernoId: caderno.id, keys: ['set:orig-123:0'] });
+  assert.equal(n, 1);
+  const { revisao_espacada: m } = await one('SELECT revisao_espacada FROM cadernos WHERE id=$1', [caderno.id]);
+  const q = m['set:orig-123:0'];
+  assert.equal(q.revancheVencida, true);
+  assert.equal(q.fase, 2);
+  assert.equal(q.intervaloDias, 3, 'a fase 2 revisa em 3 dias');
+  assert.equal(q.acertosSeguidos, 1);
+  assert.ok(new Date(q.proximaRevisao) > new Date(Date.now() + 2 * 86400000), 'próxima revisão empurrada para frente');
+  assert.equal(m['set:orig-123:1'].fase, 1, 'questão que não era base da revanche não muda');
 
-  const setRevanche = await one(
-    `INSERT INTO question_sets (
-       user_id, caderno_id, banca, materia, assunto, nivel, formato,
-       questoes, respostas, finalizado, origem, estatisticas
-     ) VALUES (
-       $1, $2, 'fgv', 'Direito Administrativo', 'Revanche: Atos', 'Médio', 'me',
-       $3, $4, false, 'revanche', $5
-     ) RETURNING *`,
-    [
-      user.id,
-      caderno.id,
-      JSON.stringify(questoesRevanche),
-      JSON.stringify({}),
-      JSON.stringify({
-        revancheDe: {
-          setId: 'orig-123',
-          cadernoId: caderno.id,
-          totalOriginaisErradas: 1,
-        },
-      }),
-    ]
-  );
-
-  assert.equal(setRevanche.origem, 'revanche');
-
-  // 3) Simula a finalização com 3 acertos (100% de taxa, supera os 65% exigidos)
-  const respostas = { '0': 'A', '1': 'B', '2': 'C' };
-  let statsObj = setRevanche.estatisticas || {};
-  const total = 3;
-  const acertos = 3;
-  const superou = acertos / total >= 0.65;
-  statsObj.revancheSuperada = superou;
-
-  if (superou && setRevanche.caderno_id && statsObj.revancheDe?.setId) {
-    const origSetId = statsObj.revancheDe.setId;
-    const c = await one('SELECT revisao_espacada FROM cadernos WHERE id=$1 AND user_id=$2', [setRevanche.caderno_id, user.id]);
-    if (c?.revisao_espacada) {
-      const mapa = c.revisao_espacada;
-      let alterou = false;
-      for (const [k, v] of Object.entries(mapa)) {
-        if (k.startsWith(`set:${origSetId}:`) && v && !v.dominada) {
-          v.revancheVencida = true;
-          v.fase = Math.min(5, (v.fase || 1) + 1);
-          alterou = true;
-        }
-      }
-      if (alterou) {
-        await query('UPDATE cadernos SET revisao_espacada=$2, updated_at=now() WHERE id=$1', [setRevanche.caderno_id, JSON.stringify(mapa)]);
-      }
-    }
-  }
-
-  // 4) Verifica no banco se a questão original do caderno foi atualizada com sucesso
-  const cadernoAtualizado = await one('SELECT revisao_espacada FROM cadernos WHERE id=$1', [caderno.id]);
-  const qOrig = cadernoAtualizado.revisao_espacada['set:orig-123:0'];
-  assert.ok(qOrig);
-  assert.equal(qOrig.revancheVencida, true, 'Deve marcar revancheVencida como true');
-  assert.equal(qOrig.fase, 2, 'Deve ter avançado da Fase 1 para a Fase 2');
+  // Caderno de outro aluno não é tocado
+  const n2 = await aplicarVitoriaRevanche({ userId: '00000000-0000-0000-0000-000000000000', cadernoId: caderno.id, keys: ['set:orig-123:1'] });
+  assert.equal(n2, 0);
 });
