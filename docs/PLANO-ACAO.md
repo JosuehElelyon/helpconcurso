@@ -451,3 +451,20 @@ chamadas/429 por provedor; cache de prompt medido. Decisões de modelo e prompt 
   - **Matriz de Pareto da Banca (4 Quadrantes Visuais):** tópicos críticos com botões rápidos de ação (`Resolver Reais (US$ 0)` e `Gerar IA`).
 - **Testes automatizados:** 124 testes passando com 100% de sucesso (`npm test`).
 
+## Sprint 5 (parte 5) — Bateria de Revanche da IA ("Destruir Ponto Cego") — 05/11/2026
+- **Conceito pedagógico:**
+  - Repetir a mesma questão exata decora gabarito mas não ensina. A Bateria de Revanche diagnostica o erro, identifica o ponto cego ou pegadinha da banca e gera de 3 a 5 questões inéditas explorando o mesmo conceito e fundamentação jurídica sob diferentes ângulos práticos e progressão pedagógica (Fixação Conceitual, Aplicação Prática, Desafio Estilo da Banca).
+  - Vencendo a revanche com taxa ≥ 65%, o aluno destrói o ponto cego, recebe o selo `🏆 Ponto Cego Vencido!` e o ciclo de repetição espaçada no caderno avança automaticamente para a próxima fase.
+- **Banco de Dados (`migrations/017_revanche.sql`):**
+  - Atualização do check constraint em `question_sets`: `CHECK (origem IN ('ia', 'prova_real', 'revanche'))`.
+- **Backend Prompts & Rotas (`src/lib/prompts.js`, `src/routes/sets.js`):**
+  - `promptRevanche(p)`: prompt calibrado com diagnóstico do ponto cego, ineditismo obrigatório, proibição de repetição da questão-base e estilo rigoroso da banca.
+  - Endpoint `POST /api/sets/revanche`: streaming NDJSON, validação de titularidade do caderno/simulado, controle de cota com estorno automático em falhas, e armazenamento das questões com `origem = 'revanche'`.
+  - Finalização em `PATCH /api/sets/:id`: se for revanche e o aluno obtiver ≥ 65% de acertos, marca `revancheSuperada = true` no set e atualiza todas as questões do caderno associadas ao simulado de origem em `cadernos.revisao_espacada` (`revancheVencida = true` e avanço de fase).
+- **Front-End (`public/app.js`):**
+  - Modal dinâmico de configuração e geração da Revanche com feedback em tempo real.
+  - Banners de Revanche no resultado de Simulados Regulares e Modo Prova Real.
+  - Botão de Revanche por questão errada no simulado e no rodapé do card de explicação ("Por que errei?").
+  - Botão geral de Revanche de erros no Caderno de Questões e botão individual por questão do caderno.
+- **Testes automatizados:** 126 testes passando com 100% de sucesso (`npm test`).
+

@@ -7,7 +7,7 @@ import { requireAuth } from '../lib/auth.js';
 import { runJSON } from '../ai/index.js';
 import { userMessage } from '../ai/errors.js';
 import { generateSchema } from '../ai/schemas.js';
-import { promptGenerate } from '../lib/prompts.js';
+import { promptGenerate, promptRevanche } from '../lib/prompts.js';
 import { BANCA, NIVEIS } from '../lib/bancas.js';
 import { getKnowledge } from '../services/knowledge.js';
 import { consumeGeneration, refundGeneration, generationQuota } from '../services/quota.js';
@@ -191,6 +191,225 @@ r.post('/', perUser, ah(async (req, res) => {
   }
 }));
 
+// Gera uma BATERIA DE REVANCHE DA IA: cria questões inéditas focadas nos pontos cegos e pegadinhas onde o aluno errou.
+r.post('/revanche', perUser, ah(async (req, res) => {
+  const b = parseBody(z.object({
+    setId: z.string().uuid().optional().nullable(),
+    cadernoId: z.string().uuid().optional().nullable(),
+    editalId: z.string().uuid().optional().nullable(),
+    indices: z.array(z.number().int().min(0)).optional().default([]),
+    banca: z.string().optional(),
+    materia: z.string().trim().max(100).optional(),
+    assunto: z.string().trim().max(150).optional(),
+    questoes: z.array(z.object({
+      enunciado: z.string().min(5),
+      alternativas: z.array(z.string()).optional().default([]),
+      gabarito: z.string(),
+      respostaAluno: z.string().optional().default(''),
+      pegadinha: z.string().optional().default(''),
+      comentario: z.string().optional().default(''),
+      materia: z.string().optional().default(''),
+      topico: z.string().optional().default(''),
+    })).optional().default([]),
+    qtd: z.coerce.number().int().min(1).max(10).optional().default(3),
+  }), req.body);
+
+  let questoesErradas = [];
+  let banca = b.banca;
+  let materia = b.materia;
+  let assunto = b.assunto;
+  let materialId = null;
+  let originalSet = null;
+
+  if (b.setId) {
+    originalSet = await one('SELECT * FROM question_sets WHERE id=$1 AND user_id=$2', [b.setId, req.user.id]);
+    if (originalSet) {
+      banca = banca || originalSet.banca;
+      materia = materia || originalSet.materia;
+      assunto = assunto || originalSet.assunto;
+      materialId = originalSet.material_id;
+      const qs = originalSet.questoes || [];
+      const resp = originalSet.respostas || {};
+      const targetIndices = b.indices.length ? b.indices : qs.map((_, i) => i);
+
+      for (const idx of targetIndices) {
+        const q = qs[idx];
+        const rAluno = resp[String(idx)];
+        if (q && rAluno !== undefined && rAluno !== q.gabarito) {
+          questoesErradas.push({
+            enunciado: q.enunciado,
+            alternativas: q.alternativas || [],
+            gabarito: q.gabarito,
+            respostaAluno: rAluno,
+            pegadinha: q.pegadinha || '',
+            comentario: q.comentario || '',
+            materia: q.materia || materia,
+            topico: q.topico || q.tema || assunto,
+          });
+        }
+      }
+    }
+  }
+
+  if (!questoesErradas.length && b.questoes.length) {
+    questoesErradas = b.questoes;
+  }
+
+  if (!questoesErradas.length && b.cadernoId) {
+    const c = await one('SELECT * FROM cadernos WHERE id=$1 AND user_id=$2', [b.cadernoId, req.user.id]);
+    if (c) {
+      banca = banca || c.banca;
+      materia = materia || c.materia;
+      const cSets = await many('SELECT questoes, respostas FROM question_sets WHERE caderno_id=$1 AND user_id=$2 ORDER BY created_at DESC LIMIT 5', [c.id, req.user.id]);
+      for (const cs of cSets) {
+        const qs = cs.questoes || [];
+        const resp = cs.respostas || {};
+        for (let i = 0; i < qs.length; i++) {
+          if (resp[String(i)] && resp[String(i)] !== qs[i].gabarito) {
+            questoesErradas.push({
+              enunciado: qs[i].enunciado,
+              alternativas: qs[i].alternativas || [],
+              gabarito: qs[i].gabarito,
+              respostaAluno: resp[String(i)],
+              pegadinha: qs[i].pegadinha || '',
+              comentario: qs[i].comentario || '',
+              materia: qs[i].materia || materia,
+              topico: qs[i].topico || qs[i].tema,
+            });
+            if (questoesErradas.length >= 5) break;
+          }
+        }
+        if (questoesErradas.length >= 5) break;
+      }
+    }
+  }
+
+  if (!questoesErradas.length) {
+    throw new HttpError(400, 'Nenhuma questão errada foi encontrada para gerar a revanche.');
+  }
+
+  banca = banca && BANCA[banca] ? banca : (originalSet?.banca || 'fgv');
+  materia = materia || questoesErradas[0]?.materia || 'Geral';
+  assunto = assunto || `Revanche: ${materia}`;
+
+  const used = await consumeGeneration(req.user, 'Médio');
+
+  res.status(200).set({
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+  const send = (o) => { if (!res.writableEnded) res.write(JSON.stringify(o) + '\n'); };
+  const ping = setInterval(() => send({ type: 'ping' }), 15000);
+  const ctrl = new AbortController();
+  res.on('close', () => { if (!res.writableFinished) ctrl.abort(); });
+
+  try {
+    let knowledge;
+    try {
+      knowledge = await getKnowledge(banca, materia, 4);
+    } catch {
+      knowledge = { provas: 0, exemplos: [] };
+    }
+
+    const formato = BANCA[banca].formato;
+    let count = 0;
+    send({ type: 'stage', stage: 'analisando_pontos_cegos' });
+
+    const pRevanche = promptRevanche({
+      banca,
+      materia,
+      assunto,
+      questoesErradas: questoesErradas.slice(0, 5),
+      qtd: b.qtd,
+      knowledge,
+    });
+
+    const { data, meta } = await runJSON('generate', {
+      ...pRevanche,
+      cacheSystem: true,
+      maxTokens: Math.min(32000, 1300 * b.qtd + 1500),
+      userId: req.user.id,
+      signal: ctrl.signal,
+      onText: (snap) => {
+        const n = (snap.match(/"enunciado"\s*:/g) || []).length;
+        if (n > count) {
+          count = n;
+          send({ type: 'progress', count: Math.min(b.qtd, count) });
+        }
+      },
+    }, generateSchema);
+
+    const out = [];
+    for (const q of (data.questoes || []).slice(0, b.qtd)) {
+      const n = normalizeQ(q, formato);
+      if (n) out.push(n);
+    }
+
+    if (!out.length) {
+      throw Object.assign(new Error('Não foi possível formatar as questões da revanche.'), { code: 'bad_output' });
+    }
+
+    let qs = out;
+    if (config.review.enabled) {
+      send({ type: 'stage', stage: 'revisando' });
+      const rev = await reviewQuestions({
+        questoes: out,
+        formato,
+        userId: req.user.id,
+        signal: ctrl.signal,
+        geradoPor: meta && { provider: meta.provider, model: meta.model },
+      });
+      if (rev.available) {
+        const kept = out.filter((_, i) => rev.verdicts[i]?.ok);
+        if (kept.length > 0) qs = kept;
+      }
+    }
+
+    const s = await one(
+      `INSERT INTO question_sets(
+         user_id, material_id, edital_id, caderno_id, banca, materia, assunto,
+         nivel, formato, arquivo, questoes, model, origem, estatisticas
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+      [
+        req.user.id,
+        materialId,
+        b.editalId || originalSet?.edital_id || null,
+        b.cadernoId || originalSet?.caderno_id || null,
+        banca,
+        materia,
+        assunto,
+        'Médio',
+        formato,
+        'Bateria de Revanche',
+        JSON.stringify(qs),
+        `${meta.provider}:${meta.model}`,
+        'revanche',
+        JSON.stringify({
+          revancheDe: {
+            setId: b.setId || null,
+            cadernoId: b.cadernoId || null,
+            totalOriginaisErradas: questoesErradas.length,
+          },
+        }),
+      ]
+    );
+
+    send({ type: 'done', set: view(s) });
+  } catch (e) {
+    await refundGeneration(req.user, used).catch(() => {});
+    if (e?.code !== 'aborted') console.error('[revanche]', e?.message || e);
+    send({
+      type: 'error',
+      message: e?.name === 'AiError' ? userMessage(e) : e?.code === 'bad_output' ? e.message : 'Não foi possível gerar a bateria de revanche.',
+    });
+  } finally {
+    clearInterval(ping);
+    if (!res.writableEnded) res.end();
+  }
+}));
+
 r.get('/', ah(async (req, res) => {
   const rows = await many('SELECT * FROM question_sets WHERE user_id=$1 ORDER BY created_at DESC LIMIT 300', [req.user.id]);
   const situacao = await carregarSituacaoOficial(rows.map((s) => s.questoes));
@@ -285,6 +504,29 @@ r.patch('/:id', ah(async (req, res) => {
         concluidoEm: new Date().toISOString(),
       },
     };
+
+    if (antes.origem === 'revanche') {
+      const superou = total > 0 && acertos / total >= 0.65;
+      statsObj.revancheSuperada = superou;
+      if (superou && antes.caderno_id && statsObj.revancheDe?.setId) {
+        const origSetId = statsObj.revancheDe.setId;
+        const c = await one('SELECT revisao_espacada FROM cadernos WHERE id=$1 AND user_id=$2', [antes.caderno_id, req.user.id]);
+        if (c?.revisao_espacada) {
+          const mapa = c.revisao_espacada;
+          let alterou = false;
+          for (const [k, v] of Object.entries(mapa)) {
+            if (k.startsWith(`set:${origSetId}:`) && v && !v.dominada) {
+              v.revancheVencida = true;
+              v.fase = Math.min(5, (v.fase || 1) + 1);
+              alterou = true;
+            }
+          }
+          if (alterou) {
+            await query('UPDATE cadernos SET revisao_espacada=$2, updated_at=now() WHERE id=$1', [antes.caderno_id, JSON.stringify(mapa)]);
+          }
+        }
+      }
+    }
   }
 
   const s = await one(

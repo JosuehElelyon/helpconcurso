@@ -781,6 +781,78 @@ async function generate() {
   finally { w.generating = false; }
 }
 
+// BATERIA DE REVANCHE DA IA: Dispara geração focada em destruir pontos cegos
+async function dispararRevanche({ setId, cadernoId, indices = [], questoes = [], banca, materia, assunto, qtd = 3 }) {
+  S.modal = {
+    title: '⚡ Gerando Bateria de Revanche da IA',
+    html: `
+      <div style="text-align:center;padding:28px 20px">
+        <div class="spinner" style="margin:0 auto 16px;width:38px;height:38px"></div>
+        <div style="font-weight:800;font-size:16px;color:var(--brand-ink)" id="revancheStage">Analisando pontos cegos e pegadinhas...</div>
+        <div class="hint" style="margin-top:6px" id="revancheProgress">A IA está criando questões inéditas no estilo da banca para você dominar o conceito.</div>
+      </div>
+    `,
+  };
+  render();
+
+  try {
+    const res = await fetch('/api/sets/revanche', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ setId, cadernoId, indices, questoes, banca, materia, assunto, qtd }),
+    });
+
+    if (!res.ok) {
+      let d = {};
+      try { d = await res.json(); } catch {}
+      throw new Error(d.error || `Erro ${res.status}`);
+    }
+
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = '', done = null;
+    for (;;) {
+      const { value, done: end } = await reader.read();
+      if (end) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (!line) continue;
+        const ev = JSON.parse(line);
+        if (ev.type === 'progress') {
+          const el = $('#revancheProgress');
+          if (el) el.textContent = `Criando questão ${ev.count} de ${qtd} inédita...`;
+        } else if (ev.type === 'stage') {
+          const el = $('#revancheStage');
+          if (el) {
+            if (ev.stage === 'analisando_pontos_cegos') el.textContent = 'Mapeando onde você foi fisgado pela banca...';
+            else if (ev.stage === 'revisando') el.textContent = 'Revisando qualidade e conformidade das questões...';
+            else el.textContent = 'Finalizando bateria de revanche...';
+          }
+        } else if (ev.type === 'error') {
+          throw new Error(ev.message);
+        } else if (ev.type === 'done') {
+          done = ev;
+        }
+      }
+    }
+
+    if (!done || !done.set) throw new Error('A geração da revanche foi interrompida.');
+
+    S.modal = null;
+    S.sets.unshift(done.set);
+    S.active = done.set.id;
+    go('simulado');
+    toast(`⚡ Bateria de Revanche pronta com ${done.set.questoes.length} questões! Mostre que domina o conceito.`);
+  } catch (e) {
+    S.modal = null;
+    render();
+    toast(e.message || 'Falha ao gerar revanche.');
+  }
+}
+
 function formatTempo(segundos) {
   const s = Math.max(0, Math.floor(segundos || 0));
   const h = Math.floor(s / 3600);
@@ -934,6 +1006,22 @@ function viewPratica() {
           `).join('')}
         </div>
       ` : ''}
+      ${er > 0 ? `
+        <div class="card card-pad" style="background:linear-gradient(135deg,#FFFBEB 0%,#FEF3C7 100%);border:1.5px solid #F59E0B;border-radius:12px;margin-top:16px">
+          <div class="row" style="gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+            <div class="row" style="gap:12px;align-items:center">
+              <span class="li-icon" style="background:#F59E0B;color:#fff;width:38px;height:38px">${ic('spark')}</span>
+              <div>
+                <div style="font-weight:800;font-size:15px;color:#92400E">⚡ Bateria de Revanche da IA: Destruir Pontos Cegos</div>
+                <div class="hint" style="color:#78350F">Você errou ${er} questão(ões). A IA cria questões inéditas focadas na pegadinha da banca para fixar o conceito!</div>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="btnRevancheSimulado" data-set-id="${s.id}" style="background:#D97706;border-color:#B45309;font-weight:800">
+              ${ic('spark', 'sm')} Iniciar Revanche (${Math.min(5, Math.max(3, er))} questões)
+            </button>
+          </div>
+        </div>
+      ` : ''}
     </div>`;
   }
 
@@ -944,12 +1032,31 @@ function viewPratica() {
   ${resultadoHeader}
   ${!resultadoHeader ? `
   <div class="set-head">
-    <div><div class="row" style="margin-bottom:6px"><span class="badge" style="background:${b.cor};color:#fff">${b.nome}</span><span class="badge">${esc(s.nivel)}</span><span class="badge">${b.formatoLabel}</span></div>
+    <div><div class="row" style="margin-bottom:6px">
+      ${s.origem === 'revanche' ? `<span class="badge accent" style="background:#FEF3C7;color:#92400E;font-weight:800;border:1px solid #FCD34D">⚡ BATERIA DE REVANCHE · Destruindo Ponto Cego</span>` : ''}
+      ${s.estatisticas?.revancheSuperada ? `<span class="badge ok" style="font-weight:800">🏆 Ponto Cego Superado!</span>` : ''}
+      <span class="badge" style="background:${b.cor};color:#fff">${b.nome}</span><span class="badge">${esc(s.nivel)}</span><span class="badge">${b.formatoLabel}</span></div>
       <h1 class="page-title">${esc(s.materia)}${s.assunto ? ` <span style="color:var(--muted);font-weight:700">· ${esc(s.assunto)}</span>` : ''}</h1>
       <div class="hint">${n} questões · gerado de ${esc(s.arquivo || 'texto colado')} em ${fmtDate(s.createdAt)}</div>
       ${s.revisao ? `<div class="hint" style="margin-top:4px">${s.revisao.revisor === 'ok' ? `${ic('check', 'sm')} Revisão automática: ${s.revisao.aprovadas} aprovada(s)${s.revisao.descartadas ? `, ${s.revisao.descartadas} descartada(s) e ${s.revisao.refeitas} refeita(s)` : ''}` : s.revisao.revisor === 'indisponivel' ? '⚠ O revisor automático estava indisponível: confira as questões com atenção' : ''}</div>` : ''}</div>
     <div class="score-box"><div><b>${resp}/${n - anuladas}</b><span>Respondidas</span></div><div><b style="color:var(--ok)">${ac}</b><span>Acertos</span></div><div><b style="color:var(--bad)">${er}</b><span>Erros</span></div>${ce ? `<div><b>${ac - er}</b><span>Nota líquida</span></div>` : ''}</div>
-  </div>` : ''}
+  </div>
+  ${er > 0 ? `
+    <div class="card card-pad" style="background:linear-gradient(135deg,#FFFBEB 0%,#FEF3C7 100%);border:1.5px solid #F59E0B;border-radius:12px;margin:14px 0">
+      <div class="row" style="gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+        <div class="row" style="gap:12px;align-items:center">
+          <span class="li-icon" style="background:#F59E0B;color:#fff;width:38px;height:38px">${ic('spark')}</span>
+          <div>
+            <div style="font-weight:800;font-size:15px;color:#92400E">⚡ Bateria de Revanche da IA: Destruir Pontos Cegos</div>
+            <div class="hint" style="color:#78350F">Você errou ${er} questão(ões). A IA cria questões inéditas focadas na pegadinha da banca para fixar o conceito!</div>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btnRevancheSimulado" data-set-id="${s.id}" style="background:#D97706;border-color:#B45309;font-weight:800">
+          ${ic('spark', 'sm')} Iniciar Revanche (${Math.min(5, Math.max(3, er))} questões)
+        </button>
+      </div>
+    </div>
+  ` : ''}` : ''}
   ${ce && !resultadoHeader ? `<div class="banner info">${ic('info', 'sm')}<div>No estilo CEBRASPE, cada item errado anula um certo. Na dúvida, você pode deixar o item em branco.</div></div>` : ''}
   ${!s.modoProva ? `<div class="banner info">${ic('info', 'sm')}<div>As questões seguem o conteúdo do <b>seu material</b>. Se ele estiver desatualizado (ex.: lei alterada), a questão também estará. Achou um erro? Use <b>Reportar erro</b> — se a IA confirmar, você ganha estrelas.</div></div>` : ''}
   ${s.questoes.map((q, i) => viewQ(q, i, r[i], ce, (S.feedback[s.id] || {})[i], s)).join('')}
@@ -1014,6 +1121,16 @@ function renderExplicacaoCard(expData) {
           <div class="pq-sec-title">🎨 Diagrama Visual Conceitual</div>
           <div class="pq-svg-container">${exp.visualSvg}</div>
         </div>` : ''}
+
+        <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #CBD5E1;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div>
+            <div style="font-weight:700;font-size:13px;color:var(--brand-ink)">Pronto para provar que superou este erro?</div>
+            <div class="hint" style="font-size:12px">Gere uma bateria inédita para cravar o conceito na mente.</div>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm btn-revanche-card" style="background:#D97706;border-color:#B45309">
+            ${ic('spark', 'sm')} ⚡ Testar na Revanche IA
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -1062,9 +1179,12 @@ function viewQ(q, i, ans, ce, fb, s = null) {
       <p>${esc(q.comentario)}</p>
       ${q.trecho ? `<div class="trecho">“${esc(q.trecho)}”<div class="hint" style="font-style:normal;margin-top:4px">${q.ancorada === false ? '⚠ Trecho não localizado exatamente no seu material — confira' : q.ancorada ? '✓ Trecho conferido no seu material' : 'Trecho do seu material'}</div></div>` : ''}
       ${q.pegadinha ? `<div class="pega"><b>Pegadinha da banca:</b> ${esc(q.pegadinha)}</div>` : ''}
-      ${!ok ? `<div class="row no-print" style="margin-top:12px;gap:8px">
+      ${!ok ? `<div class="row no-print" style="margin-top:12px;gap:8px;flex-wrap:wrap">
         <button type="button" class="btn btn-ghost btn-pq-errei" data-pq-errei="${i}">
           ${expLoading ? `<span class="spinner sm" style="width:13px;height:13px;display:inline-block;vertical-align:-2px"></span> Analisando seu erro...` : `💡 Por que errei?`}
+        </button>
+        <button type="button" class="btn btn-ghost btn-revanche-q" data-revanche-q-idx="${i}" title="Gera 3 questões inéditas focadas nesta pegadinha para superar o erro">
+          ${ic('spark', 'sm')} ⚡ Revanche IA
         </button>
       </div>
       ${expData ? renderExplicacaoCard(expData) : ''}` : ''}
@@ -1441,6 +1561,23 @@ function viewCaderno() {
     </div>
   </div>
 
+  ${c.erros > 0 ? `
+    <div class="card card-pad no-print" style="background:linear-gradient(135deg,#FFFBEB 0%,#FEF3C7 100%);border:1.5px solid #F59E0B;border-radius:12px;margin:14px 0">
+      <div class="row" style="gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+        <div class="row" style="gap:12px;align-items:center">
+          <span class="li-icon" style="background:#F59E0B;color:#fff;width:38px;height:38px">${ic('spark')}</span>
+          <div>
+            <div style="font-weight:800;font-size:15px;color:#92400E">⚡ Bateria de Revanche dos Erros</div>
+            <div class="hint" style="color:#78350F">Você tem <b>${c.erros} questão(ões) para revisar</b> neste caderno. Gere uma bateria inédita para destruir esses pontos cegos!</div>
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" id="btnRevancheCadernoGeral" data-caderno-id="${c.id}" style="background:#D97706;border-color:#B45309;font-weight:800">
+          ${ic('spark', 'sm')} Iniciar Revanche dos Erros
+        </button>
+      </div>
+    </div>
+  ` : ''}
+
   ${filtered.length
     ? filtered.map((q, idx) => viewCadernoQ(q, idx)).join('')
     : `<div class="card"><div class="empty">${ic('book')}<div>${(c.questoes || []).length ? 'Nenhuma questão encontrada para esses filtros.' : 'Este caderno ainda não tem questões.'}</div><div class="hint">Use os botões acima para alimentar o caderno com seu conteúdo ou com provas antigas da banca!</div></div></div>`}`;
@@ -1458,13 +1595,14 @@ function viewCadernoQ(q, idx) {
 
   return `<article class="card q">
     <div class="q-top" style="justify-content:space-between">
-      <div class="row" style="gap:6px">
+      <div class="row" style="gap:6px;flex-wrap:wrap">
         <span class="q-num">#${idx + 1}</span>
         <span class="badge ${q.origem === 'ia' ? 'brand' : 'accent'}" title="Fonte: ${esc(q.fonteTitulo)}">${q.origem === 'ia' ? '📄 Meu material' : '🏛️ Prova da banca'} · ${esc(q.fonteTitulo.slice(0, 32))}</span>
         <span class="badge">${esc(q.materia)}</span>
         ${q.assunto ? `<span class="badge">${esc(q.assunto)}</span>` : ''}
         ${q.topico_edital ? `<span class="badge edital-tag">${ic('target', 'sm')} Edital: ${esc(q.topico_edital)}</span>` : ''}
         ${q.anulada ? '<span class="badge sev high" title="A banca anulou esta questão no gabarito definitivo">Anulada pela banca — não conta</span>' : q.gabaritoAtualizado ? '<span class="badge accent" title="Gabarito conferido com o definitivo oficial">Gabarito atualizado (definitivo)</span>' : ''}
+        ${q.revisao?.revancheVencida ? `<span class="badge" style="background:#DCFCE7;color:#166534;font-weight:800;border:1px solid #86EFAC">🏆 Ponto Cego Vencido!</span>` : ''}
         ${q.revisao ? `<span class="badge ${q.revisao.dominada ? 'brand' : q.revisao.paraRevisarHoje ? 'accent' : ''}" title="Repetição Espaçada: ${q.revisao.rotulo}${q.revisao.paraRevisarHoje ? ' · Pendente para revisão hoje!' : ''}">${q.revisao.dominada ? '✔ Dominada' : q.revisao.paraRevisarHoje ? '🔔 Revisar hoje (' + q.revisao.rotulo + ')' : '⏳ ' + q.revisao.rotulo}</span>` : ''}
       </div>
       <div class="row no-print" style="gap:6px">
@@ -1480,7 +1618,7 @@ function viewCadernoQ(q, idx) {
         <div class="row no-print" style="gap:8px;flex-wrap:wrap">
           <button type="button" class="btn btn-quiet" style="padding:4px 10px;font-size:12px" data-cad-clear="${esc(q.key)}">${ic('refresh', 'sm')} Resolver novamente</button>
           ${!ok ? `<button type="button" class="btn btn-ghost btn-pq-errei" style="padding:4px 10px;font-size:12px" data-pq-caderno="${esc(q.key)}">${(S.explicacaoLoading && S.explicacaoLoading['cad:' + q.key]) ? `<span class="spinner sm" style="width:12px;height:12px;display:inline-block;vertical-align:-1px"></span> Analisando...` : `💡 Por que errei?`}</button>` : ''}
-          ${!ok ? `<button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:12px" data-revanche="${esc(q.materia)}||${esc(q.topico_edital || q.assunto || '')}||${esc(q.banca)}">${ic('spark', 'sm')} Gerar +questões deste tema</button>` : ''}
+          ${!ok ? `<button type="button" class="btn btn-primary btn-sm" style="padding:4px 10px;font-size:12px;background:#D97706;border-color:#B45309" data-revanche-cad-key="${esc(q.key)}">${ic('spark', 'sm')} ⚡ Revanche IA</button>` : ''}
         </div>
       </div>
       <p>${esc(q.comentario)}</p>
@@ -2978,6 +3116,16 @@ function bindApp() {
         const y2 = window.scrollY; render(); window.scrollTo({ top: y2 });
       }
     });
+    on('#btnRevancheSimulado', 'click', () => {
+      dispararRevanche({ setId: s.id });
+    });
+    on('[data-revanche-q-idx]', 'click', (e) => {
+      const idx = Number(e.currentTarget.dataset.revancheQIdx);
+      dispararRevanche({ setId: s.id, indices: [idx] });
+    });
+    on('.btn-revanche-card', 'click', () => {
+      dispararRevanche({ setId: s.id });
+    });
     on('#copySet', 'click', async () => { try { await navigator.clipboard.writeText(setText(s)); toast('Questões copiadas com o gabarito'); } catch { toast('Não foi possível copiar'); } });
     on('#printSet', 'click', () => window.print());
     on('#delSet', 'click', () => confirmBox('Excluir simulado?', 'As questões deste simulado serão removidas.', 'Excluir', true, async () => { await api(`/sets/${s.id}`, { method: 'DELETE' }).catch(() => {}); S.sets = S.sets.filter((x) => x.id !== s.id); go('questoes'); toast('Simulado excluído'); }));
@@ -3316,6 +3464,30 @@ function bindApp() {
         S.explicacaoLoading[stateKey] = false;
         const y2 = window.scrollY; render(); window.scrollTo({ top: y2 });
       }
+    });
+    on('#btnRevancheCadernoGeral', 'click', () => {
+      dispararRevanche({ cadernoId: c.id });
+    });
+    on('[data-revanche-cad-key]', 'click', (e) => {
+      const qKey = e.currentTarget.dataset.revancheCadKey;
+      const q = (c.questoes || []).find((x) => x.key === qKey);
+      if (!q) return;
+      dispararRevanche({
+        cadernoId: c.id,
+        questoes: [{
+          enunciado: q.enunciado,
+          alternativas: q.alternativas || [],
+          gabarito: q.gabarito,
+          respostaAluno: q.ans || '',
+          pegadinha: q.pegadinha || '',
+          comentario: q.comentario || '',
+          materia: q.materia,
+          topico: q.topico_edital || q.assunto,
+        }],
+        banca: q.banca || c.banca,
+        materia: q.materia,
+        qtd: 3,
+      });
     });
     on('[data-revanche]', 'click', (e) => {
       const [mat, top, b] = e.currentTarget.dataset.revanche.split('||');

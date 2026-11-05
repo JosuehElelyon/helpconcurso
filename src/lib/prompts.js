@@ -8,7 +8,7 @@ import { COMANDOS, PEGADINHAS, HABILIDADES } from './cobranca.js';
 // é isso que permite comparar qualidade e custo entre versões e reprocessar só o que foi feito com a versão antiga.
 export const PROMPT_VERSAO = {
   detect: 'v1', generate: 'v5', generate_dificil: 'v5', ocr: 'v1', prova_check: 'v1', prova_analysis: 'v1', prova_extract: 'v2',
-  review: 'v1', report_check: 'v1', edital_parse: 'v1', edital_match: 'v1', json_repair: 'v1', explain_mistake: 'v1',
+  review: 'v1', report_check: 'v1', edital_parse: 'v1', edital_match: 'v1', json_repair: 'v1', explain_mistake: 'v1', revanche: 'v1',
 };
 
 export const MAX_MATERIAL_CHARS = 30000;
@@ -269,4 +269,68 @@ ${untrusted('EDITAL VERTICALIZADO', resumoEdital.slice(0, 20000))}
 
 ${untrusted('MATERIAL DO ALUNO', text.slice(0, 20000))}`,
   };
+}
+
+/**
+ * BATERIA DE REVANCHE DA IA: Destruir Pontos Cegos.
+ * Recebe questões que o aluno errou e gera questões INÉDITAS cobrando o mesmo conceito por outros ângulos.
+ */
+export function promptRevanche(p) {
+  const b = BANCA[p.banca] || { nome: p.banca || 'Banca', full: p.banca || 'Banca', resumo: '', estilo: [], formato: 'me' };
+  const ce = b.formato === 'ce';
+  const k = p.knowledge || { provas: 0, exemplos: [] };
+  const list = (title, arr) => (arr?.length ? `\n${title}:\n${arr.map((s) => '- ' + s).join('\n')}` : '');
+  const exemplos = k.exemplos?.length
+    ? untrusted('QUESTÕES REAIS DE PROVAS DA BANCA (referência de estilo)', k.exemplos.map((e, i) => `Exemplo ${i + 1}:\n${e.enunciado}${(e.alternativas || []).length ? '\n' + e.alternativas.map((a, j) => `${LET[j]}) ${a}`).join('\n') : ''}${e.gabarito ? `\nGabarito: ${e.gabarito}` : ''}`).join('\n\n'))
+    : '(use o perfil oficial da banca)';
+
+  const questoesErradasTexto = (p.questoesErradas || []).map((q, idx) => `
+QUESTÃO ${idx + 1} QUE O ALUNO ERROU:
+- Matéria/Tópico: ${q.materia || p.materia || 'Geral'} / ${q.topico || p.assunto || 'Tópico'}
+- Enunciado: ${q.enunciado}
+${(q.alternativas || []).length ? '- Alternativas:\n' + q.alternativas.map((a, j) => `  ${LET[j]}) ${a}`).join('\n') : ''}
+- Gabarito Oficial: ${q.gabarito}
+- Resposta incorreta marcada pelo aluno: ${q.respostaAluno || 'Incorreta'}
+${q.pegadinha ? `- Pegadinha da questão: ${q.pegadinha}` : ''}
+${q.comentario ? `- Fundamentação correta: ${q.comentario}` : ''}
+`).join('\n---\n');
+
+  const system = `Você é um mentor especialista em concursos públicos e elaborador sênior no estilo da banca ${b.nome} (${b.full}).
+
+SEU OBJETIVO: "BATERIA DE REVANCHE — DESTRUIR PONTOS CEGOS".
+O aluno errou as questões descritas. Seu papel NÃO é repetir a questão original nem apenas mudar nomes de personagens.
+Sua missão pedagógica é diagnosticar o ponto cego, a pegadinha e a confusão doutrinária/legal que causou o erro do concurseiro e criar ${p.qtd} questões TOTALMENTE INÉDITAS no estilo exato da banca ${b.nome} que testem O MESMO CONCEITO E AS MESMAS SUTILEZAS por ângulos diferentes (casos práticos novos, inversão de hipótese, regra geral vs exceção, distinção terminológica).
+
+PERFIL DA BANCA ${b.nome}:
+- ${b.resumo || 'Estilo clássico da banca organizadora.'}
+${(b.estilo || []).map((s) => '- ' + s).join('\n')}
+${list('PEGADINHAS RECORRENTES DA BANCA', k.pegadinhas || [])}
+
+DIRETRIZES DA BATERIA DE REVANCHE:
+1. FOCO NO PONTO CEGO: Identifique o artigo, súmula, prazo ou regra que o aluno confundiu. As novas questões devem forçar o aluno a dominar a distinção onde ele errou.
+2. PROGRESSÃO PEDAGÓGICA DA BATERIA:
+   - Questão 1 (Fixação): Apresenta o conceito com clareza em uma situação prática direta.
+   - Questão 2 (Aplicação): Exige aplicar a regra diferenciando-a de uma situação aparente similar.
+   - Questão 3 (Desafio da Banca): Aplica a pegadinha clássica da ${b.nome} com caso concreto complexo ou exceção sutil.
+3. INEDITISMO ABSOLUTO: Crie novas situações hipotéticas com nomes, contextos e fatos inéditos.
+4. GABARITO E COMENTÁRIO EXPLICATIVO: No campo "comentario", inclua a fundamentação legal precisa e o "POR QUE O PONTO CEGO FOI SUPERADO", explicando o contraste entre a hipótese correta e a pegadinha.
+5. Em cada questão preencha "pegadinha" explicando o detalhe sutil que o aluno precisa prestar atenção.
+
+Use como referência de estilo:
+${exemplos}`;
+
+  const formato = ce
+    ? 'Formato CEBRASPE: cada questão é um ITEM (assertiva) para julgar CERTO ou ERRADO. "alternativas" deve ser [] e "gabarito" deve ser "C" ou "E".'
+    : 'Formato múltipla escolha com EXATAMENTE 5 alternativas (A a E) e apenas UMA correta. "alternativas" é uma lista de 5 textos SEM a letra no início. "gabarito" é a letra correta ("A" a "E").';
+
+  const prompt = `TAREFA: Gere uma Bateria de Revanche com ${p.qtd} questões inéditas para destruir o ponto cego do aluno, baseando-se nas questões erradas abaixo.
+Matéria: ${p.materia || 'Geral'}. Banca: ${b.nome}.
+${formato}
+
+${untrusted('QUESTÕES QUE O ALUNO ERROU (ANÁLISE DE PONTO CEGO)', questoesErradasTexto)}
+
+Formato da resposta (JSON):
+{"questoes":[{"tema":"assunto curto","topico_edital":"tópico do edital se houver","nivel":"Médio","enunciado":"...","alternativas":[...],"gabarito":"...","comentario":"... com fundamentação e superação do ponto cego","trecho_base":"artigo de lei, súmula ou princípio doutrinário","pegadinha":"... a nuance que o concurseiro não pode esquecer"}],"alertas":[]}`;
+
+  return { system, prompt };
 }
