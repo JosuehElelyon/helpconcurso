@@ -937,11 +937,71 @@ function viewPratica() {
   </div>` : ''}
   ${ce && !resultadoHeader ? `<div class="banner info">${ic('info', 'sm')}<div>No estilo CEBRASPE, cada item errado anula um certo. Na dúvida, você pode deixar o item em branco.</div></div>` : ''}
   ${!s.modoProva ? `<div class="banner info">${ic('info', 'sm')}<div>As questões seguem o conteúdo do <b>seu material</b>. Se ele estiver desatualizado (ex.: lei alterada), a questão também estará. Achou um erro? Use <b>Reportar erro</b> — se a IA confirmar, você ganha estrelas.</div></div>` : ''}
-  ${s.questoes.map((q, i) => viewQ(q, i, r[i], ce, (S.feedback[s.id] || {})[i])).join('')}
+  ${s.questoes.map((q, i) => viewQ(q, i, r[i], ce, (S.feedback[s.id] || {})[i], s)).join('')}
   <div class="row no-print" style="justify-content:space-between;margin-top:20px">
     <div class="row"><button class="btn btn-ghost" id="copySet">${ic('copy', 'sm')} Copiar questões</button><button class="btn btn-ghost" id="printSet">${ic('download', 'sm')} Imprimir / PDF</button><button class="btn btn-danger" id="delSet">${ic('trash', 'sm')} Excluir</button></div>
     <div class="row">${resp ? `<button class="btn btn-ghost" id="resetSet">${ic('refresh', 'sm')} Refazer</button>` : ''}<button class="btn btn-primary" id="finish">${s.finalizado ? 'Ver resultado' : 'Finalizar simulado'}</button></div>
   </div>`;
+}
+
+function renderExplicacaoCard(expData) {
+  if (!expData) return '';
+  const exp = expData.explicacao || expData;
+  const isCached = !!expData.cached;
+  return `
+    <div class="pq-card" role="region" aria-label="Explicação didática do erro">
+      <div class="pq-header">
+        <div class="pq-title-row">
+          <span class="pq-badge-prof">👨‍🏫 Professor Descomplicado</span>
+          <h4 class="pq-title">Por que você errou esta questão?</h4>
+        </div>
+        ${isCached
+          ? `<span class="badge brand" title="Explicação reutilizada instantaneamente com custo US$ 0">⚡ Resposta Instantânea</span>`
+          : `<span class="badge accent">✨ Nova Análise IA</span>`}
+      </div>
+
+      <div class="pq-body">
+        <div class="pq-section pq-diagnostico">
+          <div class="pq-sec-title">🎯 Onde seu raciocínio foi fisgado</div>
+          <p class="pq-text">${esc(exp.diagnostico)}</p>
+          ${exp.pegadinha ? `<div class="pq-pega-box">
+            <span class="pq-pega-tag">🍌 Casca de banana da banca</span>
+            <p class="pq-pega-text">${esc(exp.pegadinha)}</p>
+          </div>` : ''}
+        </div>
+
+        ${exp.exemploCotidiano ? `
+        <div class="pq-section pq-exemplo">
+          <div class="pq-sec-title">🍕 Exemplo do Cotidiano (para não esquecer mais)</div>
+          <div class="pq-cotidiano-box">
+            <p class="pq-text pq-cotidiano-text">${esc(exp.exemploCotidiano)}</p>
+          </div>
+        </div>` : ''}
+
+        ${exp.fundamentacao ? `
+        <div class="pq-section pq-fundamentacao">
+          <div class="pq-sec-title">⚖️ Embasamento Legal & Teórico</div>
+          <div class="pq-law-box">
+            <p class="pq-text pq-law-text">${esc(exp.fundamentacao)}</p>
+          </div>
+        </div>` : ''}
+
+        ${exp.dicaOuro ? `
+        <div class="pq-section pq-dica">
+          <div class="pq-sec-title">🧠 Dica de Ouro</div>
+          <div class="pq-gold-box">
+            <p class="pq-gold-text"><b>💡 Macete:</b> ${esc(exp.dicaOuro)}</p>
+          </div>
+        </div>` : ''}
+
+        ${exp.visualSvg ? `
+        <div class="pq-section pq-visual">
+          <div class="pq-sec-title">🎨 Diagrama Visual Conceitual</div>
+          <div class="pq-svg-container">${exp.visualSvg}</div>
+        </div>` : ''}
+      </div>
+    </div>
+  `;
 }
 
 function viewQModoProva(q, i, ans, ce, isDuvida) {
@@ -969,12 +1029,17 @@ function viewQModoProva(q, i, ans, ce, isDuvida) {
     </div>
   </article>`;
 }
-function viewQ(q, i, ans, ce, fb) {
+function viewQ(q, i, ans, ce, fb, s = null) {
   const answered = ans != null, ok = ans === q.gabarito;
   const cls = (L) => (!answered ? '' : L === q.gabarito ? 'correct' : L === ans ? 'wrong' : '');
   const opts = ce
     ? `<div class="ce">${[['C', 'Certo'], ['E', 'Errado']].map(([L, t]) => `<button class="alt ${cls(L)}" data-ans="${i}:${L}" ${answered ? 'disabled' : ''}><span class="tx">${t}</span></button>`).join('')}</div>`
     : `<div class="alts">${q.alternativas.map((a, j) => `<button class="alt ${cls(LETRAS[j])}" data-ans="${i}:${LETRAS[j]}" ${answered ? 'disabled' : ''}><span class="lt">${LETRAS[j]}</span><span class="tx">${esc(a)}</span></button>`).join('')}</div>`;
+  const setId = s?.id || S.activeSet?.id || '';
+  const expKey = setId ? `set:${setId}:${i}` : null;
+  const expData = expKey && S.explicacoes ? S.explicacoes[expKey] : null;
+  const expLoading = expKey && S.explicacaoLoading ? S.explicacaoLoading[expKey] : false;
+
   return `<article class="card q" id="q${i}">
     <div class="q-top"><span class="q-num">${ce ? 'Item' : 'Questão'} ${i + 1}</span>${q.tema ? `<span class="badge">${esc(q.tema)}</span>` : ''}${q.topico_edital ? `<span class="badge edital-tag" title="Tópico do edital cobrado nesta questão">${ic('target', 'sm')} Edital: ${esc(q.topico_edital)}</span>` : ''}${q.nivel ? `<span class="badge">${esc(q.nivel)}</span>` : ''}${q.verificada ? `<span class="badge brand" title="Uma segunda IA resolveu sem ver o gabarito e chegou à mesma resposta">${ic('check', 'sm')} Verificada</span>` : ''}${q.contestada ? '<span class="sev high">Erro confirmado</span>' : ''}${q.anulada ? '<span class="badge sev high" title="A banca anulou esta questão no gabarito definitivo">Anulada pela banca — não conta</span>' : q.gabaritoAtualizado ? '<span class="badge accent" title="Gabarito conferido com o definitivo oficial">Gabarito atualizado (definitivo)</span>' : ''}</div>
     <p class="q-text">${esc(q.enunciado)}</p>${opts}
@@ -982,6 +1047,12 @@ function viewQ(q, i, ans, ce, fb) {
       <p>${esc(q.comentario)}</p>
       ${q.trecho ? `<div class="trecho">“${esc(q.trecho)}”<div class="hint" style="font-style:normal;margin-top:4px">${q.ancorada === false ? '⚠ Trecho não localizado exatamente no seu material — confira' : q.ancorada ? '✓ Trecho conferido no seu material' : 'Trecho do seu material'}</div></div>` : ''}
       ${q.pegadinha ? `<div class="pega"><b>Pegadinha da banca:</b> ${esc(q.pegadinha)}</div>` : ''}
+      ${!ok ? `<div class="row no-print" style="margin-top:12px;gap:8px">
+        <button type="button" class="btn btn-ghost btn-pq-errei" data-pq-errei="${i}">
+          ${expLoading ? `<span class="spinner sm" style="width:13px;height:13px;display:inline-block;vertical-align:-2px"></span> Analisando seu erro...` : `💡 Por que errei?`}
+        </button>
+      </div>
+      ${expData ? renderExplicacaoCard(expData) : ''}` : ''}
       ${q.contestada ? `<div class="banner warn" style="margin:12px 0 0">${ic('alert', 'sm')}<div><b>Erro confirmado após reporte.</b> ${q.contestada.respostaCorreta ? `Resposta sustentada pelo material: <b>${esc(q.contestada.respostaCorreta)}</b>. ` : ''}${q.contestada.ambigua ? 'A questão é ambígua. ' : ''}${esc(q.contestada.explicacao)}</div></div>` : ''}</div>
     ${viewFeedbackBar(i, fb)}` : ''}
   </article>`;
@@ -1391,14 +1462,16 @@ function viewCadernoQ(q, idx) {
     ${answered ? `<div class="explain">
       <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
         <div class="verdict ${ok ? 'ok' : 'bad'}" style="margin-bottom:0">${ic(ok ? 'check' : 'x', 'sm')} ${ok ? 'Você acertou' : 'Resposta incorreta'} · Gabarito: ${ce ? (q.gabarito === 'C' ? 'Certo' : 'Errado') : q.gabarito}</div>
-        <div class="row no-print" style="gap:8px">
+        <div class="row no-print" style="gap:8px;flex-wrap:wrap">
           <button type="button" class="btn btn-quiet" style="padding:4px 10px;font-size:12px" data-cad-clear="${esc(q.key)}">${ic('refresh', 'sm')} Resolver novamente</button>
+          ${!ok ? `<button type="button" class="btn btn-ghost btn-pq-errei" style="padding:4px 10px;font-size:12px" data-pq-caderno="${esc(q.key)}">${(S.explicacaoLoading && S.explicacaoLoading['cad:' + q.key]) ? `<span class="spinner sm" style="width:12px;height:12px;display:inline-block;vertical-align:-1px"></span> Analisando...` : `💡 Por que errei?`}</button>` : ''}
           ${!ok ? `<button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:12px" data-revanche="${esc(q.materia)}||${esc(q.topico_edital || q.assunto || '')}||${esc(q.banca)}">${ic('spark', 'sm')} Gerar +questões deste tema</button>` : ''}
         </div>
       </div>
       <p>${esc(q.comentario)}</p>
       ${q.trecho ? `<div class="trecho">“${esc(q.trecho)}”<div class="hint" style="font-style:normal;margin-top:4px">${q.ancorada ? '✓ Trecho conferido no seu material' : 'Trecho do seu material'}</div></div>` : ''}
       ${q.pegadinha ? `<div class="pega"><b>Pegadinha da banca:</b> ${esc(q.pegadinha)}</div>` : ''}
+      ${!ok && (S.explicacoes && S.explicacoes['cad:' + q.key]) ? renderExplicacaoCard(S.explicacoes['cad:' + q.key]) : ''}
     </div>` : ''}
     ${q.anotacao && !noteOpen ? `<div class="cad-note"><b>📝 Minha anotação:</b> ${esc(q.anotacao)}</div>` : ''}
     ${noteOpen ? `<div class="report-box no-print" style="margin-top:12px">
@@ -2325,6 +2398,28 @@ function bindApp() {
         }
       });
     });
+    on('[data-pq-errei]', 'click', async (e) => {
+      const idx = e.currentTarget.dataset.pqErrei;
+      const key = `set:${s.id}:${idx}`;
+      S.explicacoes = S.explicacoes || {};
+      S.explicacaoLoading = S.explicacaoLoading || {};
+      if (S.explicacoes[key]) return;
+      S.explicacaoLoading[key] = true;
+      const y = window.scrollY; render(); window.scrollTo({ top: y });
+      try {
+        const resp = s.respostas?.[idx];
+        const res = await api(`/sets/${s.id}/questoes/${idx}/por-que-errei`, {
+          method: 'POST',
+          body: { resposta: resp },
+        });
+        S.explicacoes[key] = res;
+      } catch (err) {
+        toast(err.message || 'Não foi possível gerar a explicação.');
+      } finally {
+        S.explicacaoLoading[key] = false;
+        const y2 = window.scrollY; render(); window.scrollTo({ top: y2 });
+      }
+    });
     on('#copySet', 'click', async () => { try { await navigator.clipboard.writeText(setText(s)); toast('Questões copiadas com o gabarito'); } catch { toast('Não foi possível copiar'); } });
     on('#printSet', 'click', () => window.print());
     on('#delSet', 'click', () => confirmBox('Excluir simulado?', 'As questões deste simulado serão removidas.', 'Excluir', true, async () => { await api(`/sets/${s.id}`, { method: 'DELETE' }).catch(() => {}); S.sets = S.sets.filter((x) => x.id !== s.id); go('questoes'); toast('Simulado excluído'); }));
@@ -2642,6 +2737,28 @@ function bindApp() {
     });
     on('#cadResetErros', 'click', () => confirmBox('Refazer questões erradas?', `As respostas das ${c.erros} questão(ões) que você errou serão limpas para você tentar novamente.`, 'Refazer erradas', false, () => interagir({ reset: 'erros' }, 'Questões erradas liberadas para revisão!')));
     on('#cadResetAll', 'click', () => confirmBox('Refazer todo o caderno?', 'Todas as respostas deste caderno serão limpas para você resolver novamente.', 'Limpar e refazer', false, () => interagir({ reset: 'all' }, 'Caderno reiniciado!')));
+    on('[data-pq-caderno]', 'click', async (e) => {
+      const qKey = e.currentTarget.dataset.pqCaderno;
+      const stateKey = `cad:${qKey}`;
+      S.explicacoes = S.explicacoes || {};
+      S.explicacaoLoading = S.explicacaoLoading || {};
+      if (S.explicacoes[stateKey]) return;
+      S.explicacaoLoading[stateKey] = true;
+      const y = window.scrollY; render(); window.scrollTo({ top: y });
+      try {
+        const q = (c.questoes || []).find((x) => x.key === qKey);
+        const res = await api(`/cadernos/${c.id}/questoes/por-que-errei`, {
+          method: 'POST',
+          body: { key: qKey, resposta: q?.ans },
+        });
+        S.explicacoes[stateKey] = res;
+      } catch (err) {
+        toast(err.message || 'Não foi possível gerar a explicação.');
+      } finally {
+        S.explicacaoLoading[stateKey] = false;
+        const y2 = window.scrollY; render(); window.scrollTo({ top: y2 });
+      }
+    });
     on('[data-revanche]', 'click', (e) => {
       const [mat, top, b] = e.currentTarget.dataset.revanche.split('||');
       S.wiz = newWiz();

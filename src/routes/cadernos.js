@@ -20,6 +20,7 @@ import { aplicarSituacaoOficial, carregarSituacaoOficial } from '../services/sit
 import { registrarAtividade } from '../services/atividade.js';
 import { assertLimitePlano } from '../services/quota.js';
 import { calcularRevisao, paraRevisarHoje, rotuloFase, resumoRevisao, estadoEfetivo } from '../lib/revisao-espacada.js';
+import { obterOuGerarExplicacao } from '../services/explicacao.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -704,6 +705,49 @@ r.patch('/:id/interagir', ah(async (req, res) => {
     [c.id, JSON.stringify(respExtras), JSON.stringify(favs), JSON.stringify(notes), JSON.stringify(revisaoMap)]
   );
   res.json({ caderno: await buildCadernoDetail(updated, req.user.id) });
+}));
+
+r.post('/:id/questoes/por-que-errei', perUser, ah(async (req, res) => {
+  const c = await one('SELECT * FROM cadernos WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
+  if (!c) throw new HttpError(404, 'Caderno não encontrado.');
+  const b = parseBody(z.object({
+    key: z.string().max(120),
+    resposta: z.string().max(10).optional(),
+  }), req.body);
+
+  let q = null;
+  let formato = BANCA[c.banca]?.formato || 'me';
+  let materia = c.titulo || 'Geral';
+
+  if (b.key.startsWith('set:')) {
+    const [, setId, sIdx] = b.key.split(':');
+    const s = await one('SELECT * FROM question_sets WHERE id=$1 AND user_id=$2', [setId, req.user.id]);
+    if (!s) throw new HttpError(404, 'Simulado não encontrado.');
+    q = (s.questoes || [])[Number(sIdx)];
+    formato = s.formato;
+    materia = q?.materia || s.materia;
+  } else if (b.key.startsWith('extra:')) {
+    const qid = b.key.slice(6);
+    q = (c.questoes_extras || []).find((x) => x.id === qid);
+    if (!q) {
+      const dbQ = await one('SELECT * FROM prova_questoes WHERE id=$1', [qid]);
+      if (dbQ) q = dbQ;
+    }
+  }
+
+  if (!q) throw new HttpError(404, 'Questão não encontrada.');
+  const respostaAluno = b.resposta || '';
+
+  const result = await obterOuGerarExplicacao({
+    user: req.user,
+    questao: q,
+    respostaAluno,
+    banca: c.banca,
+    materia,
+    formato,
+  });
+
+  res.json(result);
 }));
 
 r.delete('/:id', ah(async (req, res) => {

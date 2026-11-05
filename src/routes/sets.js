@@ -17,6 +17,7 @@ import { rate, report, listFeedback } from '../services/feedback.js';
 import { registrarRespostasNaRevisao } from '../services/revisao.js';
 import { aplicarSituacaoOficial, carregarSituacaoOficial } from '../services/situacao-oficial.js';
 import { registrarAtividade, contarNovas } from '../services/atividade.js';
+import { obterOuGerarExplicacao } from '../services/explicacao.js';
 import { config } from '../config.js';
 
 const r = Router();
@@ -336,6 +337,30 @@ r.post('/:id/questoes/:i/avaliar', fbLimit, ah(async (req, res) => {
 r.post('/:id/questoes/:i/reportar', fbLimit, ah(async (req, res) => {
   const b = parseBody(z.object({ motivo: z.string().trim().min(5, 'Explique em poucas palavras qual é o erro.').max(600) }), req.body);
   res.status(202).json(await report(req.user, req.params.id, qIndex(req), b.motivo));
+}));
+
+r.post('/:id/questoes/:i/por-que-errei', fbLimit, ah(async (req, res) => {
+  const s = await one('SELECT * FROM question_sets WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
+  if (!s) throw new HttpError(404, 'Simulado não encontrado.');
+  const idx = qIndex(req);
+  const qs = Array.isArray(s.questoes) ? s.questoes : [];
+  const q = qs[idx];
+  if (!q) throw new HttpError(404, 'Questão não encontrada.');
+
+  const r = (s.respostas || {})[String(idx)];
+  const respostaAluno = req.body?.resposta || r;
+  if (!respostaAluno) throw new HttpError(400, 'Nenhuma resposta informada para esta questão.');
+
+  const result = await obterOuGerarExplicacao({
+    user: req.user,
+    questao: q,
+    respostaAluno,
+    banca: s.banca,
+    materia: q.materia || s.materia,
+    formato: s.formato,
+  });
+
+  res.json(result);
 }));
 
 r.delete('/:id', ah(async (req, res) => {

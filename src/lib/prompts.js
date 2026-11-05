@@ -8,7 +8,7 @@ import { COMANDOS, PEGADINHAS, HABILIDADES } from './cobranca.js';
 // é isso que permite comparar qualidade e custo entre versões e reprocessar só o que foi feito com a versão antiga.
 export const PROMPT_VERSAO = {
   detect: 'v1', generate: 'v5', generate_dificil: 'v5', ocr: 'v1', prova_check: 'v1', prova_analysis: 'v1', prova_extract: 'v2',
-  review: 'v1', report_check: 'v1', edital_parse: 'v1', edital_match: 'v1', json_repair: 'v1',
+  review: 'v1', report_check: 'v1', edital_parse: 'v1', edital_match: 'v1', json_repair: 'v1', explain_mistake: 'v1',
 };
 
 export const MAX_MATERIAL_CHARS = 30000;
@@ -164,6 +164,48 @@ ${untrusted('QUESTÕES', questoes.map((q, i) => qBlock(q, i, ce)).join('\n\n'))}
 ${untrusted('MATERIAL DE REFERÊNCIA', text.slice(0, MAX_MATERIAL_CHARS))}`,
   };
 }
+
+/**
+ * "Por que errei?": diagnóstico do erro do aluno com humor, analogia do cotidiano,
+ * embasamento legal/técnico e diagrama visual SVG conceitual.
+ */
+export function promptExplainMistake({ q, formato, respostaAluno, banca, materia }) {
+  const ce = formato === 'ce';
+  const respFormatada = ce ? (respostaAluno === 'C' ? 'Certo' : 'Errado') : `Alternativa ${respostaAluno}`;
+  const gabFormatado = ce ? (q.gabarito === 'C' ? 'Certo' : 'Errado') : `Alternativa ${q.gabarito}`;
+
+  return {
+    system: `Você é o "Professor Descomplicado" do HelpConcurso — especialista renomado nas bancas de concurso brasileiras (Cebraspe, FGV, FCC, Vunesp, etc.), com embasamento jurídico/técnico impecável, empatia contagiante e um humor inteligente e acolhedor para destravar o aprendizado do aluno.
+
+Seu objetivo é explicar exatamente por que o aluno errou, desarmar a pegadinha da banca, trazer um exemplo do cotidiano hilário e inesquecível, citar a fundamentação oficial correta (artigo da lei, súmula, jurisprudência ou regra gramatical/teórica), dar uma dica de ouro para nunca mais esquecer, e fornecer um diagrama visual em SVG ilustrativo.
+
+Diretrizes obrigatórias:
+1. EMBASAMENTO CORRETO E PRECISO: cite explicitamente o dispositivo da lei (artigo, parágrafo, inciso), a súmula/jurisprudência dos tribunais ou a regra gramatical/conceitual exata. Sem meias palavras ou alucinações jurídicas.
+2. DIDÁTICA E HUMOR: use um tom bem-humorado, leve e empático (ex: "A banca jogou aquela casca de banana clássica", "Você pensou como um ser humano sensato, mas para o examinador..."). Mostre onde o cérebro do candidato foi induzido ao erro.
+3. EXEMPLO DO COTIDIANO: faça uma analogia prática e divertida da vida real (ex: compras no supermercado, grupo de família no WhatsApp, fila de padaria, mecânico de carro, churrasco com amigos) que torne a distinção impossível de esquecer.
+4. DIAGRAMA VISUAL SVG: crie um SVG puro, limpo e moderno (viewBox="0 0 500 200" com rects, circles, texts, cantos arredondados, paleta verde-petróleo #0E7A65, âmbar #F59E0B, fundo suave, texto legível) comparando o "Pensamento Errado / Pegadinha" vs o "Conceito Correto da Lei / Banca". Não use tags <script> nem eventos.
+
+Formato da resposta (estritamente JSON):
+{
+  "diagnostico": "Explicação amigável de por que o aluno escolheu a opção errada e qual foi o gatilho da banca (2 a 3 frases)",
+  "pegadinha": "Qual foi a casca de banana específica montada pelo examinador (ex: troca de termo, inversão de regra e exceção, prazo alterado)",
+  "exemplo_cotidiano": "Uma analogia cômica e realista do dia a dia explicando o conceito de forma simples e memorável (1 parágrafo)",
+  "fundamentacao": "Embasamento técnico-jurídico formal com citação literal ou de artigo, súmula ou regra (2 a 4 frases)",
+  "dica_ouro": "Mnemônico ou frase de efeito curta para gabaritar esse ponto na prova",
+  "visual_svg": "<svg viewBox=\\"0 0 500 200\\" xmlns=\\"http://www.w3.org/2000/svg\\">...</svg>"
+}`,
+    prompt: `Um aluno errou esta questão de concurso.
+Banca: ${banca || 'Banca de Concurso'}
+Matéria: ${materia || q.materia || 'Geral'}
+Resposta escolhida pelo aluno: ${respFormatada} (INCORRETA)
+Gabarito oficial da banca: ${gabFormatado} (CORRETA)
+
+${untrusted('QUESTÃO', qBlock(q, 0, ce) + `\nGabarito oficial: ${q.gabarito}` + (q.comentario ? `\nComentário existente: ${q.comentario}` : ''))}
+
+Explique com didática brilhante, humor inteligente, analogia do cotidiano, fundamentação legal/técnica exata e diagrama visual SVG conceitual.`
+  };
+}
+
 
 /** Verifica um erro reportado por um aluno. */
 export function promptReportCheck({ q, formato, text, motivo }) {

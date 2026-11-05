@@ -91,6 +91,15 @@ function respond(task, req) {
         ],
         analise: 'Seu material cobre 2 dos 3 tópicos de Direito Administrativo do edital (67%). Para fechar a disciplina, estude Poderes da Administração e controle administrativo.',
       };
+    case 'explain_mistake':
+      return {
+        diagnostico: 'Você foi induzido a pensar que a competência poderia ser delegada sem restrições porque na prática muitas tarefas são transferidas no dia a dia da repartição.',
+        pegadinha: 'A banca utilizou a clássica casca de banana da generalização indevida: omitiu as vedações expressas de delegação.',
+        exemplo_cotidiano: 'Imagine que no condomínio o síndico peça para o porteiro receber uma encomenda. Tudo bem! Mas se o síndico pedir para o porteiro julgar um recurso de multa da convenção do condomínio, aí não dá!',
+        fundamentacao: 'Conforme art. 13 da Lei nº 9.784/1999: "Não podem ser objeto de delegação: I - a edição de atos de caráter normativo; II - a decisão de recursos administrativos; III - as matérias de competência exclusiva do órgão ou autoridade."',
+        dica_ouro: 'Mnemônico CENORA: CEnouras Não se delegam! CE (competência exclusiva), NO (atos normativos), RA (recursos administrativos).',
+        visual_svg: '<svg viewBox="0 0 500 200" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#F8FAFC" rx="12"/><rect x="20" y="30" width="210" height="140" fill="#FEE2E2" stroke="#EF4444" stroke-width="2" rx="8"/><text x="125" y="60" text-anchor="middle" font-weight="bold" fill="#991B1B">❌ Pegadinha</text><text x="125" y="100" text-anchor="middle" font-size="12" fill="#7F1D1D">Achar que tudo delega</text><rect x="270" y="30" width="210" height="140" fill="#DCFCE7" stroke="#10B981" stroke-width="2" rx="8"/><text x="375" y="60" text-anchor="middle" font-weight="bold" fill="#065F46">✅ Regra da Lei</text><text x="375" y="100" text-anchor="middle" font-size="12" fill="#047857">CENORA não delega!</text></svg>',
+      };
     case 'json_repair': { const m = all.match(/\{[\s\S]*\}/); return m ? JSON.parse(m[0]) : {}; }
     default: return {};
   }

@@ -61,6 +61,16 @@ export const reportCheckSchema = z.object({
   explicacao: str(1200),
 });
 
+// "Por que errei?": explicação didática com analogia do cotidiano, humor e fundamentação legal
+export const explainMistakeSchema = z.object({
+  diagnostico: str(600),
+  pegadinha: str(600),
+  exemplo_cotidiano: str(1200),
+  fundamentacao: str(1200),
+  dica_ouro: str(600),
+  visual_svg: str(14000).optional().default(''),
+});
+
 // Extração estruturada (verticalizada) do conteúdo programático de um edital
 const normTopico = (raw, idx) => {
   if (typeof raw === 'string') {

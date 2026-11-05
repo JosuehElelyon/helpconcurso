@@ -38,13 +38,14 @@ export const AI_TASKS = {
   report_check:   { label: 'Verificar erro reportado por aluno',        dados: 'aluno',   tier: 'strong', preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-sonnet-5-5', fallback: 'anthropic:claude-haiku-5-5' },
   edital_parse:   { label: 'Extrair conteúdo programático do edital',   dados: 'publico', tier: 'fast',   preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
   edital_match:   { label: 'Cruzar material de estudo com o edital',    dados: 'aluno',   tier: 'fast',   preferred: ['gemini', 'groq', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
+  explain_mistake: { label: 'Explicar por que o aluno errou a questão', dados: 'aluno',   tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: 'anthropic:claude-sonnet-5-5' },
   // json_repair herda a classificação da tarefa que gerou o JSON (runJSON passa "dados")
   json_repair:    { label: 'Corrigir JSON malformado',                  dados: 'aluno',   tier: 'fast',   preferred: ['groq', 'gemini', 'openrouter'], primary: 'anthropic:claude-haiku-5-5',  fallback: null },
 };
 // Raciocínio do Claude (cobrado como saída): só onde melhora o acerto. As demais tarefas (classificar, extrair,
 // cruzar, consertar JSON, OCR) rodam sem raciocínio — mais baratas e sem risco de cortar a resposta.
 // Troca por tarefa no .env: AI_ESFORCO_<TAREFA>=low|medium|high|off
-const RACIOCINIO = { generate: 'medium', generate_dificil: 'medium', review: 'medium', report_check: 'medium', prova_analysis: 'medium' };
+const RACIOCINIO = { generate: 'medium', generate_dificil: 'medium', review: 'medium', report_check: 'medium', prova_analysis: 'medium', explain_mistake: 'medium' };
 const taskEnv = (t) => t.toUpperCase();
 for (const [t, v] of Object.entries(AI_TASKS)) {
   const customPrimary = env(`AI_MODEL_${taskEnv(t)}`);

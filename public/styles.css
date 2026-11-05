@@ -214,6 +214,30 @@ svg.i.lg{width:26px;height:26px}
 .trecho{font-family:var(--serif);font-style:italic;border-left:3px solid var(--accent);padding:4px 0 4px 12px;color:var(--ink-2);margin-top:10px;font-size:14.5px}
 .pega{font-size:13px;color:#8A5A12;background:var(--accent-soft);border-radius:8px;padding:8px 10px;margin-top:10px}
 
+/* ---------- Por que errei? sob Demanda (F4) ---------- */
+.btn-pq-errei{display:inline-flex;align-items:center;gap:6px;background:#FFFBEB;color:#92400E;border:1.5px solid #FCD34D;font-weight:700;border-radius:8px;padding:6px 14px;cursor:pointer;transition:all .15s}
+.btn-pq-errei:hover{background:#FEF3C7;border-color:#F59E0B;transform:translateY(-1px)}
+.pq-card{margin-top:14px;border-radius:12px;background:#FFFFFF;border:1.5px solid #F59E0B;padding:16px 18px;box-shadow:0 4px 14px rgba(245,158,11,.1)}
+.pq-header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:14px;border-bottom:1px dashed var(--line);padding-bottom:10px}
+.pq-title-row{display:flex;flex-direction:column;gap:4px}
+.pq-badge-prof{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--brand-ink);background:var(--brand-soft);padding:2px 8px;border-radius:999px;width:fit-content}
+.pq-title{margin:0;font-size:16px;font-weight:800;color:var(--ink)}
+.pq-body{display:flex;flex-direction:column;gap:12px}
+.pq-section{display:flex;flex-direction:column;gap:5px}
+.pq-sec-title{font-size:13px;font-weight:800;color:var(--ink);display:flex;align-items:center;gap:6px}
+.pq-text{margin:0;font-size:14px;line-height:1.55;color:var(--ink-2)}
+.pq-pega-box{margin-top:6px;padding:9px 12px;background:#FFFBEB;border-left:3px solid #F59E0B;border-radius:6px}
+.pq-pega-tag{display:block;font-size:11px;font-weight:800;color:#B45309;text-transform:uppercase;margin-bottom:2px}
+.pq-pega-text{margin:0;font-size:13.5px;color:#78350F;line-height:1.45}
+.pq-cotidiano-box{padding:12px 14px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0}
+.pq-cotidiano-text{color:#14532D;font-weight:500}
+.pq-law-box{padding:12px 14px;background:#EFF6FF;border-radius:8px;border-left:3px solid #3B82F6}
+.pq-law-text{color:#1E3A8A;font-family:var(--serif);font-size:14px;line-height:1.55}
+.pq-gold-box{padding:10px 14px;background:#FEF9C3;border-radius:8px;border:1px solid #FDE047}
+.pq-gold-text{color:#854D0E;font-size:13.5px;margin:0}
+.pq-svg-container{margin-top:6px;max-width:100%;overflow-x:auto;background:#FAFAFA;border:1px solid var(--line-2);border-radius:8px;padding:10px;display:flex;justify-content:center}
+.pq-svg-container svg{max-width:100%;height:auto;max-height:260px;display:block}
+
 /* ---------- Training ---------- */
 .banca-tabs{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:18px}
 .btab{display:flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-weight:700;font-size:14px;white-space:nowrap}
