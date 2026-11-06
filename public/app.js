@@ -2336,8 +2336,8 @@ function renderDonutDuploSvg(acertos = 0, erros = 0, pct = 0) {
 function renderEvolucaoSvg(dias = []) {
   if (!dias.length) return '<div class="empty" style="padding:24px">Sem dados de evolução nos últimos dias.</div>';
 
-  const w = 620, h = 230;
-  const padLeft = 40, padRight = 30, padTop = 30, padBottom = 40;
+  const w = 640, h = 230;
+  const padLeft = 40, padRight = 50, padTop = 30, padBottom = 40;
   const plotW = w - padLeft - padRight;
   const plotH = h - padTop - padBottom;
 
@@ -2399,7 +2399,7 @@ function renderEvolucaoSvg(dias = []) {
       <text x="${padLeft - 6}" y="${padTop + 4}" text-anchor="end" font-size="9.5" fill="var(--muted)">100%</text>
 
       <line x1="${padLeft}" y1="${y80.toFixed(1)}" x2="${w - padRight}" y2="${y80.toFixed(1)}" stroke="#D97706" stroke-width="1.5" stroke-dasharray="4,4"/>
-      <text x="${w - padRight + 4}" y="${y80 + 3}" text-anchor="start" font-size="9" font-weight="800" fill="#D97706">Meta 80%</text>
+      <text x="${w - padRight + 6}" y="${y80 + 3}" text-anchor="start" font-size="9" font-weight="800" fill="#D97706">Meta 80%</text>
 
       <line x1="${padLeft}" y1="${y50.toFixed(1)}" x2="${w - padRight}" y2="${y50.toFixed(1)}" stroke="var(--line-2)" stroke-width="1"/>
       <text x="${padLeft - 6}" y="${y50 + 4}" text-anchor="end" font-size="9.5" fill="var(--muted)">50%</text>
@@ -2570,35 +2570,49 @@ function viewDesempenho() {
           <h3 style="margin:0;font-size:17px">Desempenho por Matéria vs Linha de Corte de Aprovação (80%)</h3>
           <div class="hint">Identifique quais matérias já estão na zona segura e quais precisam de reforço imediato.</div>
         </div>
+        <div class="desemp-chart-legend">
+          <span class="legend-item"><span class="legend-cut-indicator"></span> Linha de Corte (80%)</span>
+          <span class="legend-item"><span class="legend-dot" style="background:var(--ok)"></span> Zona de Corte (≥ 80%)</span>
+          <span class="legend-item"><span class="legend-dot" style="background:var(--brand)"></span> Competitivo (65%–79%)</span>
+          <span class="legend-item"><span class="legend-dot" style="background:var(--bad)"></span> Abaixo do Corte (&lt; 65%)</span>
+        </div>
       </div>
       <div class="desemp-disc-list">
         ${disc.length ? disc.map((m) => {
-          const taxa = m.taxaAcerto != null ? m.taxaAcerto : 0;
-          const corBarra = taxa >= 80 ? 'var(--ok)' : taxa >= 65 ? 'var(--brand)' : 'var(--bad)';
-          const badgeCorte = m.taxaAcerto == null
-            ? '<span class="badge">Pendente de Treino</span>'
+          const temPratica = (m.questoesRespondidas || 0) > 0;
+          const taxa = temPratica && m.taxaAcerto != null ? m.taxaAcerto : 0;
+          const corBarra = !temPratica ? 'transparent' : taxa >= 80 ? 'var(--ok)' : taxa >= 65 ? 'var(--brand)' : 'var(--bad)';
+          const badgeCorte = !temPratica
+            ? '<span class="badge" style="background:var(--line-2);color:var(--muted);font-size:11.5px">Pendente de Treino</span>'
             : taxa >= 80
-              ? `<span class="badge ok">✓ Zona de Corte (${taxa}%)</span>`
+              ? `<span class="badge ok" style="font-size:11.5px">✓ Zona de Corte (${taxa}%)</span>`
               : taxa >= 65
-                ? `<span class="badge brand">⚡ Competitivo (${taxa}%)</span>`
-                : `<span class="badge bad">🚨 Abaixo do Corte (${taxa}%)</span>`;
+                ? `<span class="badge brand" style="font-size:11.5px">⚡ Competitivo (${taxa}%)</span>`
+                : `<span class="badge bad" style="font-size:11.5px">🚨 Abaixo do Corte (${taxa}%)</span>`;
 
           return `
             <div class="desemp-disc-item">
               <div class="desemp-disc-head">
-                <div class="row" style="gap:8px;align-items:center">
-                  <b>${esc(m.materia)}</b>
+                <div class="desemp-disc-title">
+                  <span class="desemp-disc-name">${esc(m.materia)}</span>
                   ${m.peso > 1 ? `<span class="badge brand" style="font-size:11px">Peso ${m.peso}</span>` : ''}
                   ${m.questoesNaBanca ? `<span class="badge" style="background:#FEF3C7;color:#92400E;font-size:11px">🔥 ${m.questoesNaBanca} na banca</span>` : ''}
                 </div>
-                <div class="row" style="gap:8px;align-items:center">
+                <div class="desemp-disc-stats">
                   <span class="hint">${m.questoesAcertos || 0}/${m.questoesRespondidas || 0} acertadas</span>
                   ${badgeCorte}
                 </div>
               </div>
-              <div class="desemp-bar-track" title="${taxa}% de aproveitamento">
-                <div class="desemp-cut-line"></div>
-                <div class="desemp-bar-fill" style="width:${Math.max(2, taxa)}%;background:${corBarra}"></div>
+              <div class="desemp-bar-wrap">
+                <div class="desemp-bar-track" title="${temPratica ? taxa + '% de aproveitamento' : 'Nenhuma questão respondida nesta matéria ainda'}">
+                  <div class="desemp-cut-line" title="Linha de corte da aprovação: 80%"></div>
+                  ${temPratica && taxa > 0 ? `<div class="desemp-bar-fill" style="width:${taxa}%;background:${corBarra}"></div>` : ''}
+                </div>
+                <div class="desemp-bar-scale">
+                  <span>0%</span>
+                  <span class="desemp-scale-corte" title="Linha de corte recomendada: 80%">▲ Corte (80%)</span>
+                  <span>100%</span>
+                </div>
               </div>
             </div>
           `;

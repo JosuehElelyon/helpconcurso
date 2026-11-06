@@ -905,6 +905,15 @@ img.avatar{object-fit:cover;display:block;border-radius:50%}
   border-radius: 2px;
 }
 
+.legend-cut-indicator {
+  width: 3px;
+  height: 13px;
+  background: #D97706;
+  border-radius: 2px;
+  display: inline-block;
+  box-shadow: 0 0 4px rgba(217, 119, 6, 0.4);
+}
+
 .desemp-svg-wrap {
   width: 100%;
   overflow-x: auto;
@@ -921,7 +930,7 @@ img.avatar{object-fit:cover;display:block;border-radius:50%}
 .desemp-disc-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   margin-top: 14px;
 }
 .desemp-disc-item {
@@ -933,18 +942,41 @@ img.avatar{object-fit:cover;display:block;border-radius:50%}
 .desemp-disc-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 8px;
   flex-wrap: wrap;
 }
+.desemp-disc-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.desemp-disc-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--ink);
+}
+.desemp-disc-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.desemp-bar-wrap {
+  position: relative;
+  margin-top: 4px;
+}
 .desemp-bar-track {
-  height: 18px;
+  height: 16px;
   background: var(--line-2);
   border-radius: 999px;
   position: relative;
   overflow: visible;
-  margin: 6px 0;
+  margin: 4px 0 2px 0;
 }
 .desemp-bar-fill {
   height: 100%;
@@ -953,22 +985,34 @@ img.avatar{object-fit:cover;display:block;border-radius:50%}
 }
 .desemp-cut-line {
   position: absolute;
-  top: -6px;
-  bottom: -6px;
+  top: -4px;
+  bottom: -4px;
   left: 80%;
   width: 2px;
   background: #D97706;
+  border-radius: 2px;
   z-index: 2;
+  box-shadow: 0 0 5px rgba(217, 119, 6, 0.45);
 }
-.desemp-cut-line::after {
-  content: "Corte (80%)";
+.desemp-bar-scale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 4px;
+  padding: 0 2px;
+  height: 14px;
+  line-height: 1;
+}
+.desemp-scale-corte {
   position: absolute;
-  top: -18px;
-  left: 50%;
+  left: 80%;
   transform: translateX(-50%);
-  font-size: 10px;
-  font-weight: 800;
   color: #D97706;
+  font-weight: 700;
+  font-size: 10.5px;
   white-space: nowrap;
 }
 
