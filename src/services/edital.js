@@ -779,6 +779,15 @@ export async function criarSimuladoProvaReal({
     formato = (edital.banca && edital.banca.toLowerCase().includes('cebraspe')) ? 'ce' : 'me';
   }
 
+  // R10: Buscar questões já resolvidas ou geradas para o aluno neste edital/caderno para priorizar ineditismo
+  const jaUsadasRows = await many(
+    `SELECT DISTINCT jsonb_array_elements(questoes)->>'id' AS qid
+     FROM question_sets
+     WHERE user_id = $1 AND (edital_id = $2 OR ($3::uuid IS NOT NULL AND caderno_id = $3)) AND questoes IS NOT NULL`,
+    [user.id, edital.id, targetCadernoId]
+  );
+  const jaUsadasSet = new Set(jaUsadasRows.map((r) => r.qid).filter(Boolean));
+
   const vert = Array.isArray(edital.verticalizado) ? edital.verticalizado : [];
   if (!vert.length) {
     throw new HttpError(422, 'O edital não possui disciplinas verticalizadas para montar o simulado.');
@@ -811,8 +820,11 @@ export async function criarSimuladoProvaReal({
 
   for (const meta of metasPorDisciplina) {
     const d = meta.disciplina;
+    const dMatId = await materiaId(d.materia);
+
+    // R10: Casar matéria estritamente pela taxonomia e nome completo (evita que %Direito% misture penal com constitucional)
     const pool = await many(
-      `SELECT q.id, q.numero, q.materia, q.topico, q.topico_id, q.comando, q.pegadinha_tipo,
+      `SELECT q.id, q.numero, q.materia, q.materia_id, q.topico, q.topico_id, q.comando, q.pegadinha_tipo,
               q.dispositivos, q.habilidade, q.enunciado, q.alternativas, q.gabarito,
               p.id AS prova_id, p.titulo AS prova_titulo, p.file_name, p.ano AS prova_ano, p.banca,
               (p.edital_id = $1 OR p.id = $2) AS vinculada
@@ -821,10 +833,20 @@ export async function criarSimuladoProvaReal({
        WHERE p.status = 'READY' AND ${questaoValida('q')}
          AND q.gabarito IS NOT NULL AND length(trim(q.gabarito)) > 0
          AND (($3::text IS NOT NULL AND q.banca = $3) OR p.edital_id = $1 OR p.id = $2)
-         AND (q.materia ILIKE $4 OR q.topico ILIKE $4 OR q.materia ILIKE $5)
+         AND (
+           ($4::text IS NOT NULL AND q.materia_id = $4)
+           OR q.materia ILIKE $5
+           OR q.topico ILIKE $5
+         )
        ORDER BY q.id
        LIMIT 300`,
-      [edital.id, edital.prova_id || null, edital.banca || null, `%${d.materia}%`, `%${d.materia.split(' ')[0]}%`]
+      [
+        edital.id,
+        edital.prova_id || null,
+        edital.banca || null,
+        dMatId !== 'outra' ? dMatId : null,
+        `%${d.materia}%`
+      ]
     );
 
     const validas = pool
@@ -843,15 +865,19 @@ export async function criarSimuladoProvaReal({
           bestTopico = t;
         }
       }
+      const jaFeita = jaUsadasSet.has(q.id);
       return {
         ...q,
         topicoEdital: bestTopico ? `${bestTopico.codigo ? bestTopico.codigo + ' ' : ''}${bestTopico.nome}` : '',
         topicoNome: bestTopico ? bestTopico.nome : (q.topico || d.materia),
-        _score: (bestHits > 0 ? 50 : 0) + (q.vinculada ? 20 : 0),
+        // R10: Questões ainda não feitas pelo aluno recebem prioridade máxima (+40 pontos)
+        _score: (bestHits > 0 ? 50 : 0) + (q.vinculada ? 20 : 0) + (jaFeita ? 0 : 40),
+        _rnd: Math.random(),
       };
     });
 
-    pontuadas.sort((a, b) => b._score - a._score || String(a.id).localeCompare(String(b.id)));
+    // R10: Desempata com aleatoriedade controlada para não entregar sempre a mesma fatia
+    pontuadas.sort((a, b) => b._score - a._score || a._rnd - b._rnd);
 
     const escolhidas = pontuadas.slice(0, meta.alvo);
     for (const q of escolhidas) {
@@ -926,7 +952,7 @@ export async function criarSimuladoProvaReal({
       user.id,
       targetCadernoId,
       edital.id,
-      edital.banca || 'cebraspe',
+      edital.banca || null,
       edital.titulo || 'Simulado Geral',
       `${edital.orgao || ''} ${edital.cargo || ''} · Simulado Prova Real`.trim(),
       'Prova real',

@@ -87,7 +87,7 @@ r.post('/reset', ah(async (req, res) => {
   if (!user) throw new HttpError(400, CODE_MSG.invalid);
   const v = await consumeCode(user.id, 'RESET_PASSWORD', b.code);
   if (!v.ok) throw new HttpError(400, CODE_MSG[v.reason]);
-  const u = await one('UPDATE users SET password_hash=$2, email_verified_at=COALESCE(email_verified_at, now()), updated_at=now() WHERE id=$1 RETURNING *', [user.id, await hashPassword(b.password)]);
+  const u = await one('UPDATE users SET password_hash=$2, sessao_versao=COALESCE(sessao_versao, 1) + 1, email_verified_at=COALESCE(email_verified_at, now()), updated_at=now() WHERE id=$1 RETURNING *', [user.id, await hashPassword(b.password)]);
   setSession(res, u);
   res.json({ user: publicUser(u) });
 }));

@@ -4,7 +4,7 @@ import { senhaLimit, avatarLimit } from '../middleware/limites.js';
 import { z } from 'zod';
 import { one, query } from '../db.js';
 import { ah, parseBody, HttpError } from '../lib/http.js';
-import { requireAuth, hashPassword, checkPassword, publicUser } from '../lib/auth.js';
+import { requireAuth, hashPassword, checkPassword, publicUser, setSession } from '../lib/auth.js';
 import { summary, redeem } from '../services/stars.js';
 import { generationQuota } from '../services/quota.js';
 import { resumoHoje } from '../services/atividade.js';
@@ -82,7 +82,8 @@ r.post('/conta/senha', senhaLimit, ah(async (req, res) => {
   const b = parseBody(z.object({ senhaAtual: z.string().min(1, 'Informe a senha atual.'), novaSenha: z.string().min(8, 'A nova senha precisa ter ao menos 8 caracteres.').max(200) }), req.body);
   const u = await one('SELECT password_hash FROM users WHERE id=$1', [req.user.id]);
   if (!u?.password_hash || !(await checkPassword(b.senhaAtual, u.password_hash))) throw new HttpError(400, 'Senha atual incorreta.');
-  await query('UPDATE users SET password_hash=$2, updated_at=now() WHERE id=$1', [req.user.id, await hashPassword(b.novaSenha)]);
+  const atualizado = await one('UPDATE users SET password_hash=$2, sessao_versao=COALESCE(sessao_versao, 1) + 1, updated_at=now() WHERE id=$1 RETURNING *', [req.user.id, await hashPassword(b.novaSenha)]);
+  setSession(res, atualizado);
   res.json({ ok: true });
 }));
 

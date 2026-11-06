@@ -43,6 +43,7 @@ const CORPOS = {
 const ROTAS = [
   ['get', '/health', 'Sistema', 'Saúde da API e do banco', PUBLICO],
   ['get', '/openapi.json', 'Sistema', 'Este contrato', PUBLICO],
+  ['get', '/termos', 'Sistema', 'Termos de uso e política de privacidade (LGPD)', PUBLICO],
 
   ['get', '/auth/me', 'Contas', 'Usuário da sessão (ou null)', PUBLICO],
   ['post', '/auth/register', 'Contas', 'Cadastro (convidados); envia código por e-mail', PUBLICO, JSON_, 'register'],

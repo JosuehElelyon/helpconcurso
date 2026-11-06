@@ -7,10 +7,12 @@
 // - Matriz 2D de Relevância da Banca × Domínio do Aluno (Quadrantes de Pareto)
 // - Índice de Prontidão da Prova com velocímetro/gauge
 
-import { one, many } from '../db.js';
+import * as desempenhoRepo from '../repositories/desempenho.js';
+import * as editaisRepo from '../repositories/editais.js';
 import { buildEditalDashboard } from './edital.js';
+import { HttpError } from '../lib/http.js';
 
-const DIA_BR = "(now() AT TIME ZONE 'America/Sao_Paulo')::date";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const diaBR = (d = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(d);
 const somaDias = (iso, n) => {
   const d = new Date(`${iso}T12:00:00Z`);
@@ -42,14 +44,8 @@ export async function obterDesempenhoCompleto(user, editalId = null) {
   const userId = user.id;
   const hoje = diaBR();
 
-  // 1) Consulta dados de tempo e simulados em question_sets
-  const sets = await many(
-    `SELECT id, caderno_id, modo_prova, tempo_gasto_segundos, respostas, questoes, materia, created_at
-     FROM question_sets
-     WHERE user_id = $1
-     ORDER BY created_at DESC`,
-    [userId]
-  );
+  // R14 (A4): Consulta leve e agregada via repositório, sem carregar o JSON pesado das questões
+  const sets = await desempenhoRepo.buscarSimuladosParaDesempenho(userId, 90);
 
   let totalSegundosGravados = 0;
   let totalQuestoesSets = 0;
@@ -62,9 +58,9 @@ export async function obterDesempenhoCompleto(user, editalId = null) {
 
   for (const s of sets) {
     const respostas = s.respostas || {};
-    const questoes = s.questoes || [];
+    const gabaritos = s.gabaritos || [];
     const nResp = Object.keys(respostas).length;
-    const nTotal = questoes.length;
+    const nTotal = Number(s.total_questoes) || gabaritos.length;
 
     if (nResp > 0) {
       simuladosConcluidos++;
@@ -88,7 +84,7 @@ export async function obterDesempenhoCompleto(user, editalId = null) {
 
     for (const [k, v] of Object.entries(respostas)) {
       if (v == null) continue;
-      const q = questoes[Number(k)];
+      const q = gabaritos[Number(k)];
       const acertou = q && v === q.gabarito;
       if (acertou) {
         totalAcertosSets++;
@@ -100,16 +96,10 @@ export async function obterDesempenhoCompleto(user, editalId = null) {
     }
   }
 
-  // 2) Atividade diária e histórico dos últimos 14 a 30 dias
+  // 2) Atividade diária e histórico dos últimos 14 a 30 dias (via repositório)
   const [atividadesRows, metaRow] = await Promise.all([
-    many(
-      `SELECT to_char(dia, 'YYYY-MM-DD') AS dia, respondidas, acertos
-       FROM atividade_diaria
-       WHERE user_id = $1 AND dia >= (${DIA_BR} - 29)
-       ORDER BY dia ASC`,
-      [userId]
-    ),
-    one('SELECT meta_diaria, data_prova, concurso_alvo, banca_preferida FROM users WHERE id=$1', [userId]),
+    desempenhoRepo.buscarAtividadeRecente(userId, 30),
+    desempenhoRepo.buscarMetaPerfil(userId),
   ]);
 
   const atvMap = new Map(atividadesRows.map((r) => [r.dia, r]));
@@ -160,13 +150,17 @@ export async function obterDesempenhoCompleto(user, editalId = null) {
     });
   }
 
-  // 3) Resolução de Edital (se houver editalId específico ou edital ativo do usuário)
+  // 3) Resolução de Edital (R13: valida UUID e prioriza edital ativo active=true)
   let edital = null;
   if (editalId) {
-    edital = await one('SELECT * FROM editais WHERE id=$1 AND user_id=$2', [editalId, userId]);
+    const cleanId = String(editalId).trim();
+    if (!UUID_RE.test(cleanId)) {
+      throw new HttpError(400, 'ID de edital inválido.');
+    }
+    edital = await editaisRepo.buscar(cleanId, userId);
   }
   if (!edital) {
-    edital = await one('SELECT * FROM editais WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 1', [userId]);
+    edital = await editaisRepo.buscarAtivoOuRecente(userId);
   }
 
   let editalDashboard = null;

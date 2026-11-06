@@ -602,3 +602,29 @@ CI (`.github/workflows/ci.yml`) com dois jobs: **test** (sintaxe de todo JS, `do
 3. **Contrato:** esquemas de resposta das rotas principais no `src/openapi.js`.
 4. **Sprint 6 (medir)** e os itens "antes de abrir para mais alunos" (S5 termos/LGPD, gateway, O3).
 5. **Processo:** uma sessão de IA por vez no repositório (nesta sessão outra sessão fez commits e push em paralelo).
+
+---
+
+## Sprint 5.2 — Pendências da Revisão, Repositórios e LGPD Concluídos (05/11/2026)
+- **R10 (Simulado Prova Real com variedade e sem misturar disciplinas):**
+  - Rastreamento de ineditismo: consulta questões já resolvidas pelo aluno e aplica bônus de prioridade (+40) para questões ainda não vistas.
+  - Desempate estocástico: evita repetição determinística da mesma fatia em simulados subsequentes.
+  - Taxonomia e casamento de matérias: remoção do filtro genérico `%${d.materia.split(' ')[0]}%` que misturava Direito Penal/Administrativo/Constitucional; consulta agora casa por `materia_id` da taxonomia e nome completo.
+  - Edital sem banca não força mais `banca = 'cebraspe'`, gravando `banca = null`.
+- **R12 (Invalidar sessões ao trocar/redefinir senha — Migração 020):**
+  - Coluna `sessao_versao` adicionada em `users` (`migrations/020_sessao_versao.sql`) e `banca` flexibilizada para aceitar null em `question_sets`.
+  - Token JWT inclui `sv` no payload; `loadUser` confere a versão da sessão no banco.
+  - Alterar senha (`PATCH /me/conta/senha`) e redefinir senha (`POST /auth/reset`) incrementam `sessao_versao`, derrubando imediatamente todas as outras sessões abertas.
+- **R13 & R14 (Estabilidade, Edital Ativo e Consulta Leve de Desempenho):**
+  - Validação rigorosa de UUID em `editalId` em `src/services/desempenho.js`, prevenindo erro 500 em IDs inválidos (agora retorna 400).
+  - Sem `editalId`, seleciona prioritariamente o edital com `active=true` (`editaisRepo.buscarAtivoOuRecente`).
+  - Consulta de simulados otimizada no repositório `src/repositories/desempenho.js`: não carrega o JSON completo de enunciados e comentários, extraindo apenas gabaritos e contagem no período recente (90 dias).
+- **Resto do A4 (Camada de Repositórios):**
+  - Criado `src/repositories/desempenho.js` e ampliado `src/repositories/editais.js`, removendo chamadas diretas de banco de `desempenho.js`.
+- **S5 / LGPD (Termos de Uso e Privacidade):**
+  - Criado `src/lib/termos.js` e rota pública `GET /api/v1/termos`.
+  - Transparência explícita sobre subprocessadores de IA (Anthropic, Google Gemini, OpenAI, Groq) com garantia contratual de retenção zero e não-treinamento de modelos públicos com material do aluno.
+  - Direitos do titular sob o art. 18 da LGPD.
+  - Modal interativo e links informativos no login/cadastro e rodapé da navegação (`public/app.js`).
+  - Contrato OpenAPI 3.1 sincronizado em `src/openapi.js` e `docs/openapi.json`.
+- **Suíte de Testes Automatizados:** 149/149 testes passando com 100% de sucesso (`npm test`).

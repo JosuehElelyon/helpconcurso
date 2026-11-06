@@ -13,7 +13,7 @@ export const hashPassword = (p) => bcrypt.hash(p, 11);
 export const checkPassword = (p, h) => bcrypt.compare(p, h);
 
 export function setSession(res, user) {
-  const token = jwt.sign({ sub: user.id, role: user.role }, config.jwtSecret, { expiresIn: '7d' });
+  const token = jwt.sign({ sub: user.id, role: user.role, sv: user.sessao_versao || 1 }, config.jwtSecret, { expiresIn: '7d' });
   res.cookie(COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: config.appUrl.startsWith('https'), maxAge: MAX_AGE, path: '/' });
 }
 export function clearSession(res) { res.clearCookie(COOKIE, { path: '/' }); }
@@ -27,8 +27,11 @@ export async function loadUser(req, _res, next) {
   const t = req.cookies?.[COOKIE];
   if (t) {
     try {
-      const { sub } = jwt.verify(t, config.jwtSecret);
-      req.user = await one('SELECT * FROM users WHERE id=$1', [sub]);
+      const { sub, sv } = jwt.verify(t, config.jwtSecret);
+      const u = await one('SELECT * FROM users WHERE id=$1', [sub]);
+      if (u && (u.sessao_versao || 1) === (sv || 1)) {
+        req.user = u;
+      }
     } catch { /* sessão inválida/expirada */ }
   }
   next();

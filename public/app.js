@@ -34,6 +34,7 @@ const P = {
   clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   trending: '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>',
   award: '<circle cx="12" cy="8" r="6"/><polyline points="8.2 13 7 22 12 19 17 22 15.8 13"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
 };
 const ic = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true">${P[n] || ''}</svg>`;
 
@@ -178,6 +179,10 @@ function viewAuth() {
         ${S.authErr ? `<div class="err">${esc(S.authErr)}</div>` : ''}${S.authOk ? `<div class="ok-msg">${esc(S.authOk)}</div>` : ''}
         <button class="btn btn-primary btn-block" type="submit" ${busy}>${S.authBusy ? '<span class="spinner sm"></span>' : ''} ${submit}</button>
         ${foot ? `<div class="auth-foot">${foot}</div>` : ''}
+        <div style="font-size:11.5px;color:var(--muted);text-align:center;margin-top:14px;line-height:1.4">
+          Ao continuar, você concorda com nossos
+          <button type="button" class="link-btn" data-open-termos style="font-size:11.5px;text-decoration:underline">Termos de Uso e Privacidade (LGPD)</button>.
+        </div>
       </form>
     </main>
   </div>`;
@@ -185,6 +190,7 @@ function viewAuth() {
 function setAuth(screen, extra = {}) { Object.assign(S, { auth: screen, authErr: '', authOk: '' }, extra); render(); const f = $('#authForm input'); f && f.focus(); }
 function bindAuth() {
   document.querySelectorAll('[data-auth]').forEach((b) => (b.onclick = () => setAuth(b.dataset.auth)));
+  document.querySelectorAll('[data-open-termos]').forEach((b) => (b.onclick = () => abrirModalTermos()));
   const resend = $('#resend');
   if (resend) resend.onclick = async () => { try { await api('/auth/resend', { method: 'POST', body: { email: S.authEmail } }); S.authErr = ''; S.authOk = 'Enviamos um novo código.'; } catch (e) { S.authErr = e.message; } render(); };
   $('#authForm').onsubmit = async (ev) => {
@@ -249,14 +255,14 @@ function viewShell(body) {
       <button class="icon-btn menu-btn" id="openMenu" aria-label="Abrir menu">${ic('menu')}</button>
     </div></header>
     <div class="layout">
-      <aside class="sidebar" aria-label="Navegação principal"><nav>${navHtml}</nav><div class="sidebar-foot"><button class="nav-item" data-logout>${ic('logout')} <span>Sair</span></button></div></aside>
+      <aside class="sidebar" aria-label="Navegação principal"><nav>${navHtml}</nav><div class="sidebar-foot"><button class="nav-item" data-open-termos>${ic('shield', 'sm')} <span>Privacidade (LGPD)</span></button><button class="nav-item" data-logout>${ic('logout')} <span>Sair</span></button></div></aside>
       <main class="main" id="conteudo">${body}</main>
     </div>
     <div class="drawer-bg" data-close></div>
     <aside class="drawer" aria-label="Menu">
       <div class="drawer-head">${renderAvatar(u, 'lg')}<div style="min-width:0"><div style="font-weight:800">${esc(u.name)}${isAdmin() ? '<span class="admin-badge">ADMIN</span>' : ''}</div><div class="em">${esc(u.email)}</div></div><button class="icon-btn" style="margin-left:auto;width:36px;height:36px" data-close aria-label="Fechar menu">${ic('x', 'sm')}</button></div>
       <nav>${navHtml}</nav>
-      <div class="drawer-foot"><button class="nav-item" data-logout>${ic('logout')} <span>Sair</span></button></div>
+      <div class="drawer-foot"><button class="nav-item" data-open-termos>${ic('shield', 'sm')} <span>Privacidade (LGPD)</span></button><button class="nav-item" data-logout>${ic('logout')} <span>Sair</span></button></div>
     </aside>
     <nav class="tabbar" aria-label="Atalhos">${tabs.map(([v, l, i]) => `<button class="${ativo(v) ? 'on' : ''}" data-go="${v}" ${ativo(v) ? 'aria-current="page"' : ''}>${ic(i)}<span>${l}</span></button>`).join('')}</nav>`;
 }
@@ -2740,6 +2746,62 @@ function viewModal() {
 }
 const confirmBox = (title, text, ok, danger, fn) => { S.modal = { title, text, ok, danger, fn }; render(); };
 
+async function abrirModalTermos() {
+  let dados;
+  try {
+    dados = await api('/termos');
+  } catch {
+    dados = null;
+  }
+  const ops = dados?.operadoresIA || [
+    { fornecedor: 'Anthropic (Claude 3.5 Haiku e Sonnet)', finalidade: 'Geração de questões inéditas, revisão e explicações didáticas.', privacidade: 'Retenção zero; não treina modelos com seus materiais.' },
+    { fornecedor: 'Google Cloud (Gemini)', finalidade: 'Extração e cruzamento de matrizes de editais.', privacidade: 'Ambiente empresarial sob ISO 27018.' },
+    { fornecedor: 'OpenAI / Groq', finalidade: 'Classificação de matérias e triagem rápida.', privacidade: 'Sem retenção de dados após a requisição.' },
+  ];
+  const direitos = dados?.direitosTitularLGPD || [
+    'Acesso e confirmação da existência de tratamento dos dados.',
+    'Correção de dados incompletos ou inexatos.',
+    'Exclusão definitiva de materiais e de conta mediante solicitação.',
+  ];
+
+  S.modal = {
+    title: 'Termos de Uso e Política de Privacidade (LGPD)',
+    html: `
+      <div style="max-height:65vh;overflow-y:auto;padding-right:8px;font-size:13.5px;line-height:1.6">
+        <p style="margin-top:0">O <b>HelpConcurso</b> respeita a sua privacidade e garante a conformidade com a Lei Geral de Proteção de Dados (Lei 13.709/2018 - LGPD).</p>
+
+        <h4 style="margin:14px 0 6px 0;color:var(--brand)">1. Fornecedores de IA (Subprocessadores)</h4>
+        <p>Para gerar questões de alto nível e diagnósticos pedagógicos, utilizamos as melhores IAs do mercado sob contratos de nível corporativo:</p>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+          ${ops.map((o) => `
+            <div style="background:var(--surface-2);border:1px solid var(--line-2);border-radius:8px;padding:10px 12px">
+              <b>${esc(o.fornecedor)}</b>
+              <div class="hint" style="margin-top:2px">${esc(o.finalidade)}</div>
+              <div style="font-size:12px;color:var(--ok);font-weight:700;margin-top:4px">✓ ${esc(o.privacidade)}</div>
+            </div>
+          `).join('')}
+        </div>
+
+        <h4 style="margin:14px 0 6px 0;color:var(--brand)">2. Finalidade do Tratamento</h4>
+        <p>Seus resumos, cadernos e simulados são processados exclusivamente para a sua própria preparação para concursos e para o cálculo do seu radar de desempenho.</p>
+
+        <h4 style="margin:14px 0 6px 0;color:var(--brand)">3. Seus Direitos (LGPD - Art. 18)</h4>
+        <ul style="padding-left:20px;margin:6px 0">
+          ${direitos.map((d) => `<li style="margin-bottom:4px">${esc(d)}</li>`).join('')}
+        </ul>
+
+        <h4 style="margin:14px 0 6px 0;color:var(--brand)">4. Segurança e Criptografia</h4>
+        <p>Todas as comunicações utilizam criptografia HTTPS/TLS de ponta a ponta. Sessões são invalidadas imediatamente em todos os dispositivos caso você troque de senha.</p>
+
+        <div class="row" style="margin-top:20px;justify-content:flex-end">
+          <button type="button" class="btn btn-primary" data-mclose2>Entendi e concordo</button>
+        </div>
+      </div>
+    `
+  };
+  render();
+}
+
 // ---------- Navegação e eventos ----------
 const ROUTES = ['home', 'desempenho', 'gerar', 'edital', 'questoes', 'bancas', 'contribuir', 'estrelas', 'provas', 'conta', 'planos'];
 function go(v) {
@@ -2852,6 +2914,7 @@ function bindApp() {
   on('[data-bancatile]', 'click', (e) => { if (isAdmin()) { S.provaBanca = e.currentTarget.dataset.bancatile; S.adminTab = 'base'; go('provas'); } else go('bancas'); });
   on('[data-mclose]', 'click', (e) => { if (e.target === e.currentTarget) { S.modal = null; render(); } });
   on('[data-mclose2]', 'click', () => { S.modal = null; render(); });
+  on('[data-open-termos]', 'click', () => abrirModalTermos());
   on('#mOk', 'click', () => { const f = S.modal.fn; S.modal = null; f(); });
 
   // ---------- Avatar (upload, presets e remoção) ----------
