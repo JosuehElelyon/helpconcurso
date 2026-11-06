@@ -68,3 +68,4 @@ export const cadernoLimit = limitador('caderno', { windowMs: HORA, limit: 60, me
 export const editalLimit = limitador('edital', { windowMs: HORA, limit: 15, mensagem: 'Muitos editais enviados em pouco tempo. Aguarde alguns minutos.' });
 export const senhaLimit = limitador('senha', { windowMs: 15 * MIN, limit: 10, mensagem: 'Muitas tentativas de troca de senha. Aguarde alguns minutos.' });
 export const avatarLimit = limitador('avatar', { windowMs: 15 * MIN, limit: 30, mensagem: 'Muitos envios de avatar. Aguarde alguns minutos.' });
+export const exportarLimit = limitador('exportar', { windowMs: HORA, limit: 5, mensagem: 'Você já baixou seus dados várias vezes. Tente de novo em uma hora.' });

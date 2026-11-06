@@ -105,6 +105,9 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
 - **Front separado (A5):** no compose, `web` (Nginx) é a entrada em http://localhost:3000 e repassa `/api` para `app`
   (`SERVIR_FRONT=false`, API direta em 127.0.0.1:3100). Front lê a API de `public/config.js` (`window.HC_CONFIG.apiUrl`).
   `CORS_ORIGINS` para front em outro domínio; `TRUST_PROXY` = nº de proxies na frente (túnel + Nginx = 2).
+- **LGPD:** termos em `GET /api/v1/termos`, gerados de `src/lib/termos.js` a partir da config (operadores reais); `LGPD_*` no .env.
+  Aceite gravado (`users.termos_versao`); exportar (`GET /me/exportar`) e excluir conta (`DELETE /me/conta`). **Novo provedor de IA,
+  e-mail ou armazenamento → confira o texto gerado** (a versão muda sozinha e pede novo aceite). Texto ainda sem revisão jurídica.
 - **Sprint 5.1 e reestruturação:** ver o fim de `docs/PLANO-ACAO.md` (A1–A6 feitos; A4 parcial). Desenho e regras: `docs/ARQUITETURA.md`. Teste de funcionalidade
   chama a rota HTTP, nunca uma cópia da lógica.
 - App: http://localhost:3000 · Mailpit: http://localhost:8025 · S3 local (SeaweedFS no serviço `minio`): http://localhost:9000

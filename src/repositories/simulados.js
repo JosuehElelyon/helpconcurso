@@ -66,3 +66,13 @@ export const definirResposta = (id, userId, idx, resposta) => (resposta == null
 /** Substitui as respostas e reabre o simulado ("refazer erradas"). */
 export const redefinirRespostas = (id, userId, respostas) =>
   query('UPDATE question_sets SET respostas=$3, finalizado=false, updated_at=now() WHERE id=$1 AND user_id=$2', [id, userId, JSON.stringify(respostas)]);
+
+/** Ids das questões reais que o aluno já recebeu em simulados deste edital (ou do caderno), para priorizar as inéditas. */
+export async function idsDeQuestoesJaUsadas(userId, editalId, cadernoId = null) {
+  const rows = await many(
+    `SELECT DISTINCT q->>'id' AS qid
+     FROM question_sets s, jsonb_array_elements(COALESCE(s.questoes, '[]'::jsonb)) q
+     WHERE s.user_id = $1 AND (s.edital_id = $2 OR ($3::uuid IS NOT NULL AND s.caderno_id = $3))`,
+    [userId, editalId, cadernoId]);
+  return rows.map((r) => r.qid).filter((id) => /^[0-9a-f-]{36}$/i.test(id || ''));
+}

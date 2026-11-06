@@ -316,12 +316,18 @@
                     "type": "string",
                     "minLength": 8,
                     "maxLength": 200
+                  },
+                  "aceitouTermos": {
+                    "type": "boolean",
+                    "const": true,
+                    "description": "Aceite dos termos vigentes (GET /termos)"
                   }
                 },
                 "required": [
                   "name",
                   "email",
-                  "password"
+                  "password",
+                  "aceitouTermos"
                 ]
               }
             }
@@ -4345,6 +4351,98 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "Minha conta"
+        ],
+        "summary": "Eliminação: exclui a conta e os dados (pede a senha e \"EXCLUIR\")",
+        "operationId": "deleteMeConta",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "senha": {
+                    "type": "string"
+                  },
+                  "confirmacao": {
+                    "type": "string",
+                    "const": "EXCLUIR"
+                  }
+                },
+                "required": [
+                  "senha",
+                  "confirmacao"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/me/conta/senha": {
@@ -4888,6 +4986,148 @@
         ],
         "summary": "Cancela o pedido de upgrade",
         "operationId": "deleteMeContaUpgrade",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/termos/aceite": {
+      "post": {
+        "tags": [
+          "Minha conta"
+        ],
+        "summary": "Registra o aceite da versão vigente dos termos (LGPD)",
+        "operationId": "postMeTermosAceite",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Erro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/exportar": {
+      "get": {
+        "tags": [
+          "Minha conta"
+        ],
+        "summary": "Portabilidade: baixa todos os dados pessoais em JSON (LGPD art. 18, V)",
+        "operationId": "getMeExportar",
         "responses": {
           "200": {
             "description": "OK",

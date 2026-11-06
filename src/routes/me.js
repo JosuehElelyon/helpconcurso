@@ -1,10 +1,11 @@
 // Dados do próprio usuário: estrelas, perfil ("Minha conta"), senha, plano e pedido de upgrade
 import { Router } from 'express';
-import { senhaLimit, avatarLimit } from '../middleware/limites.js';
+import { senhaLimit, avatarLimit, exportarLimit } from '../middleware/limites.js';
 import { z } from 'zod';
 import { one, query } from '../db.js';
 import { ah, parseBody, HttpError } from '../lib/http.js';
-import { requireAuth, hashPassword, checkPassword, publicUser, setSession } from '../lib/auth.js';
+import { requireAuth, hashPassword, checkPassword, publicUser, setSession, clearSession } from '../lib/auth.js';
+import * as Contas from '../services/contas.js';
 import { summary, redeem } from '../services/stars.js';
 import { generationQuota } from '../services/quota.js';
 import { resumoHoje } from '../services/atividade.js';
@@ -85,6 +86,24 @@ r.post('/conta/senha', senhaLimit, ah(async (req, res) => {
   const atualizado = await one('UPDATE users SET password_hash=$2, sessao_versao=COALESCE(sessao_versao, 1) + 1, updated_at=now() WHERE id=$1 RETURNING *', [req.user.id, await hashPassword(b.novaSenha)]);
   setSession(res, atualizado);
   res.json({ ok: true });
+}));
+
+// ---------- LGPD: aceite dos termos, portabilidade e eliminação ----------
+r.post('/termos/aceite', ah(async (req, res) => res.json({ user: publicUser(await Contas.aceitarTermos(req.user)) })));
+
+r.get('/exportar', exportarLimit, ah(async (req, res) => {
+  res.set('Content-Disposition', `attachment; filename="helpconcurso-meus-dados-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.json(await Contas.exportarDados(req.user));
+}));
+
+r.delete('/conta', senhaLimit, ah(async (req, res) => {
+  const b = parseBody(z.object({
+    senha: z.string().min(1, 'Informe sua senha.'),
+    confirmacao: z.literal('EXCLUIR', { errorMap: () => ({ message: 'Digite EXCLUIR para confirmar.' }) }),
+  }), req.body);
+  const out = await Contas.excluirConta(req.user, b.senha);
+  clearSession(res);
+  res.json(out);
 }));
 
 // ---------- Avatar ----------

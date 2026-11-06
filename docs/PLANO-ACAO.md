@@ -652,3 +652,26 @@ código (desde a v1.1) — bastava saber o e-mail. Agora 409. Teste de regressã
 | P3 | Média (padrão) | Testes copiam lógica: o de R12 repete o `UPDATE` da rota em vez de chamar `/me/conta/senha` e `/auth/reset`; o de R10 promete "prioriza não feitas" e só confere a banca nula; mistura de disciplinas não testada | Testar pela rota HTTP (regra 8 de `docs/ARQUITETURA.md`) |
 | P4 | Baixa (padrão) | SQL novo dentro de `services/edital.js` (consulta de questões já usadas) — regra 2: SQL novo só em `repositories/` | Mover para `repositories/simulados.js` |
 | P5 | Baixa | R14 limita os totais a 90 dias (horas, simulados concluídos) sem a tela dizer isso; migração 020 mistura dois assuntos (sessão e banca) | Rótulo "últimos 90 dias" na tela; uma migração por assunto daqui em diante |
+
+## Ajustes da revisão de 591d977 — concluídos (05/11/2026)
+- **L1/L3/L5** `src/lib/termos.js` reescrito: operadores de IA **gerados da configuração** (`AI_TASKS`, chaves, cascata grátis,
+  `AI_PROVEDORES_PRIVADOS`) com o que cada um recebe de fato (material do aluno só no Claude; Groq/Gemini/OpenRouter só documentos
+  públicos, com o aviso da cota grátis); e-mail (Brevo), armazenamento, hospedagem (`LGPD_HOSPEDAGEM`) e túnel conforme a config;
+  seções de base legal, compartilhamento (base de provas e cache do "Por que errei?"), IA, transferência internacional, retenção,
+  direitos e como exercê-los, segurança e cookies; encarregado/contato por `LGPD_*`. Versão = data + resumo dos operadores
+  (mudou fornecedor → novo aceite). Front sem cópia do texto: renderiza o que a API devolve.
+- **L2** `GET /me/exportar` (JSON com todos os dados, sem hash de senha; 5/hora) e `DELETE /me/conta` (senha + "EXCLUIR"; cascata
+  no banco, arquivos do S3 apagados, provas ficam na base sem autoria; admin não se exclui). Botões em "Minha conta".
+- **L4** migração 021 (`termos_versao`, `termos_aceitos_em`); cadastro exige `aceitouTermos` (checkbox); `POST /me/termos/aceite`;
+  ao entrar, versão nova dos termos abre o modal pedindo aceite. Termos técnicos corrigidos (sem "ponta a ponta"/"criptografadas").
+- **P1** front trata simulado sem banca (copiar questões, aviso de geração). **P2** inéditas primeiro e sorteio no SQL, antes do corte
+  de 300; ILIKE escapado. **P3** testes pela rota em `test/lgpd-e-pendencias.test.js` (troca e redefinição de senha derrubando
+  sessões, R10 sem misturar disciplinas e com inéditas, termos, aceite, exportação, exclusão); teste de R12 que copiava a lógica
+  removido. **P4** consulta de questões já usadas em `repositories/simulados.js`. **P5** aviso "últimos 90 dias" no desempenho.
+- **Bugs achados no caminho:** o modal dos termos nunca aparecia na tela de login/cadastro (só renderizava dentro do app); abrir o
+  modal apagava o que o aluno digitara no cadastro; botões de modal perdiam o clique após redesenho. Corrigidos.
+- Testes: 156.
+
+**Pendente de decisão do Josueh (não dá para resolver no código):** nome do encarregado (DPO) e e-mail de privacidade
+(`LGPD_ENCARREGADO`, `LGPD_CONTATO` — hoje cai no e-mail do `SMTP_FROM`), hospedagem de produção (`LGPD_HOSPEDAGEM`) e
+**revisão do texto por advogado** antes de abrir para o público.

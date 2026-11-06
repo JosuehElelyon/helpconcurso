@@ -17,6 +17,10 @@ import { HttpError } from '../lib/http.js';
 import { questaoValida } from '../lib/questoes-validas.js';
 import { assertLimitePlano } from './quota.js';
 import { publicStatus } from './provas.js';
+import * as simuladosRepo from '../repositories/simulados.js';
+
+// Texto do usuário/IA dentro de ILIKE: % e _ viram literais
+const escaparLike = (t) => String(t || '').replace(/[\\%_]/g, (c) => `\\${c}`);
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 const cleanStr = (s, max = 220) => {
@@ -780,13 +784,8 @@ export async function criarSimuladoProvaReal({
   }
 
   // R10: Buscar questões já resolvidas ou geradas para o aluno neste edital/caderno para priorizar ineditismo
-  const jaUsadasRows = await many(
-    `SELECT DISTINCT jsonb_array_elements(questoes)->>'id' AS qid
-     FROM question_sets
-     WHERE user_id = $1 AND (edital_id = $2 OR ($3::uuid IS NOT NULL AND caderno_id = $3)) AND questoes IS NOT NULL`,
-    [user.id, edital.id, targetCadernoId]
-  );
-  const jaUsadasSet = new Set(jaUsadasRows.map((r) => r.qid).filter(Boolean));
+  const jaUsadas = await simuladosRepo.idsDeQuestoesJaUsadas(user.id, edital.id, targetCadernoId);
+  const jaUsadasSet = new Set(jaUsadas);
 
   const vert = Array.isArray(edital.verticalizado) ? edital.verticalizado : [];
   if (!vert.length) {
@@ -838,14 +837,15 @@ export async function criarSimuladoProvaReal({
            OR q.materia ILIKE $5
            OR q.topico ILIKE $5
          )
-       ORDER BY q.id
+       ORDER BY (q.id = ANY($6::uuid[])) ASC, random()
        LIMIT 300`,
       [
         edital.id,
         edital.prova_id || null,
         edital.banca || null,
         dMatId !== 'outra' ? dMatId : null,
-        `%${d.materia}%`
+        `%${escaparLike(d.materia)}%`,
+        jaUsadas,
       ]
     );
 

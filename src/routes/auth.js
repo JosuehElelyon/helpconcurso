@@ -6,6 +6,7 @@ import { ah, HttpError, parseBody } from '../lib/http.js';
 import { hashPassword, checkPassword, setSession, clearSession, publicUser, issueCode, consumeCode } from '../lib/auth.js';
 import { sendVerificationEmail, sendResetEmail } from '../lib/mailer.js';
 import { config } from '../config.js';
+import { versaoDosTermos } from '../lib/termos.js';
 
 const r = Router();
 r.use(authLimit);
@@ -20,7 +21,10 @@ const byEmail = (e) => one('SELECT * FROM users WHERE email=$1', [e]);
 r.get('/me', (req, res) => res.json({ user: publicUser(req.user) || null }));
 
 r.post('/register', emailLimit, ah(async (req, res) => {
-  const b = parseBody(z.object({ name: z.string().trim().min(2, 'Informe seu nome.').max(80), email, password }), req.body);
+  const b = parseBody(z.object({
+    name: z.string().trim().min(2, 'Informe seu nome.').max(80), email, password,
+    aceitouTermos: z.literal(true, { errorMap: () => ({ message: 'Para criar a conta, aceite os Termos de Uso e a Política de Privacidade.' }) }),
+  }), req.body);
   const isAdminEmail = config.adminEmails.includes(b.email);
   const isInvited = isAdminEmail || config.allowedEmails.includes(b.email);
   if (config.registrationMode === 'allowlist' && !isInvited) {
@@ -32,8 +36,9 @@ r.post('/register', emailLimit, ah(async (req, res) => {
   if (user?.email_verified_at) throw new HttpError(409, 'Já existe uma conta com este e-mail. Entre ou recupere a senha.');
   const hash = await hashPassword(b.password);
   const role = isAdminEmail ? 'ADMIN' : 'USER';
-  if (user) user = await one('UPDATE users SET name=$2, password_hash=$3, role=$4, updated_at=now() WHERE id=$1 RETURNING *', [user.id, b.name, hash, role]);
-  else user = await one('INSERT INTO users(name,email,password_hash,role) VALUES ($1,$2,$3,$4) RETURNING *', [b.name, b.email, hash, role]);
+  // Aceite dos termos registrado com a versão vigente (LGPD: prova de que o aluno foi informado)
+  if (user) user = await one('UPDATE users SET name=$2, password_hash=$3, role=$4, termos_versao=$5, termos_aceitos_em=now(), updated_at=now() WHERE id=$1 RETURNING *', [user.id, b.name, hash, role, versaoDosTermos()]);
+  else user = await one('INSERT INTO users(name,email,password_hash,role,termos_versao,termos_aceitos_em) VALUES ($1,$2,$3,$4,$5,now()) RETURNING *', [b.name, b.email, hash, role, versaoDosTermos()]);
   const { code: c, ttlMin } = await issueCode(user.id, 'VERIFY_EMAIL');
   const mailRes = await sendVerificationEmail(user, c, ttlMin);
   const aviso = mailRes?.sent === false ? 'Conta criada, mas o e-mail com o código falhou agora. Toque em "Reenviar código" em instantes.' : null;

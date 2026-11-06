@@ -105,7 +105,7 @@ function render() {
   document.body.classList.toggle('drawer-open', S.drawer);
   const app = $('#app');
   if (S.screen === 'boot') { app.innerHTML = '<div class="progress-box" style="padding-top:30vh"><div class="spinner"></div><div class="hint">Carregando HelpConcurso…</div></div>'; return; }
-  if (S.screen === 'auth') { app.innerHTML = viewAuth(); bindAuth(); return; }
+  if (S.screen === 'auth') { app.innerHTML = viewAuth() + (S.modal ? viewModal() : ''); bindAuth(); return; }
   app.innerHTML = viewShell(viewBody()) + (S.modal ? viewModal() : '');
   bindApp();
 }
@@ -146,7 +146,8 @@ function viewAuth() {
   } else if (a === 'criar') {
     fields = `<div class="field"><label for="fName">Nome</label><input class="input" id="fName" autocomplete="name" placeholder="Seu nome" required></div>
       <div class="field"><label for="fEmail">E-mail</label><input class="input" id="fEmail" type="email" autocomplete="email" value="${esc(S.authEmail)}" placeholder="voce@email.com" required></div>
-      <div class="field"><label for="fPass">Senha</label><input class="input" id="fPass" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" required></div>`;
+      <div class="field"><label for="fPass">Senha</label><input class="input" id="fPass" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" required></div>
+      <label class="row" style="gap:8px;align-items:flex-start;font-size:13px;margin:4px 0 10px;cursor:pointer"><input type="checkbox" id="fTermos" required style="margin-top:3px"> <span>Li e aceito os <button type="button" class="link-btn" data-open-termos style="font-size:13px;text-decoration:underline">Termos de Uso e a Política de Privacidade</button>.</span></label>`;
     submit = 'Criar conta';
   } else if (a === 'verificar') {
     fields = `<div class="field"><label for="fCode">Código</label><input class="input code-input" id="fCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" value="${esc(S.authCode)}" placeholder="000000" required></div>`;
@@ -180,23 +181,36 @@ function viewAuth() {
         <button class="btn btn-primary btn-block" type="submit" ${busy}>${S.authBusy ? '<span class="spinner sm"></span>' : ''} ${submit}</button>
         ${foot ? `<div class="auth-foot">${foot}</div>` : ''}
         <div style="font-size:11.5px;color:var(--muted);text-align:center;margin-top:14px;line-height:1.4">
-          Ao continuar, você concorda com nossos
-          <button type="button" class="link-btn" data-open-termos style="font-size:11.5px;text-decoration:underline">Termos de Uso e Privacidade (LGPD)</button>.
+          <button type="button" class="link-btn" data-open-termos style="font-size:11.5px;text-decoration:underline">Termos de Uso e Política de Privacidade (LGPD)</button>
         </div>
       </form>
     </main>
   </div>`;
 }
-function setAuth(screen, extra = {}) { Object.assign(S, { auth: screen, authErr: '', authOk: '' }, extra); render(); const f = $('#authForm input'); f && f.focus(); }
+function setAuth(screen, extra = {}) { Object.assign(S, { auth: screen, authErr: '', authOk: '', authRascunho: null }, extra); render(); const f = $('#authForm input'); f && f.focus(); }
 function bindAuth() {
   document.querySelectorAll('[data-auth]').forEach((b) => (b.onclick = () => setAuth(b.dataset.auth)));
-  document.querySelectorAll('[data-open-termos]').forEach((b) => (b.onclick = () => abrirModalTermos()));
+  // Abrir/fechar o modal redesenha a tela: guarda o que já foi digitado e devolve aos campos
+  const CAMPOS = ['#fName', '#fEmail', '#fPass'];
+  if (S.authRascunho) {
+    for (const id of CAMPOS) if ($(id) && S.authRascunho[id]) $(id).value = S.authRascunho[id];
+    if ($('#fTermos')) $('#fTermos').checked = !!S.authRascunho.termos;
+  }
+  document.querySelectorAll('[data-open-termos]').forEach((b) => (b.onclick = () => {
+    S.authRascunho = { ...Object.fromEntries(CAMPOS.map((id) => [id, $(id)?.value || ''])), termos: !!$('#fTermos')?.checked };
+    abrirModalTermos();
+  }));
+  // Modal dos termos também na tela de login/cadastro
+  document.querySelectorAll('[data-mclose]').forEach((b) => (b.onclick = (e) => { if (e.target === e.currentTarget) { S.modal = null; render(); } }));
+  document.querySelectorAll('[data-mclose2]').forEach((b) => (b.onclick = () => { S.modal = null; render(); }));
   const resend = $('#resend');
   if (resend) resend.onclick = async () => { try { await api('/auth/resend', { method: 'POST', body: { email: S.authEmail } }); S.authErr = ''; S.authOk = 'Enviamos um novo código.'; } catch (e) { S.authErr = e.message; } render(); };
   $('#authForm').onsubmit = async (ev) => {
     ev.preventDefault();
     // Lê todos os campos ANTES de redesenhar a tela (o render recria os inputs)
     const vals = Object.fromEntries(['#fName', '#fEmail', '#fPass', '#fCode'].map((id) => [id, $(id)?.value || '']));
+    const aceitouTermos = !!$('#fTermos')?.checked;
+    S.authRascunho = null;
     const v = (id) => vals[id].trim();
     const email = v('#fEmail') || S.authEmail;
     S.authBusy = true; S.authErr = ''; S.authOk = ''; if (email) S.authEmail = email; render();
@@ -208,11 +222,15 @@ function bindAuth() {
         });
         if (r) return await enterApp(r.user);
       } else if (S.auth === 'criar') {
-        const r = await api('/auth/register', { method: 'POST', body: { name: v('#fName'), email, password: vals['#fPass'] } });
+        if (!aceitouTermos) throw new Error('Para criar a conta, aceite os Termos de Uso e a Política de Privacidade.');
+        const r = await api('/auth/register', { method: 'POST', body: { name: v('#fName'), email, password: vals['#fPass'], aceitouTermos } });
         S.auth = 'verificar'; S.authOk = r.aviso || 'Conta criada! Verifique sua caixa de entrada (e o spam).';
       } else if (S.auth === 'verificar') {
-        const r = await api('/auth/verify', { method: 'POST', body: { email: S.authEmail, code: v('#fCode') } });
-        toast('E-mail confirmado. Bem-vindo!'); return await enterApp(r.user);
+        const r = await api('/auth/verify', { method: 'POST', body: { email: S.authEmail, code: v('#fCode') } }).catch((e) => {
+          if (e.data?.jaConfirmado) { S.auth = 'entrar'; S.authOk = 'Seu e-mail já está confirmado. Entre com sua senha.'; return null; }
+          throw e;
+        });
+        if (r) { toast('E-mail confirmado. Bem-vindo!'); return await enterApp(r.user); }
       } else if (S.auth === 'esqueci') {
         await api('/auth/forgot', { method: 'POST', body: { email } });
         S.auth = 'redefinir'; S.authOk = 'Se o e-mail estiver cadastrado, você receberá um código.';
@@ -387,6 +405,15 @@ function viewConta() {
           <div class="field"><label for="sNova">Nova senha</label><input class="input" id="sNova" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo 8 caracteres" required></div>
           <button class="btn btn-ghost" type="submit">${ic('lock', 'sm')} Trocar senha</button>
         </form>
+        <div class="card card-pad">
+          <h3 class="card-title">${ic('shield', 'sm')} Seus dados (LGPD)</h3>
+          <p class="hint" style="margin-top:0">Baixe uma cópia de tudo o que guardamos sobre você ou exclua sua conta de vez.</p>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost" id="btnExportarDados">${ic('download', 'sm')} Baixar meus dados</button>
+            <button type="button" class="btn btn-ghost" data-open-termos>${ic('shield', 'sm')} Termos e privacidade</button>
+            ${S.user?.role === 'ADMIN' ? '' : `<button type="button" class="btn btn-ghost danger-soft" id="btnExcluirConta">Excluir minha conta</button>`}
+          </div>
+        </div>
         <button class="btn btn-ghost btn-block danger-soft" data-logout>${ic('logout', 'sm')} Sair da conta</button>
       </div>
     </div>`;
@@ -786,7 +813,7 @@ async function generate() {
       S.wiz = null; S.active = done.set.id; go('simulado');
     }
     const rv = done.set.revisao;
-    toast(`${done.set.questoes.length} questões adicionadas${done.set.cadernoId ? ' ao seu Caderno de Questões' : ''} (${BANCA()[done.set.banca].nome})${rv && rv.revisor === 'ok' ? ` · revisor conferiu todas${rv.descartadas ? `, descartou ${rv.descartadas} e refez ${rv.refeitas}` : ''}` : ''}`);
+    toast(`${done.set.questoes.length} questões adicionadas${done.set.cadernoId ? ' ao seu Caderno de Questões' : ''} (${BANCA()[done.set.banca]?.nome || 'várias bancas'})${rv && rv.revisor === 'ok' ? ` · revisor conferiu todas${rv.descartadas ? `, descartou ${rv.descartadas} e refez ${rv.refeitas}` : ''}` : ''}`);
     api('/sets/cota').then((r) => { S.quota = r.quota; }).catch(() => {});
   } catch (e) { w.genErr = e.message; render(); }
   finally { w.generating = false; }
@@ -1223,7 +1250,7 @@ let saveT;
 function saveSetSoon(s, patch) { clearTimeout(saveT); saveT = setTimeout(() => api(`/sets/${s.id}`, { method: 'PATCH', body: patch }).catch(() => toast('Não foi possível salvar suas respostas.')), 700); }
 function setText(s) {
   const b = BANCA()[s.banca];
-  return `HelpConcurso · ${s.materia}${s.assunto ? ' · ' + s.assunto : ''} · estilo ${b.nome}\n\n` + s.questoes.map((q, i) => `${i + 1}. ${q.enunciado}\n${s.formato === 'ce' ? '( ) Certo  ( ) Errado' : q.alternativas.map((a, j) => `${LETRAS[j]}) ${a}`).join('\n')}`).join('\n\n') + '\n\nGABARITO\n' + s.questoes.map((q, i) => `${i + 1}-${q.gabarito}`).join('  ');
+  return `HelpConcurso · ${s.materia}${s.assunto ? ' · ' + s.assunto : ''}${b ? ` · estilo ${b.nome}` : ''}\n\n` + s.questoes.map((q, i) => `${i + 1}. ${q.enunciado}\n${s.formato === 'ce' ? '( ) Certo  ( ) Errado' : q.alternativas.map((a, j) => `${LETRAS[j]}) ${a}`).join('\n')}`).join('\n\n') + '\n\nGABARITO\n' + s.questoes.map((q, i) => `${i + 1}-${q.gabarito}`).join('  ');
 }
 
 // ---------- Cadernos de Questões + Simulados + Caderno de Erros ----------
@@ -2474,6 +2501,7 @@ function viewDesempenho() {
     </div>
 
     <!-- Grid Cockpit de KPIs -->
+    <div class="hint" style="margin:-8px 0 10px">Tempo, aproveitamento e simulados consideram os <b>últimos 90 dias</b>.</div>
     <div class="desemp-kpi-grid">
       <div class="desemp-kpi-card brand">
         <div class="desemp-kpi-top">
@@ -2746,60 +2774,50 @@ function viewModal() {
 }
 const confirmBox = (title, text, ok, danger, fn) => { S.modal = { title, text, ok, danger, fn }; render(); };
 
-async function abrirModalTermos() {
-  let dados;
-  try {
-    dados = await api('/termos');
-  } catch {
-    dados = null;
-  }
-  const ops = dados?.operadoresIA || [
-    { fornecedor: 'Anthropic (Claude 3.5 Haiku e Sonnet)', finalidade: 'Geração de questões inéditas, revisão e explicações didáticas.', privacidade: 'Retenção zero; não treina modelos com seus materiais.' },
-    { fornecedor: 'Google Cloud (Gemini)', finalidade: 'Extração e cruzamento de matrizes de editais.', privacidade: 'Ambiente empresarial sob ISO 27018.' },
-    { fornecedor: 'OpenAI / Groq', finalidade: 'Classificação de matérias e triagem rápida.', privacidade: 'Sem retenção de dados após a requisição.' },
-  ];
-  const direitos = dados?.direitosTitularLGPD || [
-    'Acesso e confirmação da existência de tratamento dos dados.',
-    'Correção de dados incompletos ou inexatos.',
-    'Exclusão definitiva de materiais e de conta mediante solicitação.',
-  ];
-
+async function abrirModalTermos({ exigirAceite = false } = {}) {
+  let t;
+  try { t = await api('/termos'); }
+  catch { return toast('Não foi possível carregar os termos agora. Tente de novo em instantes.'); }
+  const lista = (itens) => `<ul style="padding-left:20px;margin:6px 0">${itens.map((i) => `<li style="margin-bottom:4px">${esc(i)}</li>`).join('')}</ul>`;
+  const secao = (sec) => `<h4 style="margin:14px 0 6px;color:var(--brand)">${esc(sec.titulo)}</h4>${(sec.paragrafos || []).map((p) => `<p style="margin:4px 0">${esc(p)}</p>`).join('')}${sec.itens ? lista(sec.itens) : ''}`;
+  const operador = (o) => `<div style="background:var(--surface-2);border:1px solid var(--line-2);border-radius:8px;padding:10px 12px">
+      <b>${esc(o.fornecedor)}</b> <span class="hint">· ${esc(o.pais || '')}</span>
+      ${o.modelos?.length ? `<div class="hint">Modelos: ${esc(o.modelos.join(', '))}</div>` : ''}
+      <div class="hint" style="margin-top:2px">${esc(o.recebe || o.dados || '')}${o.finalidade ? ' — ' + esc(o.finalidade) : ''}</div>
+      ${o.privacidade ? `<div style="font-size:12px;margin-top:4px">${esc(o.privacidade)}</div>` : ''}
+    </div>`;
+  const precisaAceitar = S.user && S.user.termosVersao !== t.versao;
   S.modal = {
     title: 'Termos de Uso e Política de Privacidade (LGPD)',
     html: `
       <div style="max-height:65vh;overflow-y:auto;padding-right:8px;font-size:13.5px;line-height:1.6">
-        <p style="margin-top:0">O <b>HelpConcurso</b> respeita a sua privacidade e garante a conformidade com a Lei Geral de Proteção de Dados (Lei 13.709/2018 - LGPD).</p>
-
-        <h4 style="margin:14px 0 6px 0;color:var(--brand)">1. Fornecedores de IA (Subprocessadores)</h4>
-        <p>Para gerar questões de alto nível e diagnósticos pedagógicos, utilizamos as melhores IAs do mercado sob contratos de nível corporativo:</p>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
-          ${ops.map((o) => `
-            <div style="background:var(--surface-2);border:1px solid var(--line-2);border-radius:8px;padding:10px 12px">
-              <b>${esc(o.fornecedor)}</b>
-              <div class="hint" style="margin-top:2px">${esc(o.finalidade)}</div>
-              <div style="font-size:12px;color:var(--ok);font-weight:700;margin-top:4px">✓ ${esc(o.privacidade)}</div>
-            </div>
-          `).join('')}
+        <p class="hint" style="margin-top:0">Versão ${esc(t.versao)} · Controlador: ${esc(t.controlador.nome)} · Encarregado (LGPD): ${esc(t.encarregado.nome)}${t.encarregado.contato ? ` — ${esc(t.encarregado.contato)}` : ''}</p>
+        ${t.secoes.map(secao).join('')}
+        <h4 style="margin:14px 0 6px;color:var(--brand)">Fornecedores de inteligência artificial</h4>
+        <div style="display:flex;flex-direction:column;gap:8px">${t.operadoresIA.map(operador).join('')}</div>
+        ${t.operadoresInfra.length ? `<h4 style="margin:14px 0 6px;color:var(--brand)">Outros fornecedores</h4><div style="display:flex;flex-direction:column;gap:8px">${t.operadoresInfra.map(operador).join('')}</div>` : ''}
+        <div class="row" style="margin-top:20px;justify-content:flex-end;gap:8px">
+          ${precisaAceitar ? `<button type="button" class="btn btn-primary" id="btnAceitarTermos">${exigirAceite ? 'Li e aceito os termos atualizados' : 'Li e aceito'}</button>` : '<button type="button" class="btn btn-primary" data-mclose2>Fechar</button>'}
         </div>
-
-        <h4 style="margin:14px 0 6px 0;color:var(--brand)">2. Finalidade do Tratamento</h4>
-        <p>Seus resumos, cadernos e simulados são processados exclusivamente para a sua própria preparação para concursos e para o cálculo do seu radar de desempenho.</p>
-
-        <h4 style="margin:14px 0 6px 0;color:var(--brand)">3. Seus Direitos (LGPD - Art. 18)</h4>
-        <ul style="padding-left:20px;margin:6px 0">
-          ${direitos.map((d) => `<li style="margin-bottom:4px">${esc(d)}</li>`).join('')}
-        </ul>
-
-        <h4 style="margin:14px 0 6px 0;color:var(--brand)">4. Segurança e Criptografia</h4>
-        <p>Todas as comunicações utilizam criptografia HTTPS/TLS de ponta a ponta. Sessões são invalidadas imediatamente em todos os dispositivos caso você troque de senha.</p>
-
-        <div class="row" style="margin-top:20px;justify-content:flex-end">
-          <button type="button" class="btn btn-primary" data-mclose2>Entendi e concordo</button>
-        </div>
-      </div>
-    `
+      </div>`,
   };
   render();
+}
+async function aceitarTermosAgora() {
+  try { const r = await api('/me/termos/aceite', { method: 'POST' }); S.user.termosVersao = r.user.termosVersao; S.modal = null; toast('Aceite registrado.'); render(); }
+  catch (e) { toast(e.message); }
+}
+async function confirmarExclusaoConta() {
+  try {
+    await api('/me/conta', { method: 'DELETE', body: { senha: $('#exSenha').value, confirmacao: $('#exConf').value.trim() } });
+    S.modal = null; S.user = null; S.screen = 'auth'; S.auth = 'entrar'; S.authOk = 'Sua conta foi excluída.'; render();
+  } catch (e) { toast(e.message); }
+}
+
+/** Termos mudaram desde o último aceite (ex.: novo fornecedor)? Mostra para aceitar de novo. */
+async function conferirTermos() {
+  try { const t = await api('/termos'); if (S.user && S.user.termosVersao !== t.versao) await abrirModalTermos({ exigirAceite: true }); }
+  catch { /* sem bloqueio: tenta de novo no próximo acesso */ }
 }
 
 // ---------- Navegação e eventos ----------
@@ -2856,6 +2874,27 @@ function bindApp() {
       try { await api('/me/conta/senha', { method: 'POST', body: { senhaAtual, novaSenha } }); toast('Senha alterada.'); $('#sAtual').value = ''; $('#sNova').value = ''; }
       catch (e) { toast(e.message); }
     };
+    on('#btnExportarDados', 'click', async () => {
+      try {
+        const r = await fetch(API + '/me/exportar', { credentials: API_ORIGEM ? 'include' : 'same-origin' });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Não foi possível gerar o arquivo.');
+        const url = URL.createObjectURL(await r.blob());
+        const a = document.createElement('a');
+        a.href = url; a.download = `helpconcurso-meus-dados-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } catch (e) { toast(e.message); }
+    });
+    on('#btnExcluirConta', 'click', () => {
+      S.modal = {
+        title: 'Excluir minha conta',
+        html: `<p>Isto apaga de vez sua conta, materiais, editais, simulados, cadernos e histórico. <b>Não tem volta.</b> Provas que você enviou continuam na base compartilhada, sem o seu nome.</p>
+          <p class="hint">Se quiser guardar uma cópia, use antes "Baixar meus dados".</p>
+          <div class="field"><label for="exSenha">Sua senha</label><input class="input" id="exSenha" type="password" autocomplete="current-password"></div>
+          <div class="field"><label for="exConf">Digite EXCLUIR para confirmar</label><input class="input" id="exConf" autocomplete="off"></div>
+          <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn btn-ghost" data-mclose2>Cancelar</button><button type="button" class="btn btn-primary danger-soft" id="exConfirmar">Excluir definitivamente</button></div>`,
+      };
+      render();
+    });
   }
   if (S.view === 'planos') {
     on('[data-periodo]', 'click', (e) => { S.planoPeriodo = e.currentTarget.dataset.periodo; render(); });
@@ -2914,6 +2953,8 @@ function bindApp() {
   on('[data-bancatile]', 'click', (e) => { if (isAdmin()) { S.provaBanca = e.currentTarget.dataset.bancatile; S.adminTab = 'base'; go('provas'); } else go('bancas'); });
   on('[data-mclose]', 'click', (e) => { if (e.target === e.currentTarget) { S.modal = null; render(); } });
   on('[data-mclose2]', 'click', () => { S.modal = null; render(); });
+  on('#btnAceitarTermos', 'click', aceitarTermosAgora);
+  on('#exConfirmar', 'click', confirmarExclusaoConta);
   on('[data-open-termos]', 'click', () => abrirModalTermos());
   on('#mOk', 'click', () => { const f = S.modal.fn; S.modal = null; f(); });
 
@@ -3902,9 +3943,10 @@ async function enterApp(user) {
     const [b, s] = await Promise.all([api('/bancas'), api('/sets')]);
     Object.assign(S, { bancas: b.bancas, materias: b.materias, niveis: b.niveis, sets: s.sets, loaded: true });
     await Promise.all([refreshStars({ silent: true }), refreshEditais({ silent: true }), refreshCadernos({ silent: true }), loadHoje()]);
-    if (['provas', 'contribuir', 'gerar', 'edital', 'conta', 'planos', 'estrelas'].includes(S.view)) return go(S.view);
+    if (['provas', 'contribuir', 'gerar', 'edital', 'conta', 'planos', 'estrelas'].includes(S.view)) { go(S.view); return conferirTermos(); }
   } catch (e) { toast(e.message); }
   render();
+  conferirTermos();
 }
 
 (async function boot() {

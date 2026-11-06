@@ -1,52 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import jwt from 'jsonwebtoken';
 import { query, one } from '../src/db.js';
-import { config } from '../src/config.js';
-import { setSession, loadUser, hashPassword } from '../src/lib/auth.js';
 import { obterDesempenhoCompleto } from '../src/services/desempenho.js';
 import { criarSimuladoProvaReal } from '../src/services/edital.js';
 import * as editaisRepo from '../src/repositories/editais.js';
 
-test('R12: trocar senha incrementa sessao_versao e invalida tokens antigos', async () => {
-  const email = `teste_r12_${Date.now()}@teste.com`;
-  const senhaAntigaHash = await hashPassword('SenhaAntiga123!');
-  const u = await one(
-    'INSERT INTO users (name, email, password_hash, email_verified_at, sessao_versao) VALUES ($1, $2, $3, now(), 1) RETURNING *',
-    ['Aluno R12', email, senhaAntigaHash]
-  );
-
-  // Gera token antigo com sessao_versao = 1
-  const tokenAntigo = jwt.sign({ sub: u.id, role: u.role, sv: 1 }, config.jwtSecret, { expiresIn: '7d' });
-
-  // Simula requisição com o token antigo antes da troca de senha
-  let reqMock = { cookies: { hc_session: tokenAntigo } };
-  await new Promise((resolve) => loadUser(reqMock, {}, resolve));
-  assert.equal(reqMock.user?.id, u.id, 'Antes da troca de senha, o token antigo é aceito');
-
-  // Aluno troca a senha: incrementa sessao_versao para 2
-  const senhaNovaHash = await hashPassword('SenhaNova456!');
-  const atualizado = await one(
-    'UPDATE users SET password_hash=$2, sessao_versao=COALESCE(sessao_versao, 1) + 1, updated_at=now() WHERE id=$1 RETURNING *',
-    [u.id, senhaNovaHash]
-  );
-  assert.equal(atualizado.sessao_versao, 2, 'sessao_versao foi incrementada para 2');
-
-  // Nova requisição tentando usar o token antigo (de outra sessão ou dispositivo)
-  let reqAntiga = { cookies: { hc_session: tokenAntigo } };
-  await new Promise((resolve) => loadUser(reqAntiga, {}, resolve));
-  assert.equal(reqAntiga.user, undefined, 'Token antigo é recusado após a troca de senha (derrubou outras sessões)');
-
-  // Nova sessão com a versão 2 é aceita
-  const resMock = { cookie: (_name, val) => { resMock._token = val; } };
-  setSession(resMock, atualizado);
-  let reqNova = { cookies: { hc_session: resMock._token } };
-  await new Promise((resolve) => loadUser(reqNova, {}, resolve));
-  assert.equal(reqNova.user?.id, u.id, 'Nova sessão emitida após a troca de senha é aceita normalmente');
-
-  // Limpeza
-  await query('DELETE FROM users WHERE id=$1', [u.id]);
-});
+// R12 é testado pela rota HTTP em test/lgpd-e-pendencias.test.js (troca e redefinição de senha).
 
 test('R13 e R14: validação de editalId, busca por edital ativo e repositório de desempenho', async () => {
   const email = `teste_r13_${Date.now()}@teste.com`;
@@ -93,7 +52,7 @@ test('R13 e R14: validação de editalId, busca por edital ativo e repositório 
   await query('DELETE FROM users WHERE id=$1', [u.id]);
 });
 
-test('R10: Simulado Prova Real não força banca cebraspe em edital sem banca e prioriza questões não feitas', async () => {
+test('R10: Simulado Prova Real não força banca cebraspe em edital sem banca', async () => {
   const email = `teste_r10_${Date.now()}@teste.com`;
   const u = await one(
     'INSERT INTO users (name, email, password_hash, email_verified_at) VALUES ($1, $2, $3, now()) RETURNING *',

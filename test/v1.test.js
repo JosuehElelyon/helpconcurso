@@ -28,8 +28,8 @@ const admin = client(), user = client(), amanda = client();
 const emails = { admin: `admin-${RUN}@teste.com`, user: `user-${RUN}@teste.com`, amanda: `amanda-${RUN}@teste.com` };
 
 async function signup(c, email, name) {
-  const r = await c('/api/auth/register', { method: 'POST', body: { name, email, password: 'senha-forte-1' } });
-  if (r.status === 409) return c('/api/auth/login', { method: 'POST', body: { email, password: 'senha-forte-1' } });
+  const r = await c('/api/auth/register', { method: 'POST', body: { name, email, password: 'senha-forte-1', aceitouTermos: true } });
+  if (r.status === 409) return c('/api/auth/login', { method: 'POST', body: { email, password: 'senha-forte-1', aceitouTermos: true } });
   assert.equal(r.status, 201, JSON.stringify(r.data));
   await sleep(100);
   const v = await c('/api/auth/verify', { method: 'POST', body: { email, code: lastCode(email) } });
@@ -58,13 +58,13 @@ after(() => srv?.kill());
 after(() => pool.end());
 
 test('cadastro restrito a convidados', async () => {
-  const r = await client()('/api/auth/register', { method: 'POST', body: { name: 'Intruso', email: `x${RUN}@fora.com`, password: 'senha-forte-1' } });
+  const r = await client()('/api/auth/register', { method: 'POST', body: { name: 'Intruso', email: `x${RUN}@fora.com`, password: 'senha-forte-1', aceitouTermos: true } });
   assert.equal(r.status, 403);
 });
 
 test('cadastro não sobrescreve conta confirmada (nem do admin) e não entra sem código', async () => {
   const atacante = client();
-  const r = await atacante('/api/auth/register', { method: 'POST', body: { name: 'Atacante', email: emails.admin, password: 'senha-do-atacante' } });
+  const r = await atacante('/api/auth/register', { method: 'POST', body: { name: 'Atacante', email: emails.admin, password: 'senha-do-atacante', aceitouTermos: true } });
   assert.equal(r.status, 409);
   assert.equal(r.data.user, undefined);
   assert.equal((await atacante('/api/admin/ia')).status, 401);

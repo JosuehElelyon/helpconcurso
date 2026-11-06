@@ -16,7 +16,8 @@ const LETRA = str({ enum: ['A', 'B', 'C', 'D', 'E'] });
 // Corpos de requisição documentados em detalhe (as demais rotas JSON aceitam o objeto descrito no resumo)
 const CORPOS = {
   login: obj({ email: str({ format: 'email' }), password: str() }, ['email', 'password']),
-  register: obj({ name: str({ minLength: 2, maxLength: 80 }), email: str({ format: 'email' }), password: str({ minLength: 8, maxLength: 200 }) }, ['name', 'email', 'password']),
+  register: obj({ name: str({ minLength: 2, maxLength: 80 }), email: str({ format: 'email' }), password: str({ minLength: 8, maxLength: 200 }), aceitouTermos: { type: 'boolean', const: true, description: 'Aceite dos termos vigentes (GET /termos)' } }, ['name', 'email', 'password', 'aceitouTermos']),
+  excluirConta: obj({ senha: str(), confirmacao: str({ const: 'EXCLUIR' }) }, ['senha', 'confirmacao']),
   verify: obj({ email: str({ format: 'email' }), code: str({ pattern: '^\\d{6}$' }) }, ['email', 'code']),
   reset: obj({ email: str({ format: 'email' }), code: str({ pattern: '^\\d{6}$' }), password: str({ minLength: 8 }) }, ['email', 'code', 'password']),
   email: obj({ email: str({ format: 'email' }) }, ['email']),
@@ -111,6 +112,9 @@ const ROTAS = [
   ['get', '/me/planos', 'Minha conta', 'Catálogo de planos', ALUNO],
   ['post', '/me/conta/upgrade', 'Minha conta', 'Pede upgrade de plano', ALUNO, JSON_],
   ['delete', '/me/conta/upgrade', 'Minha conta', 'Cancela o pedido de upgrade', ALUNO],
+  ['post', '/me/termos/aceite', 'Minha conta', 'Registra o aceite da versão vigente dos termos (LGPD)', ALUNO],
+  ['get', '/me/exportar', 'Minha conta', 'Portabilidade: baixa todos os dados pessoais em JSON (LGPD art. 18, V)', ALUNO],
+  ['delete', '/me/conta', 'Minha conta', 'Eliminação: exclui a conta e os dados (pede a senha e "EXCLUIR")', ALUNO, JSON_, 'excluirConta'],
 
   ['get', '/editais', 'Editais', 'Lista os editais do aluno', ALUNO],
   ['get', '/editais/{id}', 'Editais', 'Edital verticalizado com painel de avanço', ALUNO],
