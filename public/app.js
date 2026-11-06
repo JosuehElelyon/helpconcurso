@@ -1,6 +1,6 @@
 /* =========================================================
    HelpConcurso — front-end (SPA sem framework)
-   Conversa com a API em /api. Estado em S, render() redesenha a tela.
+   Conversa com a API em /api/v1 (constante API). Estado em S, render() redesenha a tela.
    ========================================================= */
 
 // ---------- Ícones ----------
@@ -39,6 +39,8 @@ const ic = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="
 
 // ---------- Utilidades ----------
 const $ = (s) => document.querySelector(s);
+// Versão da API REST consumida pelo front (contrato em /api/v1/openapi.json)
+const API = '/api/v1';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = (n) => (n || '?').trim().split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('') || '?';
 const firstName = (n) => (n || '').trim().split(/\s+/)[0] || '';
@@ -63,7 +65,7 @@ async function api(path, { method = 'GET', body, form } = {}) {
   if (form) opt.body = form;
   else if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
   let r;
-  try { r = await fetch('/api' + path, opt); } catch { throw Object.assign(new Error('Sem conexão com o servidor.'), { status: 0 }); }
+  try { r = await fetch(API + path, opt); } catch { throw Object.assign(new Error('Sem conexão com o servidor.'), { status: 0 }); }
   let data = {};
   try { data = await r.json(); } catch { /* sem corpo */ }
   if (!r.ok) {
@@ -745,7 +747,7 @@ async function uploadMaterial(payload) {
 async function generate() {
   const w = S.wiz; w.step = 4; w.generating = true; w.genErr = ''; w.genCount = 0; w.stage = ''; render();
   try {
-    const res = await fetch('/api/sets', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+    const res = await fetch(API + '/sets', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ materialId: w.material.id, materia: w.materia, assunto: w.assunto, banca: w.banca, qtd: w.qtd, nivel: w.nivel, cadernoId: w.cadernoId || null }) });
     if (!res.ok) { let d = {}; try { d = await res.json(); } catch {} throw new Error(d.error || `Erro ${res.status}`); }
     const reader = res.body.getReader(), dec = new TextDecoder();
@@ -796,7 +798,7 @@ async function dispararRevanche({ setId, cadernoId, indices = [], keys = [], ban
   render();
 
   try {
-    const res = await fetch('/api/sets/revanche', {
+    const res = await fetch(API + '/sets/revanche', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -1813,7 +1815,7 @@ function viewProvas() {
         <button class="btn btn-quiet" data-analisar="${p.id}">${ic('eye', 'sm')} Detalhes</button>
         ${p.status === 'READY' ? `<button class="btn btn-quiet" data-verq="${p.id}">${ic('list', 'sm')} Questões</button>` : ''}
         ${p.status === 'READY' ? `<button class="btn btn-quiet" data-gabdef="${p.id}">${ic('check', 'sm')} Gabarito definitivo</button>` : ''}
-        <a class="btn btn-quiet" href="/api/admin/provas/${p.id}/arquivo">${ic('download', 'sm')} Arquivo</a>
+        <a class="btn btn-quiet" href="${API}/admin/provas/${p.id}/arquivo">${ic('download', 'sm')} Arquivo</a>
         ${['READY', 'FAILED', 'QUEUED'].includes(p.status) ? `<button class="btn btn-quiet" data-reproc="${p.id}">${ic('refresh', 'sm')} Reprocessar</button>` : ''}
         <button class="btn btn-quiet" data-delprova="${p.id}" style="color:var(--bad)">${ic('trash', 'sm')} Remover</button>
       </div></div>`).join('') : `<div class="empty" style="padding:24px">${ic('book')}<div>Nenhuma prova da ${b.nome}.</div><button class="btn btn-quiet" data-go="contribuir">Enviar provas</button></div>`}</div>`;
@@ -1864,7 +1866,7 @@ function reviewHtml(p) {
     <div><div class="field"><label for="rvMotivo">Motivo da recusa (enviado ao usuário)</label><input class="input" id="rvMotivo" maxlength="500" placeholder="Ex.: arquivo incompleto"></div>
       <button class="btn btn-danger btn-block" data-recusar="${p.id}">${ic('x', 'sm')} Recusar</button></div>
   </div>` : ''}
-  <div class="row" style="margin-top:14px"><a class="btn btn-quiet" href="/api/admin/provas/${p.id}/arquivo">${ic('download', 'sm')} Baixar arquivo original</a></div>`;
+  <div class="row" style="margin-top:14px"><a class="btn btn-quiet" href="${API}/admin/provas/${p.id}/arquivo">${ic('download', 'sm')} Baixar arquivo original</a></div>`;
 }
 
 let pollT;

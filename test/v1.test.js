@@ -698,7 +698,7 @@ test('avatar: presets, seleção, upload de imagem com magic bytes, download e r
   const pngValido = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'); // PNG 1x1 real
   const upOk = await user('/api/me/avatar', { method: 'POST', files: { avatar: [pngValido, 'meu-avatar.png'] } });
   assert.equal(upOk.status, 200, JSON.stringify(upOk.data));
-  assert.ok(upOk.data.perfil.avatarUrl.startsWith(`/api/users/${meUser.id}/avatar`));
+  assert.ok(upOk.data.perfil.avatarUrl.startsWith(`/api/v1/users/${meUser.id}/avatar`));
 
   // 6. Download público do avatar customizado via GET /api/users/:id/avatar
   const downloadRes = await fetch(`${URL}/api/users/${meUser.id}/avatar`);

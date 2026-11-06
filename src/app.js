@@ -7,21 +7,11 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
-import { pool, one } from './db.js';
 import { loadUser } from './lib/auth.js';
-import { HttpError, ah } from './lib/http.js';
-import { getFile } from './lib/storage.js';
+import { HttpError } from './lib/http.js';
 import { AiError, userMessage } from './ai/errors.js';
 import { UploadBlockedError } from './security/index.js';
-import authRoutes from './routes/auth.js';
-import materialRoutes from './routes/materials.js';
-import setRoutes from './routes/sets.js';
-import provaRoutes from './routes/provas.js';
-import adminRoutes from './routes/admin.js';
-import meRoutes from './routes/me.js';
-import editalRoutes from './routes/editais.js';
-import cadernoRoutes from './routes/cadernos.js';
-import { bancasRouter } from './routes/bancas.js';
+import { criarRotasApi, VERSAO_API } from './routes/index.js';
 
 export function createApp() {
   const app = express();
@@ -56,45 +46,13 @@ export function createApp() {
   });
   app.use(loadUser);
 
-  app.get('/api/health', async (_req, res) => {
-    try { await pool.query('SELECT 1'); res.json({ ok: true, versao: '2.0.0' }); } catch { res.status(503).json({ ok: false }); }
-  });
-  app.use('/api/auth', authRoutes);
-  app.use('/api/materials', materialRoutes);
-  app.use('/api/sets', setRoutes);
-  app.use('/api/provas', provaRoutes);
-  app.use('/api/bancas', bancasRouter);
-  app.use('/api/admin', adminRoutes);
-  app.use('/api/me', meRoutes);
-  app.use('/api/editais', editalRoutes);
-  app.use('/api/cadernos', cadernoRoutes);
-
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  app.get('/api/users/:id/avatar', ah(async (req, res) => {
-    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'Avatar não encontrado.' });
-    const u = await one('SELECT avatar_url, avatar_key FROM users WHERE id=$1', [req.params.id]);
-    if (!u || (!u.avatar_url && !u.avatar_key)) return res.status(404).json({ error: 'Avatar não encontrado.' });
-    if (u.avatar_key) {
-      try {
-        const file = await getFile(u.avatar_key);
-        res.set({
-          'Content-Type': file.contentType || 'image/jpeg',
-          'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
-          'X-Content-Type-Options': 'nosniff',
-          'Content-Disposition': 'inline; filename="avatar"',
-        });
-        return res.send(file.buffer);
-      } catch {
-        return res.status(404).json({ error: 'Arquivo do avatar não encontrado.' });
-      }
-    }
-    if (u.avatar_url?.startsWith('/avatars/')) {
-      return res.redirect(u.avatar_url);
-    }
-    return res.status(404).json({ error: 'Avatar não encontrado.' });
-  }));
-
-  app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Rota não encontrada.')));
+  // API REST: /api/v1 é a versão atual; /api fica como apelido durante a transição (clientes antigos, avatares já salvos)
+  const api = criarRotasApi();
+  app.use(`/api/${VERSAO_API}`, (_req, res, next) => { res.set('X-API-Versao', VERSAO_API); next(); }, api);
+  app.use('/api', (_req, res, next) => {
+    res.set({ 'X-API-Versao': VERSAO_API, Deprecation: 'true', Link: `</api/${VERSAO_API}>; rel="successor-version"` });
+    next();
+  }, api);
 
   const pub = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
   app.use(express.static(pub, { maxAge: config.env === 'production' ? '1h' : 0 }));

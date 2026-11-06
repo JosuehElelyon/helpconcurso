@@ -118,7 +118,7 @@ r.post('/avatar', avatarLimit, uploader([{ name: 'avatar', maxCount: 1 }], { max
 
   const key = makeKey('avatars', `avatar-${req.user.id}.${detected.ext}`);
   await putFile(key, limpa, detected.mime);
-  res.json(await contaView(await trocarAvatar(req.user.id, `/api/users/${req.user.id}/avatar?t=${Date.now()}`, key)));
+  res.json(await contaView(await trocarAvatar(req.user.id, `/api/v1/users/${req.user.id}/avatar?t=${Date.now()}`, key)));
 }));
 
 r.delete('/avatar', ah(async (req, res) => res.json(await contaView(await trocarAvatar(req.user.id, null, null)))));

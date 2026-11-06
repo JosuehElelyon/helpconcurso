@@ -545,7 +545,7 @@ Escopo escolhido: **API + worker + camadas** (o front atual continua, servido à
 |---|---|---|
 | A1 ✅ | `src/worker.js` separado: a fila de IA sai do processo da API (`ROLE=api|worker|all`; `all` mantém o modo atual no dev) | Escalar API e processamento de IA independentemente |
 | A2 ✅ | Limites de requisição num armazenamento compartilhado (Postgres) em vez da memória | Com 2+ instâncias da API, os limites continuam valendo |
-| A3 | `/api/v1` com contrato OpenAPI (`docs/openapi.yaml`) e `/api/*` como apelido durante a transição | Front e futuros clientes (app móvel) consomem um contrato estável |
+| A3 ✅ | `/api/v1` com contrato OpenAPI (`docs/openapi.yaml`) e `/api/*` como apelido durante a transição | Front e futuros clientes (app móvel) consomem um contrato estável |
 | A4 | Camadas: `routes` (HTTP) → `controllers` → `services` (regra) → `repositories` (SQL). Começando por sets, cadernos e editais | Rotas finas e regra de negócio testável sem HTTP |
 | A5 | Front servido à parte (Nginx no compose; CORS/cookies por `APP_URL`/`API_URL`) | Publicar o front num CDN e a API em outro lugar |
 | A6 | Docs (CLAUDE.md, DEPLOY.md, ARQUITETURA) e CI com os dois processos | A próxima sessão entende o desenho |
@@ -562,3 +562,11 @@ Os 11 limitadores de requisição ficam em `src/middleware/limites.js` (antes es
 (`PostgresStore`, tabela UNLOGGED `limites_requisicao`, migração 019; upsert atômico com janela fixa; faxina ocasional).
 Várias instâncias da API somam a mesma contagem. Banco fora → a requisição segue (`passOnStoreError`). `RATE_LIMIT_PREFIXO`
 separa ambientes no mesmo banco (os testes usam um por arquivo). Testes em `test/arquitetura.test.js`. 139 testes.
+
+### A3 — concluída (05/11/2026)
+API versionada: `src/routes/index.js` monta todos os módulos em `/api/v1` (atual) e em `/api` (apelido da transição, com
+`Deprecation: true` e `Link` para a v1). Rotas soltas do `app.js` foram para `routes/sistema.js` (saúde, contrato) e
+`routes/users.js` (avatar público). Contrato OpenAPI 3.1 em `src/openapi.js` (74 operações, 66 caminhos), servido em
+`/api/v1/openapi.json` e exportado com `npm run openapi` para `docs/openapi.json`. `test/contrato.test.js` falha se uma rota
+existir sem estar no contrato (ou o contrato citar rota inexistente). Front usa `/api/v1`. 142 testes.
+Próximo passo natural do contrato: esquemas de resposta das rotas principais (hoje só os corpos de requisição principais).

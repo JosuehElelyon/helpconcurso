@@ -16,7 +16,8 @@
     "make-admin": "node --env-file-if-exists=.env scripts/make-admin.js",
     "benchmark": "node --env-file-if-exists=.env scripts/benchmark-ia.js",
     "eval": "node --env-file-if-exists=.env scripts/benchmark-dificil.js",
-    "test": "node --env-file-if-exists=.env --import ./test/setup.js --test test/*.test.js"
+    "test": "node --env-file-if-exists=.env --import ./test/setup.js --test test/*.test.js",
+    "openapi": "node scripts/openapi.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
