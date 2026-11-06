@@ -548,7 +548,7 @@ Escopo escolhido: **API + worker + camadas** (o front atual continua, servido à
 | A3 ✅ | `/api/v1` com contrato OpenAPI (`docs/openapi.yaml`) e `/api/*` como apelido durante a transição | Front e futuros clientes (app móvel) consomem um contrato estável |
 | A4 ◐ | Camadas: `routes` (HTTP) → `controllers` → `services` (regra) → `repositories` (SQL). Começando por sets, cadernos e editais | Rotas finas e regra de negócio testável sem HTTP |
 | A5 ✅ | Front servido à parte (Nginx no compose; CORS/cookies por `APP_URL`/`API_URL`) | Publicar o front num CDN e a API em outro lugar |
-| A6 | Docs (CLAUDE.md, DEPLOY.md, ARQUITETURA) e CI com os dois processos | A próxima sessão entende o desenho |
+| A6 ✅ | Docs (CLAUDE.md, DEPLOY.md, ARQUITETURA) e CI com os dois processos | A próxima sessão entende o desenho |
 
 ### A1 — concluída (05/11/2026)
 `src/app.js` (Express), `src/server.js` (API), `src/worker.js` (fila, saúde em :3001), `src/bootstrap.js` (migração, semente,
@@ -589,3 +589,16 @@ CSP do front fica no Nginx (`deploy/nginx/default.conf.template`). Testado no Do
 `API_URL` absoluto), a validar no painel do Render. Teste: `test/front-separado.test.js`. 146 testes.
 **Atenção ao túnel nomeado (perfil "publico"):** no painel da Cloudflare, o destino passa a ser `http://web:80` (antes `app:3000`)
 e use `TRUST_PROXY=2`.
+
+### A6 — concluída (05/11/2026)
+`docs/ARQUITETURA.md` (processos, camadas, fluxo de uma requisição, fila, variáveis de topologia e regras para código novo).
+CI (`.github/workflows/ci.yml`) com dois jobs: **test** (sintaxe de todo JS, `docs/openapi.json` em dia, `npm test`) e
+**infra** (`docker compose config`, template do Nginx + `nginx -t`, build da imagem). Passos validados localmente.
+
+## Próximos passos após a reestruturação
+1. **Resto do A4** aos poucos: SQL de `services/edital.js`, `provas.js` e `desempenho.js` para `repositories/` quando forem mexidos.
+2. **Pendentes da revisão:** R10 (variedade e matérias do Simulado Prova Real), R12 (derrubar sessões ao trocar senha — migração),
+   R13, R14, R16 (atualizado: pastas vazias já removidas).
+3. **Contrato:** esquemas de resposta das rotas principais no `src/openapi.js`.
+4. **Sprint 6 (medir)** e os itens "antes de abrir para mais alunos" (S5 termos/LGPD, gateway, O3).
+5. **Processo:** uma sessão de IA por vez no repositório (nesta sessão outra sessão fez commits e push em paralelo).
