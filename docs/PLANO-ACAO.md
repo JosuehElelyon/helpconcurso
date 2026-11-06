@@ -628,3 +628,27 @@ CI (`.github/workflows/ci.yml`) com dois jobs: **test** (sintaxe de todo JS, `do
   - Modal interativo e links informativos no login/cadastro e rodapé da navegação (`public/app.js`).
   - Contrato OpenAPI 3.1 sincronizado em `src/openapi.js` e `docs/openapi.json`.
 - **Suíte de Testes Automatizados:** 149/149 testes passando com 100% de sucesso (`npm test`).
+
+# Revisão do commit 591d977 (R10, R12, R13, R14, A4, LGPD) — 05/11/2026
+
+**Achado crítico fora do commit (corrigido em seguida):** `POST /auth/verify` abria sessão de conta já confirmada sem conferir o
+código (desde a v1.1) — bastava saber o e-mail. Agora 409. Teste de regressão adicionado.
+
+## O que está bom
+- R12: versão de sessão no JWT (`sv`) conferida em `loadUser`; troca e redefinição de senha incrementam e renovam o cookie atual.
+- R13: `editalId` validado (400) e edital ativo priorizado. R14: consulta via repositório sem trafegar enunciados.
+- `GET /termos` público entrou no contrato OpenAPI; front escapa o conteúdo do modal; `materiaId` só lê a taxonomia.
+
+## Problemas encontrados
+| # | Gravidade | Problema | Correção |
+|---|---|---|---|
+| L1 | **Alta (jurídico)** | Termos/LGPD com afirmações falsas ou não comprovadas: modelos errados (diz "Claude 3.5", "Gemini 1.5", "GPT-4o mini/OpenAI"; o sistema usa Claude Haiku/Sonnet 5.5, Gemini 3.5 Flash, Groq gpt-oss, OpenRouter); "retenção zero" com a Anthropic sem contrato ZDR; Gemini descrito como "Google Cloud Enterprise / ISO 27018", mas é a cota grátis do AI Studio, que pode usar os dados (ver S1); "classificação de matérias" atribuída ao Groq, mas é dado do aluno e só vai ao Claude; OpenRouter e Brevo (e-mail), armazenamento S3/R2 e hospedagem ausentes | Gerar a lista de operadores a partir de `AI_TASKS`/provedores configurados (não à mão); afirmar só o que os termos de cada fornecedor garantem; revisão por advogado antes de abrir para o público |
+| L2 | **Alta (jurídico)** | Promete direitos sem funcionalidade: exclusão completa da conta e portabilidade não existem na API | Implementar `DELETE /me/conta` (com materiais/arquivos S3) e `GET /me/exportar`, ou dizer "por e-mail ao encarregado em até 15 dias" |
+| L3 | Média (jurídico) | Faltam: base legal (art. 7º), encarregado/DPO (art. 41), transferência internacional (art. 33 — IAs nos EUA), prazo de retenção, e que **provas enviadas vão para a base compartilhada** de todos os alunos; texto diz "processados exclusivamente para a sua preparação" | Incluir essas seções |
+| L4 | Média | "Entendi e concordo" só fecha o modal: o aceite não é registrado (versão, data); "criptografia de ponta a ponta" e "sessões criptografadas" são termos incorretos (HTTPS é em trânsito; o JWT é assinado) | Gravar `termos_versao_aceita`/`termos_aceitos_em` no cadastro; corrigir os termos técnicos |
+| L5 | Baixa (padrão) | Texto dos termos duplicado no `app.js` como reserva (duas fontes da verdade, já divergentes) | Sem reserva: em erro, mostrar "não foi possível carregar" |
+| P1 | Média (bug) | Migração 020 deixou `question_sets.banca` nulo, mas o front assume banca: "Copiar questões" quebra (`setText`, `app.js:1225`) | Tratar banca nula no front (`BANCA()[s.banca] || …`) |
+| P2 | Média | R10: a busca ainda faz `ORDER BY q.id LIMIT 300` antes de priorizar inéditas — com base grande, as questões além das 300 primeiras nunca aparecem | Ordenar no SQL por "não feita primeiro" + `random()` (passar os ids já feitos) |
+| P3 | Média (padrão) | Testes copiam lógica: o de R12 repete o `UPDATE` da rota em vez de chamar `/me/conta/senha` e `/auth/reset`; o de R10 promete "prioriza não feitas" e só confere a banca nula; mistura de disciplinas não testada | Testar pela rota HTTP (regra 8 de `docs/ARQUITETURA.md`) |
+| P4 | Baixa (padrão) | SQL novo dentro de `services/edital.js` (consulta de questões já usadas) — regra 2: SQL novo só em `repositories/` | Mover para `repositories/simulados.js` |
+| P5 | Baixa | R14 limita os totais a 90 dias (horas, simulados concluídos) sem a tela dizer isso; migração 020 mistura dois assuntos (sessão e banca) | Rótulo "últimos 90 dias" na tela; uma migração por assunto daqui em diante |
