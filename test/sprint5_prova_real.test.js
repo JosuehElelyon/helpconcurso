@@ -153,20 +153,16 @@ test('F3: cálculo de nota Cebraspe (acertos - erros) e estatísticas por discip
   // Nota líquida Cebraspe = 2 - 1 = +1 ponto líquido
   const respostas = { '0': 'C', '1': 'C', '2': 'C' };
 
-  // Chama a lógica de finalização diretamente via UPDATE simulando PATCH
-  const { default: setsRouter } = await import('../src/routes/sets.js');
-  // Executa cálculo similar ao do sets.js para validar a regra de pontuação
-  let acertos = 0, erros = 0, emBranco = 0;
-  for (let i = 0; i < qs.length; i++) {
-    const r = respostas[String(i)];
-    if (!r) emBranco++;
-    else if (r === qs[i].gabarito) acertos++;
-    else erros++;
-  }
-  const notaLiquida = acertos - erros;
-  assert.equal(acertos, 2);
-  assert.equal(erros, 1);
-  assert.equal(emBranco, 1);
-  assert.equal(notaLiquida, 1, 'Nota líquida deve ser 1 (2 acertos - 1 erro)');
+  // Finaliza pelo serviço real (o mesmo que a rota PATCH /sets/:id usa)
+  const { salvarProgresso } = await import('../src/services/simulados.js');
+  const s = await salvarProgresso(user, setRow.id, { respostas, finalizado: true, tempoGastoSegundos: 600 });
+  const rf = s.estatisticas.resultadoFinal;
+  assert.equal(rf.acertos, 2);
+  assert.equal(rf.erros, 1);
+  assert.equal(rf.emBranco, 1);
+  assert.equal(rf.notaLiquida, 1, 'Nota líquida deve ser 1 (2 acertos - 1 erro)');
+  assert.equal(rf.tempoGastoSegundos, 600);
+  const port = rf.disciplinas.find((d) => d.materia === 'Língua Portuguesa');
+  assert.deepEqual([port.acertos, port.erros], [1, 1]);
 });
 
