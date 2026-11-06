@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { one, many, query } from '../db.js';
 import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
@@ -19,7 +18,7 @@ import { aplicarSituacaoOficial, carregarSituacaoOficial } from '../services/sit
 import { registrarAtividade, contarNovas } from '../services/atividade.js';
 import { obterOuGerarExplicacao } from '../services/explicacao.js';
 import { config } from '../config.js';
-import { explainLimit } from '../middleware/limites.js';
+import { explainLimit, geracaoLimit, feedbackLimit } from '../middleware/limites.js';
 import { pontuarSimulado } from '../services/pontuacao.js';
 import { coletarQuestoesErradas, aplicarVitoriaRevanche, MAX_BASE } from '../services/revanche.js';
 
@@ -27,7 +26,6 @@ const r = Router();
 r.use(requireAuth);
 r.param('id', checkId);
 const LET = ['A', 'B', 'C', 'D', 'E'];
-const perUser = rateLimit({ windowMs: 10 * 60 * 1000, limit: 12, keyGenerator: (req) => req.user.id, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitas gerações seguidas. Aguarde alguns minutos.' } });
 const clean = (s, max) => String(s || '').replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '').trim().slice(0, max);
 const normWords = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 
@@ -85,7 +83,7 @@ const view = (s) => ({
 r.get('/cota', ah(async (req, res) => res.json({ quota: await generationQuota(req.user) })));
 
 // Gera um simulado. Resposta em NDJSON: {"type":"progress","count":3} ... {"type":"done","set":{...}} | {"type":"error","message":"..."}
-r.post('/', perUser, ah(async (req, res) => {
+r.post('/', geracaoLimit, ah(async (req, res) => {
   const b = parseBody(z.object({
     materialId: z.string().uuid('Material inválido.'),
     materia: z.string().trim().min(2, 'Informe a matéria.').max(80),
@@ -196,7 +194,7 @@ r.post('/', perUser, ah(async (req, res) => {
 
 // Gera uma BATERIA DE REVANCHE DA IA: questões inéditas focadas nos pontos cegos onde o aluno errou.
 // A base (questões erradas) vem sempre do servidor: simulado (setId) ou caderno (cadernoId + keys) do próprio aluno.
-r.post('/revanche', perUser, ah(async (req, res) => {
+r.post('/revanche', geracaoLimit, ah(async (req, res) => {
   const b = parseBody(z.object({
     setId: z.string().uuid().optional().nullable(),
     cadernoId: z.string().uuid().optional().nullable(),
@@ -380,13 +378,12 @@ r.patch('/:id', ah(async (req, res) => {
 }));
 
 const qIndex = (req) => { const i = Number(req.params.i); if (!Number.isInteger(i)) throw new HttpError(404, 'Questão não encontrada.'); return i; };
-const fbLimit = rateLimit({ windowMs: 60 * 1000, limit: 40, keyGenerator: (req) => req.user.id, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitas avaliações seguidas. Aguarde um instante.' } });
 r.get('/:id/feedback', ah(async (req, res) => res.json({ feedback: await listFeedback(req.user, req.params.id) })));
-r.post('/:id/questoes/:i/avaliar', fbLimit, ah(async (req, res) => {
+r.post('/:id/questoes/:i/avaliar', feedbackLimit, ah(async (req, res) => {
   const b = parseBody(z.object({ rating: z.union([z.literal(1), z.literal(-1), z.literal(0)]) }), req.body);
   res.json(await rate(req.user, req.params.id, qIndex(req), b.rating));
 }));
-r.post('/:id/questoes/:i/reportar', fbLimit, ah(async (req, res) => {
+r.post('/:id/questoes/:i/reportar', feedbackLimit, ah(async (req, res) => {
   const b = parseBody(z.object({ motivo: z.string().trim().min(5, 'Explique em poucas palavras qual é o erro.').max(600) }), req.body);
   res.status(202).json(await report(req.user, req.params.id, qIndex(req), b.motivo));
 }));

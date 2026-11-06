@@ -48,7 +48,12 @@ try {
     }
   }
   await limpa.query("UPDATE jobs SET status='dead', updated_at=now() WHERE status IN ('queued','running') AND created_at < now() - interval '2 minutes'");
+  await limpa.query("DELETE FROM limites_requisicao WHERE chave LIKE 'teste-%' AND reinicia_em < now()");
 } finally {
   await limpa.query('SELECT pg_advisory_unlock(727274)').catch(() => {});
   await limpa.end();
 }
+
+// Limites de requisição ficam no banco (compartilhados entre instâncias). Cada arquivo de teste usa um prefixo próprio
+// (herdado pelos servidores que ele sobe), para os arquivos que rodam em paralelo não somarem contagens entre si.
+process.env.RATE_LIMIT_PREFIXO ||= `teste-${process.pid}-${Date.now().toString(36)}`;

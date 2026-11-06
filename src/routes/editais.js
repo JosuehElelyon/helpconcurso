@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import { editalLimit } from '../middleware/limites.js';
 import { one, many, query } from '../db.js';
 import { ah, HttpError, checkId } from '../lib/http.js';
 import { requireAuth } from '../lib/auth.js';
@@ -14,14 +14,6 @@ const r = Router();
 r.use(requireAuth);
 r.param('id', checkId);
 
-const perUser = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  limit: 15,
-  keyGenerator: (req) => req.user.id,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Muitos editais enviados em pouco tempo. Aguarde alguns minutos.' },
-});
 
 const summaryView = (e) => {
   const vert = e.verticalizado || [];
@@ -59,7 +51,7 @@ r.get('/:id', ah(async (req, res) => {
   res.json({ edital: await buildEditalDashboard(e, req.user.id) });
 }));
 
-r.post('/', perUser, uploader([{ name: 'file', maxCount: 1 }]), ah(async (req, res) => {
+r.post('/', editalLimit, uploader([{ name: 'file', maxCount: 1 }]), ah(async (req, res) => {
   await assertCanUpload(req.user, 'material');
   let f = fileOf(req, 'file');
   const ctrl = new AbortController();

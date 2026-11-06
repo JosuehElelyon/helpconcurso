@@ -544,7 +544,7 @@ Escopo escolhido: **API + worker + camadas** (o front atual continua, servido à
 | Etapa | O que muda | Por quê |
 |---|---|---|
 | A1 ✅ | `src/worker.js` separado: a fila de IA sai do processo da API (`ROLE=api|worker|all`; `all` mantém o modo atual no dev) | Escalar API e processamento de IA independentemente |
-| A2 | Limites de requisição num armazenamento compartilhado (Postgres) em vez da memória | Com 2+ instâncias da API, os limites continuam valendo |
+| A2 ✅ | Limites de requisição num armazenamento compartilhado (Postgres) em vez da memória | Com 2+ instâncias da API, os limites continuam valendo |
 | A3 | `/api/v1` com contrato OpenAPI (`docs/openapi.yaml`) e `/api/*` como apelido durante a transição | Front e futuros clientes (app móvel) consomem um contrato estável |
 | A4 | Camadas: `routes` (HTTP) → `controllers` → `services` (regra) → `repositories` (SQL). Começando por sets, cadernos e editais | Rotas finas e regra de negócio testável sem HTTP |
 | A5 | Front servido à parte (Nginx no compose; CORS/cookies por `APP_URL`/`API_URL`) | Publicar o front num CDN e a API em outro lugar |
@@ -556,3 +556,9 @@ S3, SMTP), `src/jobs/tarefas.js` (registro das tarefas). Fila segura para vário
 **todas** as tarefas "running" ao subir (roubaria tarefas de outro worker); usa batimento (30 s) e só recupera órfãs (2 min).
 NOTIFY acorda os workers na hora. Compose com `app` + `worker`; Render com web + worker. Teste: `test/arquitetura.test.js`.
 Validado no Docker local. 137 testes.
+
+### A2 — concluída (05/11/2026)
+Os 11 limitadores de requisição ficam em `src/middleware/limites.js` (antes espalhados pelas rotas) e contam no Postgres
+(`PostgresStore`, tabela UNLOGGED `limites_requisicao`, migração 019; upsert atômico com janela fixa; faxina ocasional).
+Várias instâncias da API somam a mesma contagem. Banco fora → a requisição segue (`passOnStoreError`). `RATE_LIMIT_PREFIXO`
+separa ambientes no mesmo banco (os testes usam um por arquivo). Testes em `test/arquitetura.test.js`. 139 testes.

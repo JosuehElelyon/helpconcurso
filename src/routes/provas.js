@@ -1,6 +1,6 @@
 // Provas enviadas pelos usuários para a base compartilhada
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import { provaLimit } from '../middleware/limites.js';
 import { z } from 'zod';
 import { one, many, query } from '../db.js';
 import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
@@ -16,10 +16,9 @@ import { scanText, SEV } from '../security/index.js';
 const r = Router();
 r.use(requireAuth);
 r.param('id', checkId);
-const perUser = rateLimit({ windowMs: 60 * 60 * 1000, limit: 30, keyGenerator: (req) => req.user.id, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitos envios em pouco tempo. Aguarde alguns minutos.' } });
 
 const meta = z.string().trim().max(120).optional().default('');
-r.post('/', perUser, uploader([{ name: 'prova', maxCount: 1 }, { name: 'gabarito', maxCount: 1 }, { name: 'edital', maxCount: 1 }]), ah(async (req, res) => {
+r.post('/', provaLimit, uploader([{ name: 'prova', maxCount: 1 }, { name: 'gabarito', maxCount: 1 }, { name: 'edital', maxCount: 1 }]), ah(async (req, res) => {
   await assertCanUpload(req.user, 'prova');
   const b = parseBody(z.object({
     banca: z.enum(Object.keys(BANCA), { errorMap: () => ({ message: 'Escolha a banca.' }) }),
@@ -77,7 +76,7 @@ r.post('/', perUser, uploader([{ name: 'prova', maxCount: 1 }, { name: 'gabarito
 }));
 
 // Vincula uma prova já enviada a um edital existente ou a um novo arquivo de edital
-r.post('/:id/edital', perUser, uploader([{ name: 'edital', maxCount: 1 }]), ah(async (req, res) => {
+r.post('/:id/edital', provaLimit, uploader([{ name: 'edital', maxCount: 1 }]), ah(async (req, res) => {
   const p = await one('SELECT * FROM provas WHERE id=$1 AND (uploaded_by=$2 OR $3)', [req.params.id, req.user.id, req.user.role === 'ADMIN']);
   if (!p) throw new HttpError(404, 'Prova não encontrada.');
   const editalFile = fileOf(req, 'edital');

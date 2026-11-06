@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import { authLimit, emailLimit } from '../middleware/limites.js';
 import { z } from 'zod';
 import { one, query } from '../db.js';
 import { ah, HttpError, parseBody } from '../lib/http.js';
@@ -8,9 +8,7 @@ import { sendVerificationEmail, sendResetEmail } from '../lib/mailer.js';
 import { config } from '../config.js';
 
 const r = Router();
-const limiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 40, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitas tentativas. Aguarde alguns minutos.' } });
-const mailLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 8, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitos e-mails solicitados. Tente novamente mais tarde.' } });
-r.use(limiter);
+r.use(authLimit);
 
 const email = z.string().trim().toLowerCase().email('Informe um e-mail válido.');
 const password = z.string().min(8, 'A senha precisa ter ao menos 8 caracteres.').max(200);
@@ -21,7 +19,7 @@ const byEmail = (e) => one('SELECT * FROM users WHERE email=$1', [e]);
 
 r.get('/me', (req, res) => res.json({ user: publicUser(req.user) || null }));
 
-r.post('/register', mailLimiter, ah(async (req, res) => {
+r.post('/register', emailLimit, ah(async (req, res) => {
   const b = parseBody(z.object({ name: z.string().trim().min(2, 'Informe seu nome.').max(80), email, password }), req.body);
   const isAdminEmail = config.adminEmails.includes(b.email);
   const isInvited = isAdminEmail || config.allowedEmails.includes(b.email);
@@ -54,7 +52,7 @@ r.post('/verify', ah(async (req, res) => {
   res.json({ user: publicUser(u) });
 }));
 
-r.post('/resend', mailLimiter, ah(async (req, res) => {
+r.post('/resend', emailLimit, ah(async (req, res) => {
   const b = parseBody(z.object({ email }), req.body);
   const user = await byEmail(b.email);
   if (user && !user.email_verified_at) { const { code: c, ttlMin } = await issueCode(user.id, 'VERIFY_EMAIL'); await sendVerificationEmail(user, c, ttlMin); }
@@ -75,7 +73,7 @@ r.post('/login', ah(async (req, res) => {
   res.json({ user: publicUser(user) });
 }));
 
-r.post('/forgot', mailLimiter, ah(async (req, res) => {
+r.post('/forgot', emailLimit, ah(async (req, res) => {
   const b = parseBody(z.object({ email }), req.body);
   const user = await byEmail(b.email);
   if (user) { const { code: c, ttlMin } = await issueCode(user.id, 'RESET_PASSWORD'); await sendResetEmail(user, c, ttlMin); }

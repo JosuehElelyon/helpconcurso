@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import { materialLimit } from '../middleware/limites.js';
 import { one, many } from '../db.js';
 import { ah, HttpError, checkId } from '../lib/http.js';
 import { requireAuth } from '../lib/auth.js';
@@ -18,7 +18,6 @@ import { matchMaterialWithEdital } from '../services/edital.js';
 const r = Router();
 r.use(requireAuth);
 r.param('id', checkId);
-const perUser = rateLimit({ windowMs: 60 * 60 * 1000, limit: 30, keyGenerator: (req) => req.user.id, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitos envios em pouco tempo. Aguarde alguns minutos.' } });
 const words = (t) => (String(t).match(/\S+/g) || []).length;
 
 async function detect(text, userId) {
@@ -35,7 +34,7 @@ async function detect(text, userId) {
 const view = (m) => ({ id: m.id, fileName: m.file_name, pages: m.pages, wordCount: m.word_count, preview: m.text.slice(0, 1400), materia: m.materia, detect: m.detect, editalId: m.edital_id || null, editalMatch: m.edital_match || null, ocr: m.ocr, createdAt: m.created_at });
 
 // Envia um arquivo (multipart "file") ou texto colado (campo "text")
-r.post('/', perUser, uploader([{ name: 'file', maxCount: 1 }]), ah(async (req, res) => {
+r.post('/', materialLimit, uploader([{ name: 'file', maxCount: 1 }]), ah(async (req, res) => {
   await assertCanUpload(req.user, 'material');
   const f = fileOf(req, 'file');
   const ctrl = new AbortController();
@@ -79,7 +78,7 @@ r.post('/', perUser, uploader([{ name: 'file', maxCount: 1 }]), ah(async (req, r
 }));
 
 // Cruza (ou recrusa) um material já enviado com um edital do aluno
-r.post('/:id/edital', perUser, ah(async (req, res) => {
+r.post('/:id/edital', materialLimit, ah(async (req, res) => {
   const m = await one('SELECT * FROM materials WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
   if (!m) throw new HttpError(404, 'Material não encontrado.');
   const editalId = String(req.body?.editalId || '').trim();

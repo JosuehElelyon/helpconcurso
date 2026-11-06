@@ -1,7 +1,7 @@
 // Dados do próprio usuário: estrelas, perfil ("Minha conta"), senha, plano e pedido de upgrade
 import { Router } from 'express';
+import { senhaLimit, avatarLimit } from '../middleware/limites.js';
 import { z } from 'zod';
-import rateLimit from 'express-rate-limit';
 import { one, query } from '../db.js';
 import { ah, parseBody, HttpError } from '../lib/http.js';
 import { requireAuth, hashPassword, checkPassword, publicUser } from '../lib/auth.js';
@@ -21,8 +21,6 @@ import { config } from '../config.js';
 
 const r = Router();
 r.use(requireAuth);
-const senhaLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, keyGenerator: (req) => req.user.id, standardHeaders: true, legacyHeaders: false,
-  message: { error: 'Muitas tentativas de troca de senha. Aguarde alguns minutos.' } });
 
 r.get('/estrelas', ah(async (req, res) => res.json(await summary(req.user.id))));
 r.post('/estrelas/trocar', ah(async (req, res) => {
@@ -89,8 +87,6 @@ r.post('/conta/senha', senhaLimit, ah(async (req, res) => {
 }));
 
 // ---------- Avatar ----------
-const avatarLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, keyGenerator: (req) => req.user.id, standardHeaders: true, legacyHeaders: false,
-  message: { error: 'Muitos envios de avatar. Aguarde alguns minutos.' } });
 
 r.get('/avatar/presets', ah(async (_req, res) => res.json({ presets: PRESET_AVATARS })));
 

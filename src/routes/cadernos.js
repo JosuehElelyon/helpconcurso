@@ -5,12 +5,11 @@
 // e revisar/resolver todo o histórico de questões com filtros e anotações.
 // =========================================================
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { one, many, query } from '../db.js';
 import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
 import { requireAuth } from '../lib/auth.js';
-import { explainLimit } from '../middleware/limites.js';
+import { explainLimit, cadernoLimit } from '../middleware/limites.js';
 import { questaoDoCaderno } from '../services/revanche.js';
 import { uploader, fileOf } from '../lib/upload.js';
 import { BANCA } from '../lib/bancas.js';
@@ -28,14 +27,6 @@ const r = Router();
 r.use(requireAuth);
 r.param('id', checkId);
 
-const perUser = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  limit: 60,
-  keyGenerator: (req) => req.user.id,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Muitas operações em pouco tempo. Aguarde alguns minutos.' },
-});
 
 const LET = ['A', 'B', 'C', 'D', 'E'];
 const uniq = (arr) => [...new Set((Array.isArray(arr) ? arr : []).filter(Boolean))];
@@ -436,7 +427,7 @@ r.get('/', ah(async (req, res) => {
 }));
 
 // Cria um novo Caderno de Questões (por Banca, Concurso e/ou Edital)
-r.post('/', perUser, ah(async (req, res) => {
+r.post('/', cadernoLimit, ah(async (req, res) => {
   await assertLimitePlano(req.user, 'cadernos');
   const b = parseBody(z.object({
     titulo: z.string().trim().max(160).optional().default(''),
@@ -508,7 +499,7 @@ r.get('/:id', ah(async (req, res) => {
 }));
 
 // Alimentar o caderno com um material de estudo já enviado
-r.post('/:id/alimentar-material', perUser, ah(async (req, res) => {
+r.post('/:id/alimentar-material', cadernoLimit, ah(async (req, res) => {
   const c = await one('SELECT * FROM cadernos WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
   if (!c) throw new HttpError(404, 'Caderno não encontrado.');
   const { materialId } = parseBody(z.object({ materialId: z.string().uuid('Material inválido.') }), req.body);
@@ -522,7 +513,7 @@ r.post('/:id/alimentar-material', perUser, ah(async (req, res) => {
 }));
 
 // Alimentar o caderno com uma prova antiga da banca (existente na base ou novo arquivo enviado)
-r.post('/:id/alimentar-prova', perUser, uploader([{ name: 'prova', maxCount: 1 }, { name: 'gabarito', maxCount: 1 }]), ah(async (req, res) => {
+r.post('/:id/alimentar-prova', cadernoLimit, uploader([{ name: 'prova', maxCount: 1 }, { name: 'gabarito', maxCount: 1 }]), ah(async (req, res) => {
   const c = await one('SELECT * FROM cadernos WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
   if (!c) throw new HttpError(404, 'Caderno não encontrado.');
 
@@ -593,7 +584,7 @@ r.post('/:id/alimentar-prova', perUser, uploader([{ name: 'prova', maxCount: 1 }
 }));
 
 // Vincular um simulado já gerado ao Caderno
-r.post('/:id/vincular-simulado', perUser, ah(async (req, res) => {
+r.post('/:id/vincular-simulado', cadernoLimit, ah(async (req, res) => {
   const c = await one('SELECT * FROM cadernos WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
   if (!c) throw new HttpError(404, 'Caderno não encontrado.');
   const { setId } = parseBody(z.object({ setId: z.string().uuid('Simulado inválido.') }), req.body);

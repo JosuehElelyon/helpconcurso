@@ -76,6 +76,37 @@ test('A1: worker expõe saúde', async () => {
   assert.equal(s.ativo, true);
 });
 
+test('A2: duas instâncias da API somam o mesmo limite de requisições (contagem no Postgres)', async () => {
+  const PORT2 = PORT + 1;
+  let log2 = '';
+  const api2 = sobe('src/server.js', { ...ENV, PORT: String(PORT2), PROCESS_ROLE: 'api' }, (d) => (log2 += d));
+  try {
+    assert.ok(await esperar(async () => { try { return (await fetch(`http://localhost:${PORT2}/api/health`)).ok; } catch { return false; } }), 'API 2 não subiu: ' + log2);
+    const tentar = (porta) => fetch(`http://localhost:${porta}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: `ninguem-${RUN}@teste.com`, password: 'x' }) });
+    // limite de contas: 40 por IP em 15 min; o login do before() já contou 1 → mais 39 alternando entre as instâncias
+    for (let i = 0; i < 39; i++) {
+      const r = await tentar(i % 2 ? PORT2 : PORT);
+      assert.notEqual(r.status, 429, `bloqueou cedo demais na tentativa ${i + 2}`);
+    }
+    assert.equal((await tentar(PORT)).status, 429, 'instância 1 deve ver as tentativas feitas na 2');
+    assert.equal((await tentar(PORT2)).status, 429, 'instância 2 deve ver as tentativas feitas na 1');
+  } finally {
+    api2.kill();
+  }
+});
+
+test('A2: contador reinicia quando a janela acaba', async () => {
+  const { PostgresStore } = await import('../src/middleware/limites.js');
+  const st = new PostgresStore(`janela-${RUN}`);
+  st.init({ windowMs: 400 });
+  assert.equal((await st.increment('k')).totalHits, 1);
+  assert.equal((await st.increment('k')).totalHits, 2);
+  await sleep(500);
+  assert.equal((await st.increment('k')).totalHits, 1);
+  await st.resetKey('k');
+  assert.equal(await st.get('k'), undefined);
+});
+
 test('A1: tarefa órfã (worker caiu) volta para a fila; tarefa com batimento recente não é roubada', async () => {
   const o = await one('SELECT status, locked_at FROM jobs WHERE id=$1', [orfa.id]);
   assert.ok(o.status !== 'running' || new Date(o.locked_at) > new Date(Date.now() - 60_000), 'órfã continuou presa');
