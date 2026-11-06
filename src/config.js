@@ -61,6 +61,14 @@ export const config = {
   env: env('NODE_ENV', 'development'),
   port: num('PORT', 3000),
   appUrl: env('APP_URL', 'http://localhost:3000').replace(/\/$/, ''),
+  // Front e API separados (A5). SERVIR_FRONT=false: a API não entrega public/ (o front fica no Nginx/CDN).
+  servirFront: bool('SERVIR_FRONT', true),
+  // Origens de front em OUTRO domínio que podem chamar a API com cookie (ex.: https://app.helpconcurso.com.br).
+  // Mesmo domínio (Nginx/CDN repassando /api) não precisa de CORS.
+  corsOrigins: list('CORS_ORIGINS').map((o) => o.replace(/\/$/, '')),
+  // Quantos proxies confiáveis há na frente da API (Nginx = 1; Cloudflare Tunnel → Nginx → API = 2). Define o IP real
+  // usado nos limites de requisição: valor maior que o real deixa o cliente falsificar o IP pelo X-Forwarded-For.
+  trustProxy: num('TRUST_PROXY', 1),
   jwtSecret: env('JWT_SECRET'),
   databaseUrl: env('DATABASE_URL'),
   databaseSsl: bool('DATABASE_SSL', false),

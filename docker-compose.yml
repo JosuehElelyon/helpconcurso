@@ -2,7 +2,7 @@
 #   docker compose up -d --build
 # Dois processos com a mesma imagem: "app" (API HTTP) e "worker" (fila de IA) — escalam separados:
 #   docker compose up -d --scale worker=2
-# App: http://localhost:3000 · E-mails (Mailpit): http://localhost:8025 · Arquivos (MinIO): http://localhost:9001
+# App (front + API via Nginx): http://localhost:3000 · API direta: http://127.0.0.1:3100 · E-mails (Mailpit): http://localhost:8025 · Arquivos (MinIO): http://localhost:9001
 # Para deixar público pela internet: docker compose --profile publico up -d   (veja docs/DEPLOY.md)
 
 x-ambiente: &ambiente
@@ -23,7 +23,27 @@ x-codigo: &codigo
   - ./migrations:/app/migrations
 
 services:
-  # API HTTP (rotas /api e arquivos do front)
+  # Front (Nginx): entrega public/ e repassa /api para a API. É a porta de entrada: http://localhost:3000
+  web:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://app:3000
+      API_URL: /api/v1
+      CSP_EXTRA_ORIGENS: ""
+    volumes:
+      - ./public:/usr/share/nginx/html:ro
+      - ./deploy/nginx:/etc/nginx/templates:ro
+    ports:
+      - "3000:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/config.js"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+    depends_on: [app]
+
+  # API HTTP (só /api; o front fica no "web"). Acesso direto, para depurar: http://127.0.0.1:3100/api/v1/health
   app:
     build: .
     restart: unless-stopped
@@ -31,10 +51,13 @@ services:
     environment:
       <<: *ambiente
       PROCESS_ROLE: api
+      SERVIR_FRONT: "false"
+      # Proxies na frente: Nginx (1). Com o túnel Cloudflare do perfil "publico" (túnel → Nginx → API), use 2.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3100:3000"
     volumes: *codigo
     depends_on:
       db: { condition: service_healthy }
@@ -110,4 +133,4 @@ services:
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on: [app]
+    depends_on: [web]   # o túnel aponta para http://web:80 (front + API)

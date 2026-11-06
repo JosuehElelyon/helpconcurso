@@ -99,18 +99,24 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
 - **API v1 (A3):** rotas em `/api/v1/*` (índice em `src/routes/index.js`; `/api/*` é apelido obsoleto). Contrato OpenAPI em
   `src/openapi.js` (servido em `/api/v1/openapi.json`; `npm run openapi` exporta para `docs/openapi.json`). **Rota nova ou removida →
   atualize a tabela `ROTAS` em `src/openapi.js`**; `test/contrato.test.js` falha se esquecer.
-- **Sprint 5.1 e reestruturação:** ver o fim de `docs/PLANO-ACAO.md` (A1–A3 feitos; próximos A4–A6). Teste de funcionalidade
+- **Camadas (A4):** `routes/` só HTTP (zod + chamar serviço) → `services/` regra (sem req/res) → `repositories/` só SQL filtrando
+  pelo dono. Simulados e cadernos já seguem; edital/provas/desempenho ainda têm SQL no serviço (migrar quando mexer). SQL novo só em
+  `repositories/`.
+- **Front separado (A5):** no compose, `web` (Nginx) é a entrada em http://localhost:3000 e repassa `/api` para `app`
+  (`SERVIR_FRONT=false`, API direta em 127.0.0.1:3100). Front lê a API de `public/config.js` (`window.HC_CONFIG.apiUrl`).
+  `CORS_ORIGINS` para front em outro domínio; `TRUST_PROXY` = nº de proxies na frente (túnel + Nginx = 2).
+- **Sprint 5.1 e reestruturação:** ver o fim de `docs/PLANO-ACAO.md` (A1–A3 e A5 feitos, A4 parcial; falta A6). Teste de funcionalidade
   chama a rota HTTP, nunca uma cópia da lógica.
 - App: http://localhost:3000 · Mailpit: http://localhost:8025 · S3 local (SeaweedFS no serviço `minio`): http://localhost:9000
 - A imagem `minio/minio` saiu do Docker Hub; o compose usa `chrislusf/seaweedfs`. Arquivos antigos do MinIO ficaram em `data/minio`.
 - Se o Docker Desktop fechar com "com.docker.build: exit status 1": encerre o processo órfão `com.docker.build`
   (Gerenciador de Tarefas), rode `wsl --shutdown` e abra o Docker de novo. Não use "Reset to factory defaults".
 - `.env` já tem `JWT_SECRET`, SMTP do Brevo e `ANTHROPIC_API_KEY` (`AI_MOCK=false`). Remetente: `SMTP_FROM`.
-- Acesso público: `docker run --rm cloudflare/cloudflared:latest tunnel --url http://host.docker.internal:3000`
+- Acesso público: `docker run --rm cloudflare/cloudflared:latest tunnel --url http://host.docker.internal:3000` (porta 3000 = Nginx `web`)
   e colocar a URL em `APP_URL` no `.env`.
 
 ## Pendências
-1. Reestruturação A4–A6 (`docs/PLANO-ACAO.md`).
+1. Reestruturação: A6 (docs/CI) e o resto do A4 (`docs/PLANO-ACAO.md`).
 2. Arquitetura de conhecimento (`docs/ARQUITETURA-CONHECIMENTO.md`). **Fase 1 pronta** (migração 007): taxonomia própria
    (`src/services/taxonomia.js`, semente na subida), vocabulário fechado de cobrança (`src/lib/cobranca.js`), `prova_extract` v2
    rotula cada questão real (tópico, comando, pegadinha, habilidade, leis), `editais_canonicos` (edital lido uma vez; chave =

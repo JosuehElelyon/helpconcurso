@@ -546,8 +546,8 @@ Escopo escolhido: **API + worker + camadas** (o front atual continua, servido à
 | A1 ✅ | `src/worker.js` separado: a fila de IA sai do processo da API (`ROLE=api|worker|all`; `all` mantém o modo atual no dev) | Escalar API e processamento de IA independentemente |
 | A2 ✅ | Limites de requisição num armazenamento compartilhado (Postgres) em vez da memória | Com 2+ instâncias da API, os limites continuam valendo |
 | A3 ✅ | `/api/v1` com contrato OpenAPI (`docs/openapi.yaml`) e `/api/*` como apelido durante a transição | Front e futuros clientes (app móvel) consomem um contrato estável |
-| A4 | Camadas: `routes` (HTTP) → `controllers` → `services` (regra) → `repositories` (SQL). Começando por sets, cadernos e editais | Rotas finas e regra de negócio testável sem HTTP |
-| A5 | Front servido à parte (Nginx no compose; CORS/cookies por `APP_URL`/`API_URL`) | Publicar o front num CDN e a API em outro lugar |
+| A4 ◐ | Camadas: `routes` (HTTP) → `controllers` → `services` (regra) → `repositories` (SQL). Começando por sets, cadernos e editais | Rotas finas e regra de negócio testável sem HTTP |
+| A5 ✅ | Front servido à parte (Nginx no compose; CORS/cookies por `APP_URL`/`API_URL`) | Publicar o front num CDN e a API em outro lugar |
 | A6 | Docs (CLAUDE.md, DEPLOY.md, ARQUITETURA) e CI com os dois processos | A próxima sessão entende o desenho |
 
 ### A1 — concluída (05/11/2026)
@@ -570,3 +570,22 @@ API versionada: `src/routes/index.js` monta todos os módulos em `/api/v1` (atua
 `/api/v1/openapi.json` e exportado com `npm run openapi` para `docs/openapi.json`. `test/contrato.test.js` falha se uma rota
 existir sem estar no contrato (ou o contrato citar rota inexistente). Front usa `/api/v1`. 142 testes.
 Próximo passo natural do contrato: esquemas de resposta das rotas principais (hoje só os corpos de requisição principais).
+
+### A4 — parcial (05/11/2026)
+Simulados e cadernos em camadas: `routes/` (só HTTP + zod) → `services/simulados.js`, `services/cadernos.js` (regra, sem req/res)
+→ `repositories/` (só SQL, sempre filtrando pelo dono). Rotas: sets 422 → ~125 linhas; cadernos 738 → 73. No caminho, **R15**
+resolvido (interagir no caderno faz mescla atômica por chave; teste com 15 requisições paralelas falha no código antigo).
+**Falta:** tirar o SQL de `services/edital.js`, `services/provas.js` e `services/desempenho.js` para repositórios — fazer
+aos poucos, sempre que um desses arquivos for mexido. Regra para código novo: SQL só em `repositories/`.
+
+### A5 — concluída (05/11/2026)
+Front separado da API. No compose: serviço **`web`** (Nginx, porta 3000) entrega `public/`, gera `/config.js` a partir de
+`API_URL` e repassa `/api` para a API (fluxo NDJSON sem buffer, 600 s, 30 MB); **`app`** roda com `SERVIR_FRONT=false`
+(só `/api`; acesso direto em 127.0.0.1:3100). Config nova: `SERVIR_FRONT` (padrão true = tudo-em-um, usado no `npm start`,
+nos testes e no Render), `CORS_ORIGINS` (front em outro domínio, com cookie; CSRF aceita só essas origens) e `TRUST_PROXY`
+(proxies na frente: 1 com Nginx; 2 com túnel Cloudflare → Nginx). Front lê a API de `window.HC_CONFIG.apiUrl` (`public/config.js`).
+CSP do front fica no Nginx (`deploy/nginx/default.conf.template`). Testado no Docker: IP real do cliente chega à API.
+**Render:** continua tudo-em-um (a API serve o front). Para separar lá: site estático + API em subdomínio (`CORS_ORIGINS`,
+`API_URL` absoluto), a validar no painel do Render. Teste: `test/front-separado.test.js`. 146 testes.
+**Atenção ao túnel nomeado (perfil "publico"):** no painel da Cloudflare, o destino passa a ser `http://web:80` (antes `app:3000`)
+e use `TRUST_PROXY=2`.

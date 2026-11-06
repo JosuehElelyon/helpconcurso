@@ -1,0 +1,52 @@
+# Nginx do front (A5): entrega public/ e repassa /api para a API.
+# Template processado pela imagem oficial do Nginx (envsubst) na subida. Variáveis:
+#   API_UPSTREAM        endereço interno da API (ex.: http://app:3000)
+#   API_URL             o que o front usa para chamar a API (padrão /api/v1, mesmo domínio via este proxy)
+#   CSP_EXTRA_ORIGENS   origens extras para connect-src/img-src (ex.: https://api.helpconcurso.com.br) — vazio no mesmo domínio
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    server_tokens off;
+    client_max_body_size 30m;   # uploads de até 25 MB (UPLOAD_MAX_MB) + campos do formulário
+
+    # Endereço da API para o front (sem rebuild ao trocar de ambiente)
+    location = /config.js {
+        default_type application/javascript;
+        add_header Cache-Control "no-cache" always;
+        add_header X-Content-Type-Options nosniff always;
+        return 200 "window.HC_CONFIG = { apiUrl: '${API_URL}' };\n";
+    }
+
+    # API: mesmo domínio para o navegador (cookie SameSite=Lax, sem CORS)
+    location /api/ {
+        proxy_pass ${API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id $request_id;
+        proxy_buffering off;          # geração de simulado responde em fluxo (NDJSON)
+        proxy_request_buffering off;  # uploads vão direto para a API
+        proxy_read_timeout 600s;      # gerações longas
+        proxy_send_timeout 600s;
+    }
+
+    # Arquivos estáticos com cache curto (os links já levam ?v=)
+    location ~* \.(?:js|css|svg|png|jpg|jpeg|webp|ico|woff2?)$ {
+        expires 1h;
+        add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: ${CSP_EXTRA_ORIGENS}; script-src 'self'; connect-src 'self' ${CSP_EXTRA_ORIGENS}; object-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'" always;
+        add_header X-Content-Type-Options nosniff always;
+        try_files $uri =404;
+    }
+
+    # Página única (SPA): qualquer outra rota abre o index.html
+    location / {
+        add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: ${CSP_EXTRA_ORIGENS}; script-src 'self'; connect-src 'self' ${CSP_EXTRA_ORIGENS}; object-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header Cache-Control "no-cache" always;
+        try_files $uri /index.html;
+    }
+}

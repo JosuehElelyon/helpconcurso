@@ -39,8 +39,11 @@ const ic = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="
 
 // ---------- Utilidades ----------
 const $ = (s) => document.querySelector(s);
-// Versão da API REST consumida pelo front (contrato em /api/v1/openapi.json)
-const API = '/api/v1';
+// Endereço da API REST (contrato em <API>/openapi.json): vem de /config.js; padrão /api/v1 no mesmo domínio
+const API = String(window.HC_CONFIG?.apiUrl || '/api/v1').replace(/\/$/, '');
+// Origem da API quando ela está em outro domínio (para URLs relativas que a API devolve, como /api/v1/users/:id/avatar)
+const API_ORIGEM = /^https?:\/\//.test(API) ? new URL(API).origin : '';
+const urlDaApi = (u) => (API_ORIGEM && typeof u === 'string' && u.startsWith('/api/') ? API_ORIGEM + u : u);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = (n) => (n || '?').trim().split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('') || '?';
 const firstName = (n) => (n || '').trim().split(/\s+/)[0] || '';
@@ -48,7 +51,7 @@ function renderAvatar(u, sizeClass = '') {
   if (!u) return `<span class="avatar ${sizeClass}">?</span>`;
   const name = u.name || '';
   const init = initials(name);
-  const url = u.avatarUrl || u.avatar_url;
+  const url = urlDaApi(u.avatarUrl || u.avatar_url);
   if (url) {
     return `<img src="${esc(url)}" class="avatar ${sizeClass}" alt="${esc(name)}" data-ini="${esc(init)}">`;
   }
@@ -61,7 +64,7 @@ let toastT;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3400); }
 
 async function api(path, { method = 'GET', body, form } = {}) {
-  const opt = { method, headers: {}, credentials: 'same-origin' };
+  const opt = { method, headers: {}, credentials: API_ORIGEM ? 'include' : 'same-origin' };
   if (form) opt.body = form;
   else if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
   let r;
@@ -747,7 +750,7 @@ async function uploadMaterial(payload) {
 async function generate() {
   const w = S.wiz; w.step = 4; w.generating = true; w.genErr = ''; w.genCount = 0; w.stage = ''; render();
   try {
-    const res = await fetch(API + '/sets', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+    const res = await fetch(API + '/sets', { method: 'POST', credentials: API_ORIGEM ? 'include' : 'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ materialId: w.material.id, materia: w.materia, assunto: w.assunto, banca: w.banca, qtd: w.qtd, nivel: w.nivel, cadernoId: w.cadernoId || null }) });
     if (!res.ok) { let d = {}; try { d = await res.json(); } catch {} throw new Error(d.error || `Erro ${res.status}`); }
     const reader = res.body.getReader(), dec = new TextDecoder();
@@ -800,7 +803,7 @@ async function dispararRevanche({ setId, cadernoId, indices = [], keys = [], ban
   try {
     const res = await fetch(API + '/sets/revanche', {
       method: 'POST',
-      credentials: 'same-origin',
+      credentials: API_ORIGEM ? 'include' : 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ setId, cadernoId, indices, keys, banca, materia, assunto, qtd }),
     });

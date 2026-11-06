@@ -12,10 +12,11 @@ import { HttpError } from './lib/http.js';
 import { AiError, userMessage } from './ai/errors.js';
 import { UploadBlockedError } from './security/index.js';
 import { criarRotasApi, VERSAO_API } from './routes/index.js';
+import { cors, csrf } from './middleware/origem.js';
 
 export function createApp() {
   const app = express();
-  app.set('trust proxy', 1); // atrás de Render, Cloudflare Tunnel, Nginx etc.
+  app.set('trust proxy', config.trustProxy); // proxies na frente (Nginx, Render, Cloudflare Tunnel): define o IP real
   app.disable('x-powered-by');
 
   app.use((req, res, next) => { req.id = crypto.randomUUID().slice(0, 8); res.set('X-Request-Id', req.id); next(); });
@@ -32,18 +33,13 @@ export function createApp() {
       'upgrade-insecure-requests': null, // permite rodar em http na rede local
     } },
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    // front em outro subdomínio (CORS_ORIGINS) precisa carregar o avatar da API em <img>
+    crossOriginResourcePolicy: { policy: config.corsOrigins.length ? 'same-site' : 'same-origin' },
   }));
+  app.use(cors);
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
-  // Proteção CSRF simples: requisições que alteram dados precisam vir do próprio site
-  app.use((req, _res, next) => {
-    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || !req.path.startsWith('/api/')) return next();
-    const origin = req.get('origin');
-    if (!origin) return next(); // chamadas sem navegador (curl, testes) dependem do cookie SameSite=Lax
-    let host = null; try { host = new URL(origin).host; } catch {}
-    if (origin === config.appUrl || host === req.get('host')) return next();
-    next(new HttpError(403, 'Origem não permitida.'));
-  });
+  app.use(csrf);
   app.use(loadUser);
 
   // API REST: /api/v1 é a versão atual; /api fica como apelido durante a transição (clientes antigos, avatares já salvos)
@@ -54,9 +50,15 @@ export function createApp() {
     next();
   }, api);
 
-  const pub = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
-  app.use(express.static(pub, { maxAge: config.env === 'production' ? '1h' : 0 }));
-  app.get('*', (_req, res) => res.sendFile(path.join(pub, 'index.html')));
+  // Front (public/): servido aqui só no modo tudo-em-um. Com SERVIR_FRONT=false o front fica no Nginx/CDN e a API
+  // responde 404 em JSON fora de /api.
+  if (config.servirFront) {
+    const pub = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+    app.use(express.static(pub, { maxAge: config.env === 'production' ? '1h' : 0 }));
+    app.get('*', (_req, res) => res.sendFile(path.join(pub, 'index.html')));
+  } else {
+    app.use((_req, _res, next) => next(new HttpError(404, 'Rota não encontrada. A API está em /api/' + VERSAO_API + '.')));
+  }
 
   // Tratamento central de erros: mensagem amigável para o usuário, detalhes só no log
   app.use((err, req, res, _next) => {

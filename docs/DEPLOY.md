@@ -72,6 +72,11 @@ docker compose exec db pg_dump -U helpconcurso helpconcurso > backup.sql
 
 ---
 
+### Como as peças se ligam (docker compose)
+`web` (Nginx, porta 3000) entrega o front e repassa `/api` → `app` (API, `SERVIR_FRONT=false`) · `worker` (fila de IA) ·
+`db` · `minio` · `mailpit`. Com o túnel nomeado (perfil `publico`), aponte o destino do túnel para `http://web:80` e defina
+`TRUST_PROXY=2` no `.env` (túnel → Nginx → API), para os limites de requisição verem o IP real do aluno.
+
 ## Opção B — Nuvem (recomendado para produção)
 
 Uma combinação simples e de baixo custo:
