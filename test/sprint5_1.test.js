@@ -195,3 +195,12 @@ test('R15: ações simultâneas no caderno não se sobrescrevem (favoritas, anot
   const set = await one('SELECT respostas FROM question_sets WHERE id=$1', [s.id]);
   assert.deepEqual(Object.keys(set.respostas).sort(), ['0', '1', '2', '3', '4']);
 });
+
+test('SEGURANÇA: /auth/verify não abre sessão de conta já confirmada (antes bastava o e-mail e qualquer código)', async () => {
+  const atacante = client();
+  const r = await atacante('/api/v1/auth/verify', { method: 'POST', body: { email: ana.u.email, code: '000000' } });
+  assert.equal(r.status, 409);
+  assert.equal(r.data.user, undefined);
+  assert.equal((await atacante('/api/v1/auth/me')).data.user, null, 'nenhuma sessão foi aberta');
+  assert.equal((await atacante('/api/v1/sets')).status, 401);
+});

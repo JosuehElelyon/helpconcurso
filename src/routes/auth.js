@@ -44,7 +44,8 @@ r.post('/verify', ah(async (req, res) => {
   const b = parseBody(z.object({ email, code }), req.body);
   const user = await byEmail(b.email);
   if (!user) throw new HttpError(400, CODE_MSG.invalid);
-  if (user.email_verified_at) { setSession(res, user); return res.json({ user: publicUser(user) }); }
+  // Conta já confirmada: nunca abre sessão por aqui (antes abria sem conferir o código — quem soubesse o e-mail entrava)
+  if (user.email_verified_at) throw new HttpError(409, 'Este e-mail já está confirmado. Entre com sua senha.', { jaConfirmado: true });
   const v = await consumeCode(user.id, 'VERIFY_EMAIL', b.code);
   if (!v.ok) throw new HttpError(400, CODE_MSG[v.reason]);
   const u = await one('UPDATE users SET email_verified_at=now(), updated_at=now() WHERE id=$1 RETURNING *', [user.id]);
