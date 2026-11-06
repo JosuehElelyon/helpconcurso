@@ -176,3 +176,22 @@ test('R4/R6: revanche pela rota gera, revisa e grava as questões-base', async (
   assert.ok(ev.set.questoes.every((q) => q.verificada === true), 'só questões aprovadas pelo revisor');
   assert.deepEqual(ev.set.estatisticas.revancheDe.keys, [`set:${orig.id}:0`], 'só a questão errada vira base');
 });
+
+test('R15: ações simultâneas no caderno não se sobrescrevem (favoritas, anotações, respostas e revisão)', async () => {
+  const cad = await one(`INSERT INTO cadernos (user_id, titulo, banca) VALUES ($1,'Cad R15','fgv') RETURNING *`, [ana.u.id]);
+  const s = await criarSimulado(ana.u.id, { cadernoId: cad.id, questoes: [0, 1, 2, 3, 4].map((i) => ({ enunciado: `R15 ${i}`, alternativas: ME5(i), gabarito: 'A' })) });
+  const keys = [0, 1, 2, 3, 4].map((i) => `set:${s.id}:${i}`);
+  // 15 requisições ao mesmo tempo: favoritar, anotar e responder (errado) cada questão
+  const rs = await Promise.all(keys.flatMap((key) => [
+    ana.c(`/api/v1/cadernos/${cad.id}/interagir`, { method: 'PATCH', body: { key, favorita: true } }),
+    ana.c(`/api/v1/cadernos/${cad.id}/interagir`, { method: 'PATCH', body: { key, anotacao: `nota ${key}` } }),
+    ana.c(`/api/v1/cadernos/${cad.id}/interagir`, { method: 'PATCH', body: { key, resposta: 'B' } }),
+  ]));
+  assert.ok(rs.every((x) => x.status === 200), JSON.stringify(rs.map((x) => x.status)));
+  const c = await one('SELECT favoritas, anotacoes, revisao_espacada FROM cadernos WHERE id=$1', [cad.id]);
+  assert.deepEqual(Object.keys(c.favoritas).sort(), [...keys].sort());
+  assert.deepEqual(Object.keys(c.anotacoes).sort(), [...keys].sort());
+  assert.deepEqual(Object.keys(c.revisao_espacada).sort(), [...keys].sort());
+  const set = await one('SELECT respostas FROM question_sets WHERE id=$1', [s.id]);
+  assert.deepEqual(Object.keys(set.respostas).sort(), ['0', '1', '2', '3', '4']);
+});
