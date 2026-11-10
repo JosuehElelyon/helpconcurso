@@ -138,6 +138,144 @@ const ROTAS = [
 
 export const rotasDoContrato = () => ROTAS.map(([m, p]) => `${m.toUpperCase()} ${p}`);
 
+// ---------- Esquemas das RESPOSTAS (item 8) ----------
+// Campos "required" são o compromisso com os clientes: remover ou renomear quebra test/contrato-respostas.test.js.
+// Campos novos podem ser acrescentados sem quebrar (objetos aceitam propriedades extras).
+const ref = (nome) => ({ $ref: `#/components/schemas/${nome}` });
+const anulavel = (schema) => ({ ...schema, type: [schema.type, 'null'] });
+const sOuNull = anulavel(str());
+const num = { type: 'number' };
+const nOuNull = { type: ['number', 'null'] };
+const int = { type: 'integer' };
+const bool = { type: 'boolean' };
+const data = str({ format: 'date-time' });
+const lista = (items) => ({ type: 'array', items });
+const objLivre = { type: 'object' };
+const exigir = (props) => obj(props, Object.keys(props));
+
+const ESQUEMAS_RESPOSTA = {
+  Saude: exigir({ ok: bool, versao: str(), api: str() }),
+  Usuario: exigir({
+    id: uuid, name: str(), email: str({ format: 'email' }), role: str({ enum: ['USER', 'ADMIN'] }), emailVerified: bool,
+    stars: exigir({ total: num, balance: num }), plano: exigir({ id: str(), nome: str() }), avatarUrl: sOuNull, termosVersao: sOuNull,
+  }),
+  QuestaoDoSimulado: obj({
+    enunciado: str(), alternativas: lista(str()), gabarito: str(), comentario: str(), tema: str(), topico_edital: str(),
+    verificada: { type: ['boolean', 'null'] }, ancorada: bool, anulada: bool, gabaritoAtualizado: bool,
+  }, ['enunciado', 'alternativas', 'gabarito']),
+  Simulado: exigir({
+    id: uuid, banca: sOuNull, materia: str(), assunto: sOuNull, nivel: str(), formato: str({ enum: ['me', 'ce'] }), arquivo: sOuNull,
+    editalId: sOuNull, cadernoId: sOuNull, questoes: lista(ref('QuestaoDoSimulado')),
+    respostas: { type: 'object', additionalProperties: str(), description: 'índice da questão → letra marcada' },
+    finalizado: bool, modoProva: bool, tempoLimiteMinutos: { type: ['integer', 'null'] }, tempoGastoSegundos: int, duvidas: lista(int),
+    estatisticas: objLivre, origem: str({ enum: ['ia', 'prova_real', 'revanche'] }), revisao: { type: ['object', 'null'] }, createdAt: data,
+  }),
+  Cota: exigir({
+    plano: str(), planoNome: str(), usedToday: num, dailyLimit: nOuNull, bonus: num, remaining: nOuNull, dificeisHoje: num, dificeisLimite: nOuNull,
+  }),
+  CadernoResumo: exigir({
+    id: uuid, titulo: str(), descricao: sOuNull, banca: str(), orgao: sOuNull, cargo: sOuNull, ano: sOuNull, editalId: sOuNull, editalTitulo: sOuNull,
+    materiaisCount: int, provasCount: int, simuladosCount: int, totalQuestoes: int, questoesIa: int, questoesProvas: int,
+    respondidas: int, acertos: int, erros: int, taxaAcerto: nOuNull, favoritasCount: int, anotacoesCount: int,
+    revisaoHojeCount: int, revisaoAtivasCount: int, dominadasCount: int, createdAt: data, updatedAt: data,
+  }),
+  QuestaoDoCaderno: obj({
+    key: str(), origem: str({ enum: ['ia', 'prova'] }), enunciado: str(), alternativas: lista(str()), gabarito: str(), ans: sOuNull,
+    favorita: bool, anotacao: str(), anulada: bool, gabaritoAtualizado: bool, revisao: { type: ['object', 'null'] },
+  }, ['key', 'origem', 'enunciado', 'alternativas', 'gabarito', 'ans', 'favorita', 'anotacao', 'anulada', 'revisao']),
+  CadernoDetalhe: {
+    allOf: [ref('CadernoResumo'), exigir({
+      edital: { type: ['object', 'null'] }, materiais: lista(objLivre), provas: lista(objLivre), simulados: lista(objLivre),
+      porMateria: lista(exigir({ materia: str(), total: int, respondidas: int, acertos: int, taxaAcerto: nOuNull })),
+      questoes: lista(ref('QuestaoDoCaderno')),
+    })],
+  },
+  ProvaDisponivel: exigir({
+    id: uuid, banca: str(), titulo: str(), editalId: sOuNull, status: str(), statusLabel: str(), numQuestoes: { type: ['integer', 'null'] }, minha: bool, createdAt: data,
+  }),
+  ListaDeCadernos: exigir({ cadernos: lista(ref('CadernoResumo')), materiaisDisponiveis: lista(objLivre), provasDisponiveis: lista(ref('ProvaDisponivel')) }),
+  EditalResumo: exigir({
+    id: uuid, titulo: str(), orgao: sOuNull, cargo: sOuNull, banca: sOuNull, ano: sOuNull, provaId: sOuNull, active: bool,
+    oficialConfirmado: bool, totalDisciplinas: int, totalTopicos: int, createdAt: data,
+  }),
+  EditalPainel: exigir({
+    id: uuid, titulo: str(), banca: sOuNull, active: bool, provasVinculadas: lista(objLivre), materiaisVinculados: lista(objLivre),
+    resumo: obj({ totalDisciplinas: int, totalTopicos: int, coberturaPct: num, taxaAcertoGeral: nOuNull }, ['totalDisciplinas', 'totalTopicos', 'coberturaPct']),
+    disciplinas: lista(obj({ id: str(), materia: str(), peso: num, topicos: lista(objLivre) }, ['id', 'materia', 'topicos'])),
+  }),
+  ProvaMinha: exigir({
+    id: uuid, banca: str(), titulo: str(), fileName: str(), status: str(), statusLabel: str(), editalId: sOuNull, editalTitulo: sOuNull,
+    oficialConfirmado: bool, numQuestoes: { type: ['integer', 'null'] }, createdAt: data,
+  }),
+  Conta: exigir({
+    perfil: { allOf: [ref('Usuario'), exigir({ telefone: str(), concursoAlvo: str(), bancaPreferida: str(), dataProva: str(), metaDiaria: { type: ['integer', 'null'] }, membroDesde: data })] },
+    plano: exigir({ id: str(), nome: str(), ate: sOuNull, limites: objLivre }),
+    uso: exigir({ simuladosHoje: num, dificeisHoje: num, creditosExtras: num, editais: int, cadernos: int }),
+    pedidoPendente: { type: ['object', 'null'] },
+  }),
+  Hoje: exigir({
+    dia: str({ format: 'date' }), meta: { type: ['integer', 'null'] },
+    hoje: exigir({ respondidas: int, acertos: int, metaBatida: bool }), sequencia: exigir({ atual: int, recorde: int }),
+    semana: lista(exigir({ dia: str(), respondidas: int, metaBatida: bool })), dataProva: sOuNull, diasParaProva: { type: ['integer', 'null'] },
+  }),
+  Desempenho: exigir({
+    usuario: objLivre,
+    resumo: exigir({
+      totalRespondidas: int, totalAcertos: int, totalErros: int, taxaGeralPct: num, totalTempoSegundos: num, simuladosConcluidos: int,
+      simuladosModoProva: int, diagnostico: str(),
+    }),
+    evolucao: lista(exigir({ dia: str(), respondidas: int, acertos: int, erros: int, taxaPct: nOuNull, metaBatida: bool })),
+    disciplinas: lista(objLivre), radar: { type: ['object', 'null'] }, editalAtivo: { type: ['object', 'null'] },
+  }),
+  Termos: exigir({
+    versao: str(), atualizadoEm: str(), controlador: exigir({ nome: str(), contato: str() }), encarregado: exigir({ nome: str(), contato: str() }),
+    operadoresIA: lista(exigir({ fornecedor: str(), pais: str(), modelos: lista(str()), recebe: str(), tarefas: lista(str()), privacidade: str() })),
+    operadoresInfra: lista(exigir({ fornecedor: str(), pais: str(), finalidade: str(), dados: str() })),
+    secoes: lista(obj({ titulo: str(), itens: lista(str()), paragrafos: lista(str()) }, ['titulo'])),
+  }),
+  Bancas: exigir({
+    bancas: lista(obj({ id: str(), nome: str(), formato: str({ enum: ['me', 'ce'] }), cor: str(), provasTreinadas: int, questoesReais: int }, ['id', 'nome', 'formato'])),
+    materias: lista(str()), niveis: lista(str()),
+  }),
+  Estrelas: exigir({ total: num, balance: num, bonusCredits: num, level: objLivre, levels: lista(objLivre), regras: objLivre, history: lista(objLivre) }),
+  Planos: exigir({
+    planos: lista(exigir({ id: str(), nome: str(), precoMensal: num, precoAnual: num, destaque: bool, resumo: str(), beneficios: lista(str()), limites: objLivre })),
+    atual: str(),
+  }),
+};
+
+// Corpo de resposta (200/201) de cada rota que tem formato documentado
+const RESPOSTAS = {
+  'get /health': ref('Saude'),
+  'get /termos': ref('Termos'),
+  'get /auth/me': obj({ user: { anyOf: [ref('Usuario'), { type: 'null' }] } }, ['user']),
+  'post /auth/login': exigir({ user: ref('Usuario') }),
+  'post /auth/verify': exigir({ user: ref('Usuario') }),
+  'post /auth/reset': exigir({ user: ref('Usuario') }),
+  'get /sets/cota': exigir({ quota: ref('Cota') }),
+  'get /sets': exigir({ sets: lista(ref('Simulado')) }),
+  'get /sets/{id}': exigir({ set: ref('Simulado') }),
+  'patch /sets/{id}': exigir({ set: ref('Simulado') }),
+  'get /cadernos': ref('ListaDeCadernos'),
+  'get /cadernos/{id}': exigir({ caderno: ref('CadernoDetalhe') }),
+  'post /cadernos': exigir({ caderno: ref('CadernoDetalhe') }),
+  'patch /cadernos/{id}/interagir': exigir({ caderno: ref('CadernoDetalhe') }),
+  'get /editais': exigir({ editais: lista(ref('EditalResumo')), active: { anyOf: [ref('EditalPainel'), { type: 'null' }] } }),
+  'get /editais/{id}': exigir({ edital: ref('EditalPainel') }),
+  'post /editais/{id}/ativar': exigir({ edital: ref('EditalPainel') }),
+  'get /provas/minhas': exigir({ provas: lista(ref('ProvaMinha')) }),
+  'get /me/conta': ref('Conta'),
+  'patch /me/conta': ref('Conta'),
+  'get /me/hoje': ref('Hoje'),
+  'get /me/desempenho': ref('Desempenho'),
+  'get /me/estrelas': ref('Estrelas'),
+  'get /me/planos': ref('Planos'),
+  'get /bancas': ref('Bancas'),
+  'post /me/termos/aceite': exigir({ user: ref('Usuario') }),
+};
+export const rotasComRespostaDocumentada = () => Object.keys(RESPOSTAS);
+
+
 const ERRO = { description: 'Erro', content: { 'application/json': { schema: { $ref: '#/components/schemas/Erro' } } } };
 
 function operacao([metodo, caminho, tag, resumo, autenticacao, formato, corpo, resposta]) {
@@ -148,7 +286,7 @@ function operacao([metodo, caminho, tag, resumo, autenticacao, formato, corpo, r
     responses: {
       200: resposta === FLUXO
         ? { description: 'Fluxo NDJSON: uma linha JSON por evento ({"type":"progress"|"stage"|"ping"|"done"|"error"})', content: { 'application/x-ndjson': { schema: str() } } }
-        : { description: 'OK', content: { 'application/json': { schema: { type: 'object' } } } },
+        : { description: 'OK', content: { 'application/json': { schema: RESPOSTAS[`${metodo} ${caminho}`] || { type: 'object' } } } },
       400: ERRO, 404: ERRO, 429: ERRO,
     },
   };
@@ -173,7 +311,7 @@ export function especificacaoOpenApi() {
     security: [{ sessao: [] }],
     components: {
       securitySchemes: { sessao: { type: 'apiKey', in: 'cookie', name: 'hc_session' } },
-      schemas: { Erro: obj({ error: str() }, ['error']) },
+      schemas: { Erro: obj({ error: str() }, ['error']), ...ESQUEMAS_RESPOSTA },
     },
     paths,
   };

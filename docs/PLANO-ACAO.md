@@ -738,3 +738,11 @@ obsoleta (não é lida nem gravada). Antes, a coluna única fazia o vínculo de 
 - painel do edital, questões reais por tópico, Simulado Prova Real, cadernos e exemplos de estilo (`getKnowledge`) usam o vínculo
   do aluno; "Minhas provas" e "provas disponíveis" mostram o edital DELE.
 Teste pela rota com duas alunas na mesma prova. 160 testes; e2e 14/14.
+
+### Item 8 — esquemas de resposta no contrato da API — concluído (09/11/2026)
+`src/openapi.js` ganhou 20 esquemas de resposta (usuário, simulado, caderno resumo/detalhe, edital resumo/painel, conta, "Hoje",
+desempenho, termos, bancas, cota, estrelas, planos…) ligados a 26 operações. `test/contrato-respostas.test.js` chama cada uma no
+servidor real e valida o corpo com o contrato (ajv, dependência só de desenvolvimento); rota documentada sem verificação faz o
+teste falhar (exceções com motivo: verify/reset, que dependem do código do e-mail). Comprovado: renomear `cadernoId` na resposta
+do simulado quebra o teste. Regra: campo obrigatório = compromisso com clientes (app móvel); campo novo pode entrar sem quebrar.
+163 testes.

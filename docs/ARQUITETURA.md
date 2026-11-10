@@ -53,6 +53,8 @@ Ainda com SQL fora de `repositories/` (módulos menores, migrar quando forem alt
 
 - Versão atual: `/api/v1` (índice em `src/routes/index.js`). `/api/*` é apelido obsoleto (cabeçalho `Deprecation`).
 - Contrato OpenAPI 3.1: `src/openapi.js`, servido em `/api/v1/openapi.json`; `npm run openapi` exporta `docs/openapi.json`.
+- Respostas: 26 operações têm esquema no contrato (`components.schemas`); `test/contrato-respostas.test.js` valida as respostas
+  reais. **Mudou o formato de uma resposta → atualize o esquema** (remover/renomear campo obrigatório quebra clientes).
 - Erros sempre `{ "error": "mensagem" }`. Operações longas de IA respondem em NDJSON (`progress`, `stage`, `ping`, `done` | `error`).
 
 ## Fila de tarefas (Postgres)

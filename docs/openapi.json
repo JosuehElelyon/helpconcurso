@@ -34,6 +34,1528 @@
         "required": [
           "error"
         ]
+      },
+      "Saude": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "versao": {
+            "type": "string"
+          },
+          "api": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "versao",
+          "api"
+        ]
+      },
+      "Usuario": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "USER",
+              "ADMIN"
+            ]
+          },
+          "emailVerified": {
+            "type": "boolean"
+          },
+          "stars": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "number"
+              },
+              "balance": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "total",
+              "balance"
+            ]
+          },
+          "plano": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "nome": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "nome"
+            ]
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "termosVersao": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "role",
+          "emailVerified",
+          "stars",
+          "plano",
+          "avatarUrl",
+          "termosVersao"
+        ]
+      },
+      "QuestaoDoSimulado": {
+        "type": "object",
+        "properties": {
+          "enunciado": {
+            "type": "string"
+          },
+          "alternativas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gabarito": {
+            "type": "string"
+          },
+          "comentario": {
+            "type": "string"
+          },
+          "tema": {
+            "type": "string"
+          },
+          "topico_edital": {
+            "type": "string"
+          },
+          "verificada": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "ancorada": {
+            "type": "boolean"
+          },
+          "anulada": {
+            "type": "boolean"
+          },
+          "gabaritoAtualizado": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enunciado",
+          "alternativas",
+          "gabarito"
+        ]
+      },
+      "Simulado": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "banca": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "materia": {
+            "type": "string"
+          },
+          "assunto": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nivel": {
+            "type": "string"
+          },
+          "formato": {
+            "type": "string",
+            "enum": [
+              "me",
+              "ce"
+            ]
+          },
+          "arquivo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "editalId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cadernoId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "questoes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuestaoDoSimulado"
+            }
+          },
+          "respostas": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "índice da questão → letra marcada"
+          },
+          "finalizado": {
+            "type": "boolean"
+          },
+          "modoProva": {
+            "type": "boolean"
+          },
+          "tempoLimiteMinutos": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "tempoGastoSegundos": {
+            "type": "integer"
+          },
+          "duvidas": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "estatisticas": {
+            "type": "object"
+          },
+          "origem": {
+            "type": "string",
+            "enum": [
+              "ia",
+              "prova_real",
+              "revanche"
+            ]
+          },
+          "revisao": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "banca",
+          "materia",
+          "assunto",
+          "nivel",
+          "formato",
+          "arquivo",
+          "editalId",
+          "cadernoId",
+          "questoes",
+          "respostas",
+          "finalizado",
+          "modoProva",
+          "tempoLimiteMinutos",
+          "tempoGastoSegundos",
+          "duvidas",
+          "estatisticas",
+          "origem",
+          "revisao",
+          "createdAt"
+        ]
+      },
+      "Cota": {
+        "type": "object",
+        "properties": {
+          "plano": {
+            "type": "string"
+          },
+          "planoNome": {
+            "type": "string"
+          },
+          "usedToday": {
+            "type": "number"
+          },
+          "dailyLimit": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "bonus": {
+            "type": "number"
+          },
+          "remaining": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "dificeisHoje": {
+            "type": "number"
+          },
+          "dificeisLimite": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "plano",
+          "planoNome",
+          "usedToday",
+          "dailyLimit",
+          "bonus",
+          "remaining",
+          "dificeisHoje",
+          "dificeisLimite"
+        ]
+      },
+      "CadernoResumo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "titulo": {
+            "type": "string"
+          },
+          "descricao": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "banca": {
+            "type": "string"
+          },
+          "orgao": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cargo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ano": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "editalId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "editalTitulo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "materiaisCount": {
+            "type": "integer"
+          },
+          "provasCount": {
+            "type": "integer"
+          },
+          "simuladosCount": {
+            "type": "integer"
+          },
+          "totalQuestoes": {
+            "type": "integer"
+          },
+          "questoesIa": {
+            "type": "integer"
+          },
+          "questoesProvas": {
+            "type": "integer"
+          },
+          "respondidas": {
+            "type": "integer"
+          },
+          "acertos": {
+            "type": "integer"
+          },
+          "erros": {
+            "type": "integer"
+          },
+          "taxaAcerto": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "favoritasCount": {
+            "type": "integer"
+          },
+          "anotacoesCount": {
+            "type": "integer"
+          },
+          "revisaoHojeCount": {
+            "type": "integer"
+          },
+          "revisaoAtivasCount": {
+            "type": "integer"
+          },
+          "dominadasCount": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "titulo",
+          "descricao",
+          "banca",
+          "orgao",
+          "cargo",
+          "ano",
+          "editalId",
+          "editalTitulo",
+          "materiaisCount",
+          "provasCount",
+          "simuladosCount",
+          "totalQuestoes",
+          "questoesIa",
+          "questoesProvas",
+          "respondidas",
+          "acertos",
+          "erros",
+          "taxaAcerto",
+          "favoritasCount",
+          "anotacoesCount",
+          "revisaoHojeCount",
+          "revisaoAtivasCount",
+          "dominadasCount",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "QuestaoDoCaderno": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "origem": {
+            "type": "string",
+            "enum": [
+              "ia",
+              "prova"
+            ]
+          },
+          "enunciado": {
+            "type": "string"
+          },
+          "alternativas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gabarito": {
+            "type": "string"
+          },
+          "ans": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "favorita": {
+            "type": "boolean"
+          },
+          "anotacao": {
+            "type": "string"
+          },
+          "anulada": {
+            "type": "boolean"
+          },
+          "gabaritoAtualizado": {
+            "type": "boolean"
+          },
+          "revisao": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "origem",
+          "enunciado",
+          "alternativas",
+          "gabarito",
+          "ans",
+          "favorita",
+          "anotacao",
+          "anulada",
+          "revisao"
+        ]
+      },
+      "CadernoDetalhe": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CadernoResumo"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "edital": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "materiais": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "provas": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "simulados": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "porMateria": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "materia": {
+                      "type": "string"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "respondidas": {
+                      "type": "integer"
+                    },
+                    "acertos": {
+                      "type": "integer"
+                    },
+                    "taxaAcerto": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "materia",
+                    "total",
+                    "respondidas",
+                    "acertos",
+                    "taxaAcerto"
+                  ]
+                }
+              },
+              "questoes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/QuestaoDoCaderno"
+                }
+              }
+            },
+            "required": [
+              "edital",
+              "materiais",
+              "provas",
+              "simulados",
+              "porMateria",
+              "questoes"
+            ]
+          }
+        ]
+      },
+      "ProvaDisponivel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "banca": {
+            "type": "string"
+          },
+          "titulo": {
+            "type": "string"
+          },
+          "editalId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "numQuestoes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "minha": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "banca",
+          "titulo",
+          "editalId",
+          "status",
+          "statusLabel",
+          "numQuestoes",
+          "minha",
+          "createdAt"
+        ]
+      },
+      "ListaDeCadernos": {
+        "type": "object",
+        "properties": {
+          "cadernos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CadernoResumo"
+            }
+          },
+          "materiaisDisponiveis": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "provasDisponiveis": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProvaDisponivel"
+            }
+          }
+        },
+        "required": [
+          "cadernos",
+          "materiaisDisponiveis",
+          "provasDisponiveis"
+        ]
+      },
+      "EditalResumo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "titulo": {
+            "type": "string"
+          },
+          "orgao": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cargo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "banca": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ano": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provaId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "oficialConfirmado": {
+            "type": "boolean"
+          },
+          "totalDisciplinas": {
+            "type": "integer"
+          },
+          "totalTopicos": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "titulo",
+          "orgao",
+          "cargo",
+          "banca",
+          "ano",
+          "provaId",
+          "active",
+          "oficialConfirmado",
+          "totalDisciplinas",
+          "totalTopicos",
+          "createdAt"
+        ]
+      },
+      "EditalPainel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "titulo": {
+            "type": "string"
+          },
+          "banca": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "provasVinculadas": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "materiaisVinculados": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "resumo": {
+            "type": "object",
+            "properties": {
+              "totalDisciplinas": {
+                "type": "integer"
+              },
+              "totalTopicos": {
+                "type": "integer"
+              },
+              "coberturaPct": {
+                "type": "number"
+              },
+              "taxaAcertoGeral": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "totalDisciplinas",
+              "totalTopicos",
+              "coberturaPct"
+            ]
+          },
+          "disciplinas": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "materia": {
+                  "type": "string"
+                },
+                "peso": {
+                  "type": "number"
+                },
+                "topicos": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "materia",
+                "topicos"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "titulo",
+          "banca",
+          "active",
+          "provasVinculadas",
+          "materiaisVinculados",
+          "resumo",
+          "disciplinas"
+        ]
+      },
+      "ProvaMinha": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "banca": {
+            "type": "string"
+          },
+          "titulo": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "editalId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "editalTitulo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "oficialConfirmado": {
+            "type": "boolean"
+          },
+          "numQuestoes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "banca",
+          "titulo",
+          "fileName",
+          "status",
+          "statusLabel",
+          "editalId",
+          "editalTitulo",
+          "oficialConfirmado",
+          "numQuestoes",
+          "createdAt"
+        ]
+      },
+      "Conta": {
+        "type": "object",
+        "properties": {
+          "perfil": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Usuario"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "telefone": {
+                    "type": "string"
+                  },
+                  "concursoAlvo": {
+                    "type": "string"
+                  },
+                  "bancaPreferida": {
+                    "type": "string"
+                  },
+                  "dataProva": {
+                    "type": "string"
+                  },
+                  "metaDiaria": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "membroDesde": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "telefone",
+                  "concursoAlvo",
+                  "bancaPreferida",
+                  "dataProva",
+                  "metaDiaria",
+                  "membroDesde"
+                ]
+              }
+            ]
+          },
+          "plano": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "nome": {
+                "type": "string"
+              },
+              "ate": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "limites": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "id",
+              "nome",
+              "ate",
+              "limites"
+            ]
+          },
+          "uso": {
+            "type": "object",
+            "properties": {
+              "simuladosHoje": {
+                "type": "number"
+              },
+              "dificeisHoje": {
+                "type": "number"
+              },
+              "creditosExtras": {
+                "type": "number"
+              },
+              "editais": {
+                "type": "integer"
+              },
+              "cadernos": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "simuladosHoje",
+              "dificeisHoje",
+              "creditosExtras",
+              "editais",
+              "cadernos"
+            ]
+          },
+          "pedidoPendente": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "perfil",
+          "plano",
+          "uso",
+          "pedidoPendente"
+        ]
+      },
+      "Hoje": {
+        "type": "object",
+        "properties": {
+          "dia": {
+            "type": "string",
+            "format": "date"
+          },
+          "meta": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "hoje": {
+            "type": "object",
+            "properties": {
+              "respondidas": {
+                "type": "integer"
+              },
+              "acertos": {
+                "type": "integer"
+              },
+              "metaBatida": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "respondidas",
+              "acertos",
+              "metaBatida"
+            ]
+          },
+          "sequencia": {
+            "type": "object",
+            "properties": {
+              "atual": {
+                "type": "integer"
+              },
+              "recorde": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "atual",
+              "recorde"
+            ]
+          },
+          "semana": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "dia": {
+                  "type": "string"
+                },
+                "respondidas": {
+                  "type": "integer"
+                },
+                "metaBatida": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "dia",
+                "respondidas",
+                "metaBatida"
+              ]
+            }
+          },
+          "dataProva": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "diasParaProva": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "dia",
+          "meta",
+          "hoje",
+          "sequencia",
+          "semana",
+          "dataProva",
+          "diasParaProva"
+        ]
+      },
+      "Desempenho": {
+        "type": "object",
+        "properties": {
+          "usuario": {
+            "type": "object"
+          },
+          "resumo": {
+            "type": "object",
+            "properties": {
+              "totalRespondidas": {
+                "type": "integer"
+              },
+              "totalAcertos": {
+                "type": "integer"
+              },
+              "totalErros": {
+                "type": "integer"
+              },
+              "taxaGeralPct": {
+                "type": "number"
+              },
+              "totalTempoSegundos": {
+                "type": "number"
+              },
+              "simuladosConcluidos": {
+                "type": "integer"
+              },
+              "simuladosModoProva": {
+                "type": "integer"
+              },
+              "diagnostico": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "totalRespondidas",
+              "totalAcertos",
+              "totalErros",
+              "taxaGeralPct",
+              "totalTempoSegundos",
+              "simuladosConcluidos",
+              "simuladosModoProva",
+              "diagnostico"
+            ]
+          },
+          "evolucao": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "dia": {
+                  "type": "string"
+                },
+                "respondidas": {
+                  "type": "integer"
+                },
+                "acertos": {
+                  "type": "integer"
+                },
+                "erros": {
+                  "type": "integer"
+                },
+                "taxaPct": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "metaBatida": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "dia",
+                "respondidas",
+                "acertos",
+                "erros",
+                "taxaPct",
+                "metaBatida"
+              ]
+            }
+          },
+          "disciplinas": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "radar": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "editalAtivo": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "usuario",
+          "resumo",
+          "evolucao",
+          "disciplinas",
+          "radar",
+          "editalAtivo"
+        ]
+      },
+      "Termos": {
+        "type": "object",
+        "properties": {
+          "versao": {
+            "type": "string"
+          },
+          "atualizadoEm": {
+            "type": "string"
+          },
+          "controlador": {
+            "type": "object",
+            "properties": {
+              "nome": {
+                "type": "string"
+              },
+              "contato": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "nome",
+              "contato"
+            ]
+          },
+          "encarregado": {
+            "type": "object",
+            "properties": {
+              "nome": {
+                "type": "string"
+              },
+              "contato": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "nome",
+              "contato"
+            ]
+          },
+          "operadoresIA": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fornecedor": {
+                  "type": "string"
+                },
+                "pais": {
+                  "type": "string"
+                },
+                "modelos": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "recebe": {
+                  "type": "string"
+                },
+                "tarefas": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "privacidade": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "fornecedor",
+                "pais",
+                "modelos",
+                "recebe",
+                "tarefas",
+                "privacidade"
+              ]
+            }
+          },
+          "operadoresInfra": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fornecedor": {
+                  "type": "string"
+                },
+                "pais": {
+                  "type": "string"
+                },
+                "finalidade": {
+                  "type": "string"
+                },
+                "dados": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "fornecedor",
+                "pais",
+                "finalidade",
+                "dados"
+              ]
+            }
+          },
+          "secoes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "titulo": {
+                  "type": "string"
+                },
+                "itens": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "paragrafos": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "titulo"
+              ]
+            }
+          }
+        },
+        "required": [
+          "versao",
+          "atualizadoEm",
+          "controlador",
+          "encarregado",
+          "operadoresIA",
+          "operadoresInfra",
+          "secoes"
+        ]
+      },
+      "Bancas": {
+        "type": "object",
+        "properties": {
+          "bancas": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "nome": {
+                  "type": "string"
+                },
+                "formato": {
+                  "type": "string",
+                  "enum": [
+                    "me",
+                    "ce"
+                  ]
+                },
+                "cor": {
+                  "type": "string"
+                },
+                "provasTreinadas": {
+                  "type": "integer"
+                },
+                "questoesReais": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "nome",
+                "formato"
+              ]
+            }
+          },
+          "materias": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "niveis": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "bancas",
+          "materias",
+          "niveis"
+        ]
+      },
+      "Estrelas": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number"
+          },
+          "balance": {
+            "type": "number"
+          },
+          "bonusCredits": {
+            "type": "number"
+          },
+          "level": {
+            "type": "object"
+          },
+          "levels": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "regras": {
+            "type": "object"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "total",
+          "balance",
+          "bonusCredits",
+          "level",
+          "levels",
+          "regras",
+          "history"
+        ]
+      },
+      "Planos": {
+        "type": "object",
+        "properties": {
+          "planos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "nome": {
+                  "type": "string"
+                },
+                "precoMensal": {
+                  "type": "number"
+                },
+                "precoAnual": {
+                  "type": "number"
+                },
+                "destaque": {
+                  "type": "boolean"
+                },
+                "resumo": {
+                  "type": "string"
+                },
+                "beneficios": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "limites": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "id",
+                "nome",
+                "precoMensal",
+                "precoAnual",
+                "destaque",
+                "resumo",
+                "beneficios",
+                "limites"
+              ]
+            }
+          },
+          "atual": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "planos",
+          "atual"
+        ]
       }
     }
   },
@@ -51,7 +1573,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Saude"
                 }
               }
             }
@@ -155,7 +1677,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Termos"
                 }
               }
             }
@@ -207,7 +1729,22 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Usuario"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ]
                 }
               }
             }
@@ -348,7 +1885,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/Usuario"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ]
                 }
               }
             }
@@ -495,7 +2040,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/Usuario"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ]
                 }
               }
             }
@@ -641,7 +2194,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/Usuario"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ]
                 }
               }
             }
@@ -1159,7 +2720,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "quota": {
+                      "$ref": "#/components/schemas/Cota"
+                    }
+                  },
+                  "required": [
+                    "quota"
+                  ]
                 }
               }
             }
@@ -1354,7 +2923,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "sets": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Simulado"
+                      }
+                    }
+                  },
+                  "required": [
+                    "sets"
+                  ]
                 }
               }
             }
@@ -1562,7 +3142,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "$ref": "#/components/schemas/Simulado"
+                    }
+                  },
+                  "required": [
+                    "set"
+                  ]
                 }
               }
             }
@@ -1641,7 +3229,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "$ref": "#/components/schemas/Simulado"
+                    }
+                  },
+                  "required": [
+                    "set"
+                  ]
                 }
               }
             }
@@ -2389,7 +3985,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "provas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProvaMinha"
+                      }
+                    }
+                  },
+                  "required": [
+                    "provas"
+                  ]
                 }
               }
             }
@@ -2460,7 +4067,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Bancas"
                 }
               }
             }
@@ -3922,7 +5529,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Estrelas"
                 }
               }
             }
@@ -4074,7 +5681,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Hoje"
                 }
               }
             }
@@ -4145,7 +5752,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Desempenho"
                 }
               }
             }
@@ -4216,7 +5823,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Conta"
                 }
               }
             }
@@ -4285,7 +5892,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Conta"
                 }
               }
             }
@@ -4842,7 +6449,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Planos"
                 }
               }
             }
@@ -5063,7 +6670,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/Usuario"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ]
                 }
               }
             }
@@ -5205,7 +6820,29 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "editais": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/EditalResumo"
+                      }
+                    },
+                    "active": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/EditalPainel"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "editais",
+                    "active"
+                  ]
                 }
               }
             }
@@ -5366,7 +7003,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "edital": {
+                      "$ref": "#/components/schemas/EditalPainel"
+                    }
+                  },
+                  "required": [
+                    "edital"
+                  ]
                 }
               }
             }
@@ -5526,7 +7171,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "edital": {
+                      "$ref": "#/components/schemas/EditalPainel"
+                    }
+                  },
+                  "required": [
+                    "edital"
+                  ]
                 }
               }
             }
@@ -5876,7 +7529,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ListaDeCadernos"
                 }
               }
             }
@@ -5945,7 +7598,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "caderno": {
+                      "$ref": "#/components/schemas/CadernoDetalhe"
+                    }
+                  },
+                  "required": [
+                    "caderno"
+                  ]
                 }
               }
             }
@@ -6036,7 +7697,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "caderno": {
+                      "$ref": "#/components/schemas/CadernoDetalhe"
+                    }
+                  },
+                  "required": [
+                    "caderno"
+                  ]
                 }
               }
             }
@@ -6470,7 +8139,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "caderno": {
+                      "$ref": "#/components/schemas/CadernoDetalhe"
+                    }
+                  },
+                  "required": [
+                    "caderno"
+                  ]
                 }
               }
             }

@@ -102,6 +102,8 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
 - **API v1 (A3):** rotas em `/api/v1/*` (índice em `src/routes/index.js`; `/api/*` é apelido obsoleto). Contrato OpenAPI em
   `src/openapi.js` (servido em `/api/v1/openapi.json`; `npm run openapi` exporta para `docs/openapi.json`). **Rota nova ou removida →
   atualize a tabela `ROTAS` em `src/openapi.js`**; `test/contrato.test.js` falha se esquecer.
+  Respostas das rotas principais têm esquema (`RESPOSTAS`/`ESQUEMAS_RESPOSTA`) validado contra o servidor real em
+  `test/contrato-respostas.test.js`: mudou o formato de uma resposta → atualize o esquema.
 - **Camadas (A4):** `routes/` só HTTP (zod + chamar serviço) → `services/` regra (sem req/res) → `repositories/` só SQL filtrando
   pelo dono. Simulados, cadernos, editais, provas, admin e desempenho já seguem; estrelas/feedback/cota/conta/materiais/auth ainda têm SQL
   fora de repositories/ (lista em docs/ARQUITETURA.md; migrar quando mexer). SQL novo só em
