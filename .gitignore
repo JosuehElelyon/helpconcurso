@@ -5,3 +5,6 @@ node_modules/
 *.log
 .DS_Store
 data/
+
+# Capturas de tela do teste de navegador (npm run e2e)
+test-e2e/capturas/
