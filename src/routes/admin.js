@@ -1,13 +1,9 @@
 // Painel do administrador: revisão de provas, base, segurança e uso de IA
 import { Router } from 'express';
 import { z } from 'zod';
-import { one, many, query } from '../db.js';
-import { PLANOS } from '../lib/planos.js';
-import { sendPlanoAtivadoEmail } from '../lib/mailer.js';
+import * as Admin from '../services/admin.js';
 import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
 import { requireAdmin } from '../lib/auth.js';
-import { BANCA } from '../lib/bancas.js';
-import { getFile, deleteFile } from '../lib/storage.js';
 import { uploader, fileOf } from '../lib/upload.js';
 import { approveProva, rejectProva, reprocessProva, enqueueRelabel, aplicarGabaritoDefinitivo, importarProvasEmLote, publicStatus } from '../services/provas.js';
 import { painelIA } from '../services/metricas.js';
@@ -26,19 +22,13 @@ const view = (p, detail = false) => ({
   securitySeverity: p.security?.decision?.severity || null, duplicateOf: p.duplicate_of, createdAt: p.created_at,
   ...(detail ? { security: p.security, classification: p.classification, analysis: p.analysis, textPreview: (p.text || '').slice(0, 6000) } : {}),
 });
-const SELECT = 'SELECT p.*, u.name AS uploader_name, u.email AS uploader_email FROM provas p LEFT JOIN users u ON u.id=p.uploaded_by';
 
 r.get('/provas', ah(async (req, res) => {
-  const banca = BANCA[req.query.banca] ? req.query.banca : null;
-  const status = typeof req.query.status === 'string' && /^[A-Z_]+$/.test(req.query.status) ? req.query.status : null;
-  const rows = await many(`${SELECT} WHERE ($1::text IS NULL OR p.banca=$1) AND ($2::text IS NULL OR p.status=$2) ORDER BY p.created_at DESC LIMIT 500`, [banca, status]);
-  const counts = await many('SELECT status, count(*)::int AS n FROM provas GROUP BY status');
-  res.json({ provas: rows.map((p) => view(p)), counts: Object.fromEntries(counts.map((c) => [c.status, c.n])) });
+  const { rows, counts } = await Admin.listarProvas({ banca: req.query.banca, status: req.query.status });
+  res.json({ provas: rows.map((p) => view(p)), counts });
 }));
 r.get('/provas/:id', ah(async (req, res) => {
-  const p = await one(`${SELECT} WHERE p.id=$1`, [req.params.id]);
-  if (!p) throw new HttpError(404, 'Prova não encontrada.');
-  res.json({ prova: view(p, true) });
+  res.json({ prova: view(await Admin.detalheProva(req.params.id), true) });
 }));
 r.post('/provas/:id/aprovar', ah(async (req, res) => {
   const b = parseBody(z.object({ banca: z.string().optional() }), req.body || {});
@@ -56,47 +46,18 @@ r.post('/provas/rotular', ah(async (req, res) => {
 }));
 
 // Planos: pedidos de upgrade (o admin confirma o pagamento e ativa — sem gateway por enquanto)
-r.get('/pedidos', ah(async (_req, res) => {
-  const rows = await many(`SELECT pp.id, pp.plano, pp.periodicidade, pp.valor, pp.status, pp.created_at, u.id AS user_id, u.name, u.email, u.avatar_url, u.plano AS plano_atual, u.plano_ate
-                           FROM plano_pedidos pp JOIN users u ON u.id = pp.user_id
-                           ORDER BY (pp.status = 'pendente') DESC, pp.created_at DESC LIMIT 200`);
-  res.json({ pedidos: rows.map((p) => ({ ...p, planoNome: PLANOS[p.plano]?.nome || p.plano })) });
-}));
+r.get('/pedidos', ah(async (_req, res) => res.json({ pedidos: await Admin.listarPedidos() })));
 r.post('/pedidos/:pid/:acao', ah(async (req, res) => {
   if (!/^[0-9a-f-]{36}$/i.test(req.params.pid) || !['aprovar', 'recusar'].includes(req.params.acao)) throw new HttpError(404, 'Pedido não encontrado.');
-  const p = await one("SELECT * FROM plano_pedidos WHERE id=$1 AND status='pendente'", [req.params.pid]);
-  if (!p) throw new HttpError(404, 'Pedido não encontrado ou já decidido.');
-  if (req.params.acao === 'recusar') {
-    await query("UPDATE plano_pedidos SET status='recusado', decidido_por=$2, decidido_em=now() WHERE id=$1", [p.id, req.user.id]);
-    return res.json({ ok: true });
-  }
-  // Renovação soma ao período que ainda resta
-  const u = await one(`UPDATE users SET plano=$2,
-                         plano_ate = greatest(coalesce(CASE WHEN plano=$2 THEN plano_ate END, now()), now()) + (CASE WHEN $3='anual' THEN interval '1 year' ELSE interval '1 month' END),
-                         updated_at=now() WHERE id=$1 RETURNING *`, [p.user_id, p.plano, p.periodicidade]);
-  await query("UPDATE plano_pedidos SET status='aprovado', decidido_por=$2, decidido_em=now() WHERE id=$1", [p.id, req.user.id]);
-  sendPlanoAtivadoEmail(u, { plano: PLANOS[p.plano]?.nome || p.plano, ate: u.plano_ate });
-  res.json({ ok: true, planoAte: u.plano_ate });
+  res.json(await Admin.decidirPedido(req.params.pid, req.params.acao, req.user));
 }));
 
 // G5: questões com gabarito em disputa entre os modelos do consenso — o admin escolhe/confirma
-r.get('/divergencias', ah(async (_req, res) => {
-  const rows = await many(`SELECT q.id, q.numero, q.materia, left(q.enunciado, 400) AS enunciado, q.alternativas, q.gabarito, q.divergencia_gabarito,
-                                  p.id AS prova_id, coalesce(p.titulo, p.file_name) AS prova_titulo, p.banca
-                           FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
-                           WHERE q.consenso_gabarito = false AND NOT q.anulada
-                           ORDER BY p.created_at DESC, q.numero NULLS LAST LIMIT 200`);
-  res.json({ divergencias: rows });
-}));
+r.get('/divergencias', ah(async (_req, res) => res.json({ divergencias: await Admin.listarDivergencias() })));
 r.post('/questoes/:qid/gabarito', ah(async (req, res) => {
   if (!/^[0-9a-f-]{36}$/i.test(req.params.qid)) throw new HttpError(404, 'Questão não encontrada.');
   const b = parseBody(z.object({ gabarito: z.string().trim().toUpperCase().regex(/^[A-E]$/, 'Gabarito inválido.') }), req.body);
-  const q = await one('SELECT id, alternativas FROM prova_questoes WHERE id=$1', [req.params.qid]);
-  if (!q) throw new HttpError(404, 'Questão não encontrada.');
-  const alts = Array.isArray(q.alternativas) ? q.alternativas : [];
-  const ok = alts.length ? 'ABCDE'.indexOf(b.gabarito) < alts.length : /^[CE]$/.test(b.gabarito);
-  if (!ok) throw new HttpError(422, alts.length ? 'Letra fora das alternativas desta questão.' : 'Questão Certo/Errado: use C ou E.');
-  await query('UPDATE prova_questoes SET gabarito=$2, consenso_gabarito=true WHERE id=$1', [q.id, b.gabarito]);
+  await Admin.definirGabaritoDivergente(req.params.qid, b.gabarito);
   res.json({ ok: true });
 }));
 
@@ -145,31 +106,18 @@ r.post('/provas/:id/gabarito-definitivo', uploader([{ name: 'gabarito', maxCount
   res.json({ prova: view(out.prova), resumo: out.resumo });
 }));
 
-r.get('/provas/:id/questoes', ah(async (req, res) => {
-  const rows = await many('SELECT numero, materia, materia_id, topico, topico_id, comando, pegadinha_tipo, habilidade, dispositivos, enunciado, alternativas, gabarito, flagged, anulada, gabarito_alterado, gabarito_original, motivo_anulacao, gabarito_definitivo, consenso_gabarito, divergencia_gabarito FROM prova_questoes WHERE prova_id=$1 ORDER BY numero NULLS LAST, created_at', [req.params.id]);
-  res.json({ questoes: rows });
-}));
+r.get('/provas/:id/questoes', ah(async (req, res) => res.json({ questoes: await Admin.questoesDaProva(req.params.id) })));
 r.get('/provas/:id/arquivo', ah(async (req, res) => {
-  const p = await one('SELECT file_key, file_name FROM provas WHERE id=$1', [req.params.id]);
-  if (!p) throw new HttpError(404, 'Prova não encontrada.');
-  const f = await getFile(p.file_key);
+  const { nome, conteudo } = await Admin.arquivoDaProva(req.params.id);
   // Sempre como download e com tipo genérico: o navegador nunca abre/executa o arquivo do usuário
-  res.set({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(p.file_name)}`, 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox" }).send(f.buffer);
+  res.set({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(nome)}`, 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox" }).send(conteudo);
 }));
 r.delete('/provas/:id', ah(async (req, res) => {
-  const p = await one('DELETE FROM provas WHERE id=$1 RETURNING file_key, gabarito_key', [req.params.id]);
-  if (p) {
-    await deleteFile(p.file_key);
-    if (p.gabarito_key && !(await one('SELECT 1 FROM provas WHERE gabarito_key=$1', [p.gabarito_key]))) await deleteFile(p.gabarito_key);
-  }
+  await Admin.excluirProva(req.params.id);
   res.json({ ok: true });
 }));
 
-r.get('/seguranca', ah(async (_req, res) => {
-  const rows = await many(`SELECT e.id, e.kind, e.severity, e.file_name, e.details, e.created_at, u.name, u.email FROM security_events e LEFT JOIN users u ON u.id=e.user_id ORDER BY e.created_at DESC LIMIT 200`);
-  const blocked = await many("SELECT name, email, uploads_blocked_until FROM users WHERE uploads_blocked_until > now()");
-  res.json({ events: rows, blockedUsers: blocked });
-}));
+r.get('/seguranca', ah(async (_req, res) => res.json(await Admin.painelSeguranca())));
 
 // Painel de IA (Sprint 6 — medir): custo por tarefa e por funcionalidade, cache e qualidade por modelo/prompt
 r.get('/ia', ah(async (req, res) => {

@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { provaLimit } from '../middleware/limites.js';
 import { z } from 'zod';
-import { one, many, query } from '../db.js';
+import { ligarEditalEnviadoComAProva, vincularEditalAProva, minhasProvas } from '../services/provas-editais.js';
 import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
 import { requireAuth } from '../lib/auth.js';
 import { uploader, fileOf } from '../lib/upload.js';
@@ -58,14 +58,7 @@ r.post('/', provaLimit, uploader([{ name: 'prova', maxCount: 1 }, { name: 'gabar
     gabarito: fileOf(req, 'gabarito'),
     ip: req.ip,
   });
-  if (editalCreated && out.prova) {
-    await query('UPDATE editais SET prova_id=$2 WHERE id=$1', [editalCreated.id, out.prova.id]);
-  } else if (editalCreated && out.provaId) {
-    // Duplicata: a prova já existe (talvez de outro aluno). O edital deste aluno aponta para ela,
-    // mas a prova só ganha o vínculo se for dele e ainda não tiver edital.
-    await query('UPDATE provas SET edital_id=$2 WHERE id=$1 AND uploaded_by=$3 AND edital_id IS NULL', [out.provaId, editalCreated.id, req.user.id]);
-    await query('UPDATE editais SET prova_id=$2 WHERE id=$1', [editalCreated.id, out.provaId]);
-  }
+  if (editalCreated) await ligarEditalEnviadoComAProva({ user: req.user, editalId: editalCreated.id, resultadoEnvio: out });
   if (out.duplicate) return res.status(200).json({ duplicate: true, message: out.message, edital: editalCreated, avisos });
   res.status(202).json({
     prova: viewMine({ ...out.prova, edital_titulo: editalCreated?.titulo || null }),
@@ -77,28 +70,9 @@ r.post('/', provaLimit, uploader([{ name: 'prova', maxCount: 1 }, { name: 'gabar
 
 // Vincula uma prova já enviada a um edital existente ou a um novo arquivo de edital
 r.post('/:id/edital', provaLimit, uploader([{ name: 'edital', maxCount: 1 }]), ah(async (req, res) => {
-  const p = await one('SELECT * FROM provas WHERE id=$1 AND (uploaded_by=$2 OR $3)', [req.params.id, req.user.id, req.user.role === 'ADMIN']);
-  if (!p) throw new HttpError(404, 'Prova não encontrada.');
-  const editalFile = fileOf(req, 'edital');
-  let editalId = String(req.body?.editalId || '').trim();
-  if (editalFile) {
-    const { editalRow } = await createEditalForUser({
-      user: req.user, file: editalFile, banca: p.banca, orgao: p.orgao, cargo: p.cargo, ano: p.ano, provaId: p.id, ip: req.ip,
-    });
-    editalId = editalRow.id;
-  } else if (editalId) {
-    if (!/^[0-9a-f-]{36}$/i.test(editalId)) throw new HttpError(400, 'Edital inválido.');
-    const ed = await one('SELECT * FROM editais WHERE id=$1 AND user_id=$2', [editalId, req.user.id]);
-    if (!ed) throw new HttpError(404, 'Edital não encontrado.');
-    await query('UPDATE provas SET edital_id=$2 WHERE id=$1', [p.id, ed.id]);
-    await query('UPDATE editais SET prova_id=COALESCE(prova_id, $2), banca=COALESCE(banca, $3) WHERE id=$1', [ed.id, p.id, p.banca]);
-  } else {
-    await query('UPDATE provas SET edital_id=NULL WHERE id=$1', [p.id]);
-  }
-  const rows = await many(
-    `SELECT p.*, e.titulo AS edital_titulo FROM provas p LEFT JOIN editais e ON e.id = p.edital_id WHERE p.uploaded_by=$1 ORDER BY p.created_at DESC LIMIT 200`,
-    [req.user.id]
-  );
+  const rows = await vincularEditalAProva({
+    user: req.user, provaId: req.params.id, arquivoEdital: fileOf(req, 'edital'), editalId: String(req.body?.editalId || '').trim(), ip: req.ip,
+  });
   res.json({ provas: rows.map(viewMine) });
 }));
 
@@ -110,12 +84,6 @@ const viewMine = (p) => ({
   motivo: ['REJECTED', 'DUPLICATE'].includes(p.status) ? p.review_note : null, numQuestoes: p.status === 'READY' ? p.num_questoes : null, createdAt: p.created_at,
 });
 
-r.get('/minhas', ah(async (req, res) => {
-  const rows = await many(
-    `SELECT p.*, e.titulo AS edital_titulo FROM provas p LEFT JOIN editais e ON e.id = p.edital_id WHERE p.uploaded_by=$1 ORDER BY p.created_at DESC LIMIT 200`,
-    [req.user.id]
-  );
-  res.json({ provas: rows.map(viewMine) });
-}));
+r.get('/minhas', ah(async (req, res) => res.json({ provas: (await minhasProvas(req.user)).map(viewMine) })));
 
 export default r;

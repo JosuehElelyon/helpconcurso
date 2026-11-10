@@ -48,3 +48,9 @@ export const inserirCanonico = (c) => one(
    ON CONFLICT (chave) DO UPDATE SET usos = editais_canonicos.usos + 1, updated_at = now() RETURNING id`,
   [c.chave, c.titulo, c.orgao, c.cargo, c.banca, c.ano, JSON.stringify(c.verticalizado), c.promptVersao,
     c.officialUrl || null, !!c.oficialConfirmado, c.officialUrlTipo || null]);
+
+export const definirProva = (editalId, provaId) => query('UPDATE editais SET prova_id=$2 WHERE id=$1', [editalId, provaId]);
+
+/** Liga a prova ao edital sem sobrescrever prova/banca já definidas. */
+export const ligarProvaSeVazio = (editalId, provaId, banca) =>
+  query('UPDATE editais SET prova_id=COALESCE(prova_id, $2), banca=COALESCE(banca, $3) WHERE id=$1', [editalId, provaId, banca]);

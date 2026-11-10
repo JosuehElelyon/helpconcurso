@@ -164,3 +164,51 @@ export const definirGabaritoDefinitivo = (id, { gabarito, alteradaPelaBanca, mud
      gabarito_original = CASE WHEN $4 THEN coalesce(gabarito_original, $5) ELSE gabarito_original END,
      motivo_anulacao=$6, gabarito_definitivo=true, consenso_gabarito=true
    WHERE id=$1`, [id, gabarito, !!alteradaPelaBanca, !!mudou, antes || null, motivo || null]);
+
+// ---------- Admin: base de provas ----------
+const COM_AUTOR = 'SELECT p.*, u.name AS uploader_name, u.email AS uploader_email FROM provas p LEFT JOIN users u ON u.id=p.uploaded_by';
+
+export const listarParaAdmin = ({ banca = null, status = null } = {}) =>
+  many(`${COM_AUTOR} WHERE ($1::text IS NULL OR p.banca=$1) AND ($2::text IS NULL OR p.status=$2) ORDER BY p.created_at DESC LIMIT 500`, [banca, status]);
+
+export const contagemPorStatus = () => many('SELECT status, count(*)::int AS n FROM provas GROUP BY status');
+
+export const detalheParaAdmin = (id) => one(`${COM_AUTOR} WHERE p.id=$1`, [id]);
+
+/** Questões com gabarito em disputa entre os modelos do consenso. */
+export const divergencias = () => many(
+  `SELECT q.id, q.numero, q.materia, left(q.enunciado, 400) AS enunciado, q.alternativas, q.gabarito, q.divergencia_gabarito,
+          p.id AS prova_id, coalesce(p.titulo, p.file_name) AS prova_titulo, p.banca
+   FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
+   WHERE q.consenso_gabarito = false AND NOT q.anulada
+   ORDER BY p.created_at DESC, q.numero NULLS LAST LIMIT 200`);
+
+export const buscarQuestao = (id) => one('SELECT id, alternativas FROM prova_questoes WHERE id=$1', [id]);
+
+export const confirmarGabaritoDaQuestao = (id, gabarito) =>
+  query('UPDATE prova_questoes SET gabarito=$2, consenso_gabarito=true WHERE id=$1', [id, gabarito]);
+
+export const questoesDaProva = (provaId) => many(
+  `SELECT numero, materia, materia_id, topico, topico_id, comando, pegadinha_tipo, habilidade, dispositivos, enunciado, alternativas, gabarito, flagged,
+          anulada, gabarito_alterado, gabarito_original, motivo_anulacao, gabarito_definitivo, consenso_gabarito, divergencia_gabarito
+   FROM prova_questoes WHERE prova_id=$1 ORDER BY numero NULLS LAST, created_at`, [provaId]);
+
+export const arquivoDaProva = (id) => one('SELECT file_key, file_name FROM provas WHERE id=$1', [id]);
+
+export const excluir = (id) => one('DELETE FROM provas WHERE id=$1 RETURNING file_key, gabarito_key', [id]);
+
+export const gabaritoEmUso = async (key) => !!(await one('SELECT 1 FROM provas WHERE gabarito_key=$1', [key]));
+
+// ---------- Aluno: minhas provas e vínculo com edital ----------
+
+export const doAutorOuAdmin = (id, userId, isAdmin) => one('SELECT * FROM provas WHERE id=$1 AND (uploaded_by=$2 OR $3)', [id, userId, !!isAdmin]);
+
+export const minhasComEdital = (userId) => many(
+  'SELECT p.*, e.titulo AS edital_titulo FROM provas p LEFT JOIN editais e ON e.id = p.edital_id WHERE p.uploaded_by=$1 ORDER BY p.created_at DESC LIMIT 200',
+  [userId]);
+
+export const desvincularEdital = (id) => query('UPDATE provas SET edital_id=NULL WHERE id=$1', [id]);
+
+/** Duplicata: a prova só ganha o edital se for de quem enviou e ainda não tiver edital. */
+export const vincularEditalSeDoAutorESemEdital = (provaId, editalId, userId) =>
+  query('UPDATE provas SET edital_id=$2 WHERE id=$1 AND uploaded_by=$3 AND edital_id IS NULL', [provaId, editalId, userId]);
