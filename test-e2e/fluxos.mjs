@@ -14,7 +14,8 @@ const DIR = path.dirname(fileURLToPath(import.meta.url));
 const CAPTURAS = path.join(DIR, 'capturas');
 const BASE = (process.env.E2E_URL || 'http://localhost:3000').replace(/\/$/, '');
 const RUN = Date.now().toString(36);
-const EMAIL = `e2e-${RUN}@exemplo.invalid`, SENHA = 'senha-e2e-123', EMAIL_NOVO = `e2e-novo-${RUN}@exemplo.invalid`;
+const EMAIL = `e2e-${RUN}@exemplo.invalid`, SENHA = 'senha-e2e-123', EMAIL_NOVO = `e2e-novo-${RUN}@exemplo.invalid`, EMAIL_ADMIN = `e2e-admin-${RUN}@exemplo.invalid`;
+const TELAS = ['home', 'desempenho', 'gerar', 'edital', 'questoes', 'bancas', 'contribuir', 'estrelas', 'conta', 'planos'];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const NAVEGADORES = [
@@ -30,7 +31,7 @@ if (!process.env.DATABASE_URL) { console.error('DATABASE_URL não definido (rode
 
 const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await db.connect();
-const limpar = () => db.query('DELETE FROM users WHERE email = ANY($1)', [[EMAIL, EMAIL_NOVO]]);
+const limpar = () => db.query('DELETE FROM users WHERE email = ANY($1)', [[EMAIL, EMAIL_NOVO, EMAIL_ADMIN]]);
 
 const resultados = [];
 const ok = (nome, cond) => resultados.push({ nome, ok: !!cond });
@@ -54,6 +55,22 @@ try {
   const foto = (nome) => page.screenshot({ path: path.join(CAPTURAS, `${nome}.png`) });
   const texto = () => page.evaluate(() => document.body.innerText);
   const respondeu = (re) => respostas.some((r) => re.test(r));
+  /** Abre cada tela e confere que ela desenhou conteúdo, sem erro de JavaScript nem resposta 5xx da API. */
+  async function percorrerTelas(telas, quem) {
+    const errosAntes = erros.length, falhas = [];
+    for (const t of telas) {
+      await page.evaluate((h) => { location.hash = h; }, t);
+      await sleep(900);
+      const tam = await page.evaluate(() => (document.querySelector('main, .content, #app')?.innerText || '').trim().length);
+      if (tam < 20) falhas.push(`${t} (vazia)`);
+    }
+    const novos = erros.slice(errosAntes);
+    if (novos.length) falhas.push(...novos.map((e) => 'JS: ' + e));
+    const r5xx = respostas.filter((r) => / 5\d\d$/.test(r));
+    if (r5xx.length) falhas.push(...r5xx);
+    if (falhas.length) console.log(`Telas com problema (${quem}):\n  ` + falhas.join('\n  '));
+    return falhas.length === 0;
+  }
 
   // 1) Login → termos ainda não aceitos abrem o modal pedindo aceite
   await page.goto(BASE, { waitUntil: 'networkidle0' });
@@ -69,6 +86,7 @@ try {
   ok('termos sem afirmações antigas', !/Claude 3\.5|retenção zero|ponta a ponta/i.test(t1));
   await page.click('#btnAceitarTermos'); await sleep(800);
   ok('aceite registrado e modal fechado', !(await page.$('#btnAceitarTermos')) && respondeu(/POST \/api\/v1\/me\/termos\/aceite 200/));
+  ok(`aluno: as ${TELAS.length} telas abrem sem erro`, await percorrerTelas(TELAS, 'aluno'));
 
   // 2) Simulado sem banca abre
   await page.goto(`${BASE}/#questoes`, { waitUntil: 'networkidle0' }); await sleep(800);
@@ -106,7 +124,23 @@ try {
   await foto('6-cadastro-sem-aceite');
   ok('cadastro sem aceite é barrado no front', /aceite os Termos/i.test(await texto()) && !respondeu(/POST \/api\/v1\/auth\/register/));
 
-  // 5) Celular
+  // 5) Admin: todas as telas e as abas do painel de provas/IA
+  await db.query(`INSERT INTO users(name, email, password_hash, role, email_verified_at, termos_versao) VALUES ('Admin E2E', $1, $2, 'ADMIN', now(), 'x')`,
+    [EMAIL_ADMIN, await bcrypt.hash(SENHA, 11)]);
+  await page.goto(BASE, { waitUntil: 'networkidle0' });
+  if (await page.$('[data-auth=entrar]')) await page.click('[data-auth=entrar]');
+  await page.waitForSelector('#fEmail');
+  await page.type('#fEmail', EMAIL_ADMIN); await page.type('#fPass', SENHA);
+  await page.click('#authForm button[type=submit]'); await sleep(1500);
+  if (await page.$('[data-mclose2]')) await page.click('[data-mclose2]');
+  ok(`admin: as ${TELAS.length + 1} telas abrem sem erro`, await percorrerTelas([...TELAS, 'provas'], 'admin'));
+  const abas = await page.$$eval('[data-atab]', (bs) => bs.map((b) => b.dataset.atab));
+  const errosAntesAbas = erros.length;
+  for (const aba of abas) { await page.click(`[data-atab="${aba}"]`); await sleep(1200); }
+  await foto('8-admin-painel');
+  ok(`admin: as ${abas.length} abas do painel abrem sem erro`, abas.length > 0 && erros.length === errosAntesAbas);
+
+  // 6) Celular
   await page.setViewport({ width: 390, height: 844 }); await page.reload({ waitUntil: 'networkidle0' });
   await foto('7-login-celular');
   ok('sem erros de JavaScript na página', erros.length === 0);
