@@ -1,10 +1,14 @@
 // Front do HelpConcurso — Resolver simulado.
 // Módulo gerado a partir do antigo public/app.js (item 10); entrada: public/app.js.
 import { BANCA, S } from './estado.js';
-import { formatTempo, initModoProvaTimer } from './gerar.js';
+import { loadFeedback, refreshStars } from './estrelas.js';
+import { go } from './eventos.js';
+import { dispararRevanche, formatTempo, initModoProvaTimer, modoProvaTimer } from './gerar.js';
 import { ic } from './icones.js';
 import { placar } from './inicio.js';
-import { LETRAS, api, esc, fmtDate, toast } from './util.js';
+import { confirmBox } from './modal.js';
+import { render } from './render.js';
+import { $, LETRAS, api, esc, fmtDate, on, toast } from './util.js';
 
 // ---------- Resolver simulado ----------
 function viewPratica() {
@@ -328,4 +332,135 @@ function setText(s) {
   return `HelpConcurso · ${s.materia}${s.assunto ? ' · ' + s.assunto : ''}${b ? ` · estilo ${b.nome}` : ''}\n\n` + s.questoes.map((q, i) => `${i + 1}. ${q.enunciado}\n${s.formato === 'ce' ? '( ) Certo  ( ) Errado' : q.alternativas.map((a, j) => `${LETRAS[j]}) ${a}`).join('\n')}`).join('\n\n') + '\n\nGABARITO\n' + s.questoes.map((q, i) => `${i + 1}-${q.gabarito}`).join('  ');
 }
 
-export { viewPratica, renderExplicacaoCard, viewQModoProva, viewQ, viewFeedbackBar, saveT, saveSetSoon, setText };
+/** Eventos da tela (simulado); chamada pela bindApp em eventos.js a cada desenho. */
+function ligarSimulado() {
+  const s = S.sets.find((x) => x.id === S.active);
+  on('[data-rate]', 'click', async (e) => {
+    const [i, v] = e.currentTarget.dataset.rate.split(':').map(Number);
+    const cur = (S.feedback[s.id] || {})[i] || {};
+    const rating = cur.rating === v ? 0 : v;
+    S.feedback[s.id] = { ...(S.feedback[s.id] || {}), [i]: { ...cur, q: i, rating: rating || null } };
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+    try { const r = await api(`/sets/${s.id}/questoes/${i}/avaliar`, { method: 'POST', body: { rating } }); if (r.stars) refreshStars(); }
+    catch (err) { toast(err.message); }
+  });
+  on('[data-repopen]', 'click', (e) => { S.reportOpen = +e.currentTarget.dataset.repopen; const y = window.scrollY; render(); window.scrollTo({ top: y }); const t = $(`#rep${S.reportOpen}`); t && t.focus(); });
+  on('[data-repcancel]', 'click', () => { S.reportOpen = null; const y = window.scrollY; render(); window.scrollTo({ top: y }); });
+  on('[data-repsend]', 'click', async (e) => {
+    const i = +e.currentTarget.dataset.repsend, motivo = ($(`#rep${i}`)?.value || '').trim();
+    if (motivo.length < 5) return toast('Explique em poucas palavras qual é o erro.');
+    e.currentTarget.disabled = true;
+    try {
+      const r = await api(`/sets/${s.id}/questoes/${i}/reportar`, { method: 'POST', body: { motivo } });
+      S.feedback[s.id] = { ...(S.feedback[s.id] || {}), [i]: r.feedback }; S.reportOpen = null;
+      toast('Recebido! A IA vai verificar e você ganha estrelas se o erro for confirmado.');
+      loadFeedback(s.id);
+    } catch (err) { toast(err.message); e.currentTarget.disabled = false; return; }
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+  });
+  on('[data-ans]', 'click', (e) => {
+    const [i, L] = e.currentTarget.dataset.ans.split(':');
+    if (s.modoProva && !s.finalizado && s.formato === 'ce' && s.respostas?.[i] === L) {
+      delete s.respostas[i];
+    } else {
+      s.respostas = { ...(s.respostas || {}), [i]: L };
+    }
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+    saveSetSoon(s, { respostas: s.respostas, tempoGastoSegundos: s.tempoGastoSegundos });
+  });
+  on('[data-clear-ans]', 'click', (e) => {
+    const i = e.currentTarget.dataset.clearAns;
+    if (s.respostas) delete s.respostas[i];
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+    saveSetSoon(s, { respostas: s.respostas, tempoGastoSegundos: s.tempoGastoSegundos });
+  });
+  on('[data-toggle-duvida]', 'click', (e) => {
+    const idx = Number(e.currentTarget.dataset.toggleDuvida);
+    const duv = new Set(s.duvidas || []);
+    if (duv.has(idx)) duv.delete(idx);
+    else duv.add(idx);
+    s.duvidas = Array.from(duv);
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+    saveSetSoon(s, { duvidas: s.duvidas, tempoGastoSegundos: s.tempoGastoSegundos });
+  });
+  on('#toggleNavGrid', 'click', () => {
+    S.navGridOpen = !S.navGridOpen;
+    const card = $('#navGridCard');
+    if (card) card.style.display = S.navGridOpen ? 'block' : 'none';
+  });
+  on('[data-goto-q]', 'click', (e) => {
+    const idx = e.currentTarget.dataset.gotoQ;
+    const el = $(`#q${idx}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  on('#finishProva', 'click', () => {
+    const { n, resp } = placar(s);
+    const duvCount = (s.duvidas || []).length;
+    const ce = s.formato === 'ce';
+    const msg = `Você respondeu ${resp} de ${n} questões.${duvCount ? ` Restam ${duvCount} marcada(s) como dúvida.` : ''}${ce ? ' No estilo CEBRASPE, cada erro desconta 1 acerto. Deixar em branco não desconta nem pontua.' : ''} Deseja entregar sua prova agora?`;
+    confirmBox('Entregar Prova Real?', msg, 'Entregar agora', false, async () => {
+      s.finalizado = true;
+      if (modoProvaTimer) clearInterval(modoProvaTimer);
+      try {
+        const r = await api(`/sets/${s.id}`, {
+          method: 'PATCH',
+          body: {
+            respostas: s.respostas || {},
+            finalizado: true,
+            tempoGastoSegundos: s.tempoGastoSegundos || 0,
+            duvidas: s.duvidas || [],
+          },
+        });
+        Object.assign(s, r.set);
+        render();
+        window.scrollTo({ top: 0 });
+        toast('Prova entregue com sucesso! Confira seu resultado oficial.');
+      } catch (err) {
+        toast(err.message || 'Erro ao finalizar a prova.');
+      }
+    });
+  });
+  on('[data-pq-errei]', 'click', async (e) => {
+    const idx = e.currentTarget.dataset.pqErrei;
+    const key = `set:${s.id}:${idx}`;
+    S.explicacoes = S.explicacoes || {};
+    S.explicacaoLoading = S.explicacaoLoading || {};
+    if (S.explicacoes[key]) return;
+    S.explicacaoLoading[key] = true;
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+    try {
+      const resp = s.respostas?.[idx];
+      const res = await api(`/sets/${s.id}/questoes/${idx}/por-que-errei`, {
+        method: 'POST',
+        body: { resposta: resp },
+      });
+      S.explicacoes[key] = res;
+    } catch (err) {
+      toast(err.message || 'Não foi possível gerar a explicação.');
+    } finally {
+      S.explicacaoLoading[key] = false;
+      const y2 = window.scrollY; render(); window.scrollTo({ top: y2 });
+    }
+  });
+  on('#btnRevancheSimulado', 'click', () => {
+    dispararRevanche({ setId: s.id });
+  });
+  on('[data-revanche-q-idx]', 'click', (e) => {
+    const idx = Number(e.currentTarget.dataset.revancheQIdx);
+    dispararRevanche({ setId: s.id, indices: [idx] });
+  });
+  on('.btn-revanche-card', 'click', () => {
+    dispararRevanche({ setId: s.id });
+  });
+  on('#copySet', 'click', async () => { try { await navigator.clipboard.writeText(setText(s)); toast('Questões copiadas com o gabarito'); } catch { toast('Não foi possível copiar'); } });
+  on('#printSet', 'click', () => window.print());
+  on('#delSet', 'click', () => confirmBox('Excluir simulado?', 'As questões deste simulado serão removidas.', 'Excluir', true, async () => { await api(`/sets/${s.id}`, { method: 'DELETE' }).catch(() => {}); S.sets = S.sets.filter((x) => x.id !== s.id); go('questoes'); toast('Simulado excluído'); }));
+  on('#resetSet', 'click', () => confirmBox('Refazer simulado?', 'Suas respostas serão apagadas para você resolver de novo.', 'Refazer', false, () => { s.respostas = {}; s.finalizado = false; api(`/sets/${s.id}`, { method: 'PATCH', body: { respostas: {}, finalizado: false } }).catch(() => {}); render(); window.scrollTo({ top: 0 }); }));
+  on('#finish', 'click', () => {
+    const r = s.respostas || {}, { n, resp, ac } = placar(s);
+    const fin = () => { s.finalizado = true; clearTimeout(saveT); api(`/sets/${s.id}`, { method: 'PATCH', body: { respostas: r, finalizado: true } }).catch(() => {}); render(); toast(`Resultado: ${ac} de ${n} (${Math.round((ac / Math.max(1, n)) * 100)}%)${s.formato === 'ce' ? ` · nota líquida ${ac - (resp - ac)}` : ''}`); };
+    if (resp < n && !s.finalizado && s.formato !== 'ce') confirmBox('Finalizar com questões em branco?', `Você respondeu ${resp} de ${n}. As demais contam como erro.`, 'Finalizar', false, fin); else fin();
+  });
+}
+
+export { viewPratica, renderExplicacaoCard, viewQModoProva, viewQ, viewFeedbackBar, saveT, saveSetSoon, setText, ligarSimulado };

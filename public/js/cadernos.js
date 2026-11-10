@@ -1,12 +1,15 @@
 // Front do HelpConcurso — Cadernos de Questões + Simulados + Caderno de Erros.
 // Módulo gerado a partir do antigo public/app.js (item 10); entrada: public/app.js.
 import { ST_CLASS } from './enviar-provas.js';
-import { BANCA, S } from './estado.js';
+import { BANCA, S, newWiz } from './estado.js';
+import { go } from './eventos.js';
+import { dispararRevanche } from './gerar.js';
 import { setRow } from './hoje.js';
 import { ic } from './icones.js';
+import { confirmBox } from './modal.js';
 import { render } from './render.js';
 import { renderExplicacaoCard } from './simulado.js';
-import { LETRAS, api, esc, toast } from './util.js';
+import { $, LETRAS, api, esc, on, toast } from './util.js';
 
 // ---------- Cadernos de Questões + Simulados + Caderno de Erros ----------
 async function refreshCadernos({ silent = false } = {}) {
@@ -431,4 +434,229 @@ function viewCadernoQ(q, idx) {
   </article>`;
 }
 
-export { refreshCadernos, openCaderno, cadernoCardHtml, getWrongQuestions, viewBanco, viewCaderno, viewCadernoQ };
+/** Eventos da tela (questoes); chamada pela bindApp em eventos.js a cada desenho. */
+function ligarCadernos() {
+  const fb = $('#fBanca'), fm = $('#fMat');
+  if (fb) fb.onchange = () => { S.filter.banca = fb.value; render(); };
+  if (fm) fm.onchange = () => { S.filter.materia = fm.value; render(); };
+  on('[data-btab]', 'click', (e) => { S.bancoTab = e.currentTarget.dataset.btab; render(); });
+  on('#btnToggleNewCad', 'click', () => { S.cadernoNewOpen = !S.cadernoNewOpen; S.bancoTab = 'cadernos'; render(); });
+  on('#btnCancelNewCad', 'click', () => { S.cadernoNewOpen = false; render(); });
+  const cf = S.cadForm || (S.cadForm = { banca: 'cebraspe', editalId: '', orgao: '', cargo: '', ano: '', titulo: '', descricao: '', importarExistentes: true });
+  on('[data-cad-banca]', 'click', (e) => { cf.banca = e.currentTarget.dataset.cadBanca; render(); });
+  const ces = $('#cadEditalSel');
+  if (ces) ces.onchange = () => {
+    cf.editalId = ces.value;
+    const ed = (S.editais || []).find((x) => x.id === cf.editalId);
+    if (ed) {
+      if (ed.banca && S.bancas.some((b) => b.id === ed.banca)) cf.banca = ed.banca;
+      if (ed.orgao && !cf.orgao) cf.orgao = ed.orgao;
+      if (ed.cargo && !cf.cargo) cf.cargo = ed.cargo;
+      if (ed.ano && !cf.ano) cf.ano = ed.ano;
+    }
+    render();
+  };
+  ['Titulo', 'Orgao', 'Cargo', 'Ano'].forEach((k) => { const el = $('#cad' + k); if (el) el.oninput = () => { cf[k.toLowerCase()] = el.value; }; });
+  const cim = $('#cadImportar'); if (cim) cim.onchange = () => { cf.importarExistentes = cim.checked; };
+  const ncf = $('#newCadForm');
+  if (ncf) ncf.onsubmit = async (ev) => {
+    ev.preventDefault();
+    if (!cf.banca) return toast('Escolha a banca do caderno.');
+    if (cf.ano && !/^\d{4}$/.test(cf.ano)) return toast('Ano inválido.');
+    S.cadernoBusy = true; render();
+    try {
+      const r = await api('/cadernos', { method: 'POST', body: cf });
+      S.cadernoNewOpen = false; S.cadForm = null;
+      S.activeCaderno = r.caderno;
+      await refreshCadernos({ silent: true });
+      S.view = 'caderno';
+      toast(`Caderno "${r.caderno.titulo}" criado com ${r.caderno.totalQuestoes} questão(ões)!`);
+    } catch (err) { toast(err.message); }
+    S.cadernoBusy = false; render();
+  };
+  on('[data-revanche]', 'click', (e) => {
+    const [mat, top, b] = e.currentTarget.dataset.revanche.split('||');
+    S.wiz = newWiz();
+    if (S.materias.includes(mat)) S.wiz.materia = mat;
+    if (top) S.wiz.assunto = top.slice(0, 100);
+    if (b && S.bancas.some((x) => x.id === b)) S.wiz.banca = b;
+    go('gerar');
+    toast(`Envie seu resumo de ${mat}${top ? ` (${top.slice(0, 40)})` : ''} para gerar uma bateria de revanche!`);
+  });
+}
+
+/** Eventos da tela (caderno); chamada pela bindApp em eventos.js a cada desenho. */
+function ligarCaderno() {
+  const c = S.activeCaderno;
+  on('[data-cad-ftab]', 'click', (e) => { S.cadernoFeedTab = e.currentTarget.dataset.cadFtab; render(); });
+  on('#printCaderno', 'click', () => window.print());
+  on('#delCaderno', 'click', () => confirmBox('Excluir este Caderno de Questões?', `O caderno "${c.titulo}" será removido. Seus materiais, provas e baterias avulsas continuam salvos.`, 'Excluir', true, async () => {
+    await api(`/cadernos/${c.id}`, { method: 'DELETE' }).catch(() => {});
+    S.activeCaderno = null;
+    await refreshCadernos({ silent: true });
+    go('questoes');
+    toast('Caderno excluído');
+  }));
+  on('#cadGoWizNewMat', 'click', () => {
+    S.wiz = newWiz();
+    S.wiz.cadernoId = c.id;
+    S.wiz.banca = c.banca;
+    if (c.editalId) S.wiz.editalId = c.editalId;
+    go('gerar');
+    toast(`Envie seu conteúdo para gerar novas questões direto no caderno "${c.titulo}"!`);
+  });
+  const useExistingMat = async (matId) => {
+    if (!matId) return toast('Selecione um material.');
+    S.cadFeedBusy = true; render();
+    try {
+      const r = await api(`/cadernos/${c.id}/alimentar-material`, { method: 'POST', body: { materialId: matId } });
+      S.activeCaderno = r.caderno;
+      S.wiz = newWiz();
+      S.wiz.cadernoId = c.id;
+      S.wiz.banca = c.banca;
+      S.wiz.editalId = c.editalId || r.material.editalId || '';
+      S.wiz.material = { id: r.material.id, fileName: r.material.fileName, detect: r.material.detect, editalMatch: r.material.editalMatch, wordCount: 500, preview: '' };
+      S.wiz.materia = r.material.materia && S.materias.includes(r.material.materia) ? r.material.materia : (r.material.detect?.materia && S.materias.includes(r.material.detect.materia) ? r.material.detect.materia : '');
+      S.wiz.step = 2;
+      S.cadFeedBusy = false;
+      go('gerar');
+      toast('Material selecionado! Confirme a matéria e gere novas questões para o seu caderno.');
+    } catch (err) { S.cadFeedBusy = false; toast(err.message); render(); }
+  };
+  on('#cadUseExistingMat', 'click', () => useExistingMat($('#cadPickMat')?.value));
+  on('[data-cad-gen-from-mat]', 'click', (e) => useExistingMat(e.currentTarget.dataset.cadGenFromMat));
+  on('#cadImportProvaBtn', 'click', async () => {
+    const provaId = $('#cadPickProva')?.value;
+    if (!provaId) return toast('Selecione uma prova da banca.');
+    S.cadFeedBusy = true; render();
+    try {
+      const r = await api(`/cadernos/${c.id}/alimentar-prova`, { method: 'POST', body: { provaId } });
+      S.activeCaderno = r.caderno;
+      S.cadernoFeedTab = '';
+      await refreshCadernos({ silent: true });
+      toast(r.message);
+    } catch (err) { toast(err.message); }
+    S.cadFeedBusy = false; render();
+  });
+  const cup = $('#cadUpProvaFile');
+  if (cup) cup.onchange = async () => {
+    const file = cup.files[0]; if (!file) return;
+    S.cadFeedBusy = true; render();
+    try {
+      const fd = new FormData(); fd.append('prova', file);
+      const r = await api(`/cadernos/${c.id}/alimentar-prova`, { method: 'POST', form: fd });
+      S.activeCaderno = r.caderno;
+      S.cadernoFeedTab = '';
+      await refreshCadernos({ silent: true });
+      toast(r.message);
+    } catch (err) { toast(err.message); }
+    S.cadFeedBusy = false; render();
+  };
+  on('#cadAttachSetBtn', 'click', async () => {
+    const setId = $('#cadPickSet')?.value;
+    if (!setId) return toast('Selecione uma bateria de questões.');
+    S.cadFeedBusy = true; render();
+    try {
+      const r = await api(`/cadernos/${c.id}/vincular-simulado`, { method: 'POST', body: { setId } });
+      S.activeCaderno = r.caderno;
+      S.sets = S.sets.map((s) => (s.id === setId ? { ...s, cadernoId: c.id } : s));
+      S.cadernoFeedTab = '';
+      await refreshCadernos({ silent: true });
+      toast('Bateria de questões adicionada ao caderno!');
+    } catch (err) { toast(err.message); }
+    S.cadFeedBusy = false; render();
+  });
+  const fs = $('#cadFStatus'), fo = $('#cadFOrigem'), fm = $('#cadFMat'), fq = $('#cadFQ');
+  if (fs) fs.onchange = () => { S.cadFilter.status = fs.value; render(); };
+  if (fo) fo.onchange = () => { S.cadFilter.origem = fo.value; render(); };
+  if (fm) fm.onchange = () => { S.cadFilter.materia = fm.value; render(); };
+  if (fq) fq.oninput = () => {
+    S.cadFilter.q = fq.value;
+    const pos = fq.selectionStart;
+    render();
+    const nfq = $('#cadFQ'); if (nfq) { nfq.focus(); try { nfq.setSelectionRange(pos, pos); } catch {} }
+  };
+  const interagir = async (body, msg) => {
+    const y = window.scrollY;
+    try {
+      const r = await api(`/cadernos/${c.id}/interagir`, { method: 'PATCH', body });
+      S.activeCaderno = r.caderno;
+      refreshCadernos({ silent: true });
+      if (msg) toast(msg);
+    } catch (err) { toast(err.message); }
+    render(); window.scrollTo({ top: y });
+  };
+  on('[data-cad-ans]', 'click', (e) => {
+    const [key, L] = e.currentTarget.dataset.cadAns.split(':::');
+    interagir({ key, resposta: L });
+  });
+  on('[data-cad-clear]', 'click', (e) => interagir({ key: e.currentTarget.dataset.cadClear, resposta: null }));
+  on('[data-cad-fav]', 'click', (e) => {
+    const key = e.currentTarget.dataset.cadFav;
+    const q = (c.questoes || []).find((x) => x.key === key);
+    interagir({ key, favorita: !q?.favorita });
+  });
+  on('[data-cad-note-toggle]', 'click', (e) => {
+    const key = e.currentTarget.dataset.cadNoteToggle;
+    S.cadNoteOpen = S.cadNoteOpen === key ? null : key;
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+  });
+  on('[data-cad-note-cancel]', 'click', () => { S.cadNoteOpen = null; const y = window.scrollY; render(); window.scrollTo({ top: y }); });
+  on('[data-cad-note-save]', 'click', (e) => {
+    const key = e.currentTarget.dataset.cadNoteSave;
+    const anotacao = ($('#cadNoteIn')?.value || '').trim();
+    S.cadNoteOpen = null;
+    interagir({ key, anotacao }, 'Anotação salva no caderno!');
+  });
+  on('#cadResetErros', 'click', () => confirmBox('Refazer questões erradas?', `As respostas das ${c.erros} questão(ões) que você errou serão limpas para você tentar novamente.`, 'Refazer erradas', false, () => interagir({ reset: 'erros' }, 'Questões erradas liberadas para revisão!')));
+  on('#cadResetAll', 'click', () => confirmBox('Refazer todo o caderno?', 'Todas as respostas deste caderno serão limpas para você resolver novamente.', 'Limpar e refazer', false, () => interagir({ reset: 'all' }, 'Caderno reiniciado!')));
+  on('[data-pq-caderno]', 'click', async (e) => {
+    const qKey = e.currentTarget.dataset.pqCaderno;
+    const stateKey = `cad:${qKey}`;
+    S.explicacoes = S.explicacoes || {};
+    S.explicacaoLoading = S.explicacaoLoading || {};
+    if (S.explicacoes[stateKey]) return;
+    S.explicacaoLoading[stateKey] = true;
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+    try {
+      const q = (c.questoes || []).find((x) => x.key === qKey);
+      const res = await api(`/cadernos/${c.id}/questoes/por-que-errei`, {
+        method: 'POST',
+        body: { key: qKey, resposta: q?.ans },
+      });
+      S.explicacoes[stateKey] = res;
+    } catch (err) {
+      toast(err.message || 'Não foi possível gerar a explicação.');
+    } finally {
+      S.explicacaoLoading[stateKey] = false;
+      const y2 = window.scrollY; render(); window.scrollTo({ top: y2 });
+    }
+  });
+  on('#btnRevancheCadernoGeral', 'click', () => {
+    dispararRevanche({ cadernoId: c.id });
+  });
+  on('[data-revanche-cad-key]', 'click', (e) => {
+    const qKey = e.currentTarget.dataset.revancheCadKey;
+    const q = (c.questoes || []).find((x) => x.key === qKey);
+    if (!q) return;
+    dispararRevanche({
+      cadernoId: c.id,
+      keys: [q.key],
+      banca: q.banca || c.banca,
+      materia: q.materia,
+      qtd: 3,
+    });
+  });
+  on('[data-revanche]', 'click', (e) => {
+    const [mat, top, b] = e.currentTarget.dataset.revanche.split('||');
+    S.wiz = newWiz();
+    S.wiz.cadernoId = c.id;
+    if (S.materias.includes(mat)) S.wiz.materia = mat;
+    if (top) S.wiz.assunto = top.slice(0, 100);
+    if (b && S.bancas.some((x) => x.id === b)) S.wiz.banca = b;
+    go('gerar');
+    toast(`Envie seu resumo de ${mat} para gerar mais questões no seu caderno!`);
+  });
+}
+
+export { refreshCadernos, openCaderno, cadernoCardHtml, getWrongQuestions, viewBanco, viewCaderno, viewCadernoQ, ligarCadernos, ligarCaderno };

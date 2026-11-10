@@ -3,7 +3,7 @@
 import { S } from './estado.js';
 import { ic } from './icones.js';
 import { render } from './render.js';
-import { api, esc, fmtDate, toast } from './util.js';
+import { $, api, esc, fmtDate, on, toast } from './util.js';
 
 // ---------- Estrelas ----------
 const KIND_LABEL = { prova_aprovada: 'Prova aprovada', erro_confirmado: 'Erro confirmado', avaliacao: 'Avaliação de questão', troca: 'Troca por gerações' };
@@ -75,4 +75,14 @@ async function loadFeedback(setId) {
   } catch { /* opcional */ }
 }
 
-export { KIND_LABEL, viewEstrelas, refreshStars, celebrate, fbPollT, loadFeedback };
+/** Eventos da tela (estrelas); chamada pela bindApp em eventos.js a cada desenho. */
+function ligarEstrelas() {
+  on('#redeem', 'click', async () => {
+    const n = Math.max(1, parseInt($('#redeemN')?.value || '1', 10));
+    try { S.stars = await api('/me/estrelas/trocar', { method: 'POST', body: { geracoes: n } }); toast(`Pronto! +${n} geração(ões) extra(s).`); api('/sets/cota').then((r) => { S.quota = r.quota; }).catch(() => {}); }
+    catch (err) { toast(err.message); }
+    render();
+  });
+}
+
+export { KIND_LABEL, viewEstrelas, refreshStars, celebrate, fbPollT, loadFeedback, ligarEstrelas };

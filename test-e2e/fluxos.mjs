@@ -122,6 +122,10 @@ try {
   await sleep(1000);
   await foto('2-simulado-sem-banca');
   ok('simulado sem banca abre', /Questão sem banca E2E/.test(await texto()));
+  // Interação dentro da tela (os eventos de cada tela ficam no módulo dela): responder salva no servidor
+  const alt = await page.$('[data-ans]');
+  if (alt) { await alt.click(); await sleep(1500); }
+  ok('responder uma questão salva a resposta', !!alt && respondeu(/PATCH \/api\/v1\/sets\/[^ ]+ 200/));
 
   // 3) Minha conta: exportar e excluir
   await page.goto(`${BASE}/#conta`, { waitUntil: 'networkidle0' }); await sleep(800);

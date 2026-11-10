@@ -3,7 +3,7 @@
 import { S } from './estado.js';
 import { ic } from './icones.js';
 import { render } from './render.js';
-import { api, esc, renderAvatar, toast } from './util.js';
+import { $, API, API_ORIGEM, api, esc, on, renderAvatar, toast } from './util.js';
 
 // ---------- Minha conta ----------
 async function loadConta() {
@@ -139,4 +139,63 @@ function viewConta() {
     </div>`;
 }
 
-export { loadConta, loadPlanos, brl, diasAte, showAvatarModal, viewConta };
+/** Eventos da tela (conta); chamada pela bindApp em eventos.js a cada desenho. */
+function ligarConta() {
+  const cf = $('#contaForm');
+  if (cf) cf.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const body = { name: $('#cNome').value.trim(), telefone: $('#cTel').value.trim(), concursoAlvo: $('#cAlvo').value.trim(), bancaPreferida: $('#cBanca').value, dataProva: $('#cData').value, metaDiaria: $('#cMeta').value ? Number($('#cMeta').value) : null };
+    S.contaBusy = true; render();
+    try { S.conta = await api('/me/conta', { method: 'PATCH', body }); Object.assign(S.user, { name: S.conta.perfil.name }); toast('Dados salvos.'); }
+    catch (e) { toast(e.message); }
+    S.contaBusy = false; render();
+  };
+  const sf = $('#senhaForm');
+  if (sf) sf.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const senhaAtual = $('#sAtual').value, novaSenha = $('#sNova').value;
+    if (novaSenha.length < 8) return toast('A nova senha precisa ter ao menos 8 caracteres.');
+    try { await api('/me/conta/senha', { method: 'POST', body: { senhaAtual, novaSenha } }); toast('Senha alterada.'); $('#sAtual').value = ''; $('#sNova').value = ''; }
+    catch (e) { toast(e.message); }
+  };
+  on('#btnExportarDados', 'click', async () => {
+    try {
+      const r = await fetch(API + '/me/exportar', { credentials: API_ORIGEM ? 'include' : 'same-origin' });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Não foi possível gerar o arquivo.');
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement('a');
+      a.href = url; a.download = `helpconcurso-meus-dados-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (e) { toast(e.message); }
+  });
+  on('#btnExcluirConta', 'click', () => {
+    S.modal = {
+      title: 'Excluir minha conta',
+      html: `<p>Isto apaga de vez sua conta, materiais, editais, simulados, cadernos e histórico. <b>Não tem volta.</b> Provas que você enviou continuam na base compartilhada, sem o seu nome.</p>
+        <p class="hint">Se quiser guardar uma cópia, use antes "Baixar meus dados".</p>
+        <div class="field"><label for="exSenha">Sua senha</label><input class="input" id="exSenha" type="password" autocomplete="current-password"></div>
+        <div class="field"><label for="exConf">Digite EXCLUIR para confirmar</label><input class="input" id="exConf" autocomplete="off"></div>
+        <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn btn-ghost" data-mclose2>Cancelar</button><button type="button" class="btn btn-primary danger-soft" id="exConfirmar">Excluir definitivamente</button></div>`,
+    };
+    render();
+  });
+}
+
+/** Eventos da tela (planos+conta); chamada pela bindApp em eventos.js a cada desenho. */
+function ligarContaEPlanos() {
+  on('#confirmUpgrade', 'click', async (e) => {
+    const plano = e.currentTarget.dataset.plano;
+    try {
+      const r = await api('/me/conta/upgrade', { method: 'POST', body: { plano, periodicidade: S.planoPeriodo } });
+      S.conta = r.conta; S.modal = null;
+      toast('Pedido enviado! Você vai receber as instruções de pagamento por e-mail.');
+    } catch (err) { toast(err.message); }
+    render();
+  });
+  on('#cancelPedido', 'click', async () => {
+    try { S.conta = await api('/me/conta/upgrade', { method: 'DELETE' }); toast('Pedido cancelado.'); } catch (err) { toast(err.message); }
+    render();
+  });
+}
+
+export { loadConta, loadPlanos, brl, diasAte, showAvatarModal, viewConta, ligarConta, ligarContaEPlanos };

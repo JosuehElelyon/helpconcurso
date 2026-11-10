@@ -3,7 +3,7 @@
 import { S } from './estado.js';
 import { ic } from './icones.js';
 import { render } from './render.js';
-import { api, esc, toast } from './util.js';
+import { api, esc, on, toast } from './util.js';
 
 // ---------- Radar de Desempenho & Produtividade Visual ----------
 async function loadDesempenho(editalId = null) {
@@ -451,4 +451,13 @@ function viewDesempenho() {
   `;
 }
 
-export { loadDesempenho, renderGaugeSvg, renderDonutDuploSvg, renderEvolucaoSvg, viewDesempenho };
+/** Eventos da tela (desempenho); chamada pela bindApp em eventos.js a cada desenho. */
+function ligarDesempenho() {
+  on('#btnRefreshDesemp', 'click', () => loadDesempenho(S.desempEditalId));
+  on('#selDesempEdital', 'change', (e) => {
+    S.desempEditalId = e.target.value;
+    loadDesempenho(S.desempEditalId);
+  });
+}
+
+export { loadDesempenho, renderGaugeSvg, renderDonutDuploSvg, renderEvolucaoSvg, viewDesempenho, ligarDesempenho };

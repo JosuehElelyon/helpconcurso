@@ -44,4 +44,7 @@ async function api(path, { method = 'GET', body, form } = {}) {
   return data;
 }
 
-export { $, API, API_ORIGEM, urlDaApi, esc, initials, firstName, renderAvatar, fmtDate, LETRAS, STATUS, toastT, toast, api };
+/** Liga um evento a todos os elementos do seletor (usado pelas funções ligar<Tela>). */
+const on = (sel, ev, fn) => document.querySelectorAll(sel).forEach((el) => el.addEventListener(ev, fn));
+
+export { $, API, API_ORIGEM, urlDaApi, esc, initials, firstName, renderAvatar, fmtDate, LETRAS, STATUS, toastT, toast, api, on };

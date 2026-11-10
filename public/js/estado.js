@@ -2,6 +2,11 @@
 // Módulo gerado a partir do antigo public/app.js (item 10); entrada: public/app.js.
 
 // ---------- Estado ----------
+
+// Front do HelpConcurso — Estado.
+// Módulo gerado a partir do antigo public/app.js (item 10); entrada: public/app.js.
+
+// ---------- Estado ----------
 const S = {
   screen: 'boot', auth: 'entrar', authEmail: '', authCode: '', authErr: '', authOk: '', authBusy: false,
   view: 'home', drawer: false, user: null,

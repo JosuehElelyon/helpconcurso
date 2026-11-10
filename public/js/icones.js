@@ -2,6 +2,11 @@
 // Módulo gerado a partir do antigo public/app.js (item 10); entrada: public/app.js.
 
 // ---------- Ícones ----------
+
+// Front do HelpConcurso — Ícones.
+// Módulo gerado a partir do antigo public/app.js (item 10); entrada: public/app.js.
+
+// ---------- Ícones ----------
 const P = {
   logo: '<path d="M12 2.8 4.5 6v5.6c0 4.5 3.1 8.4 7.5 9.6 4.4-1.2 7.5-5.1 7.5-9.6V6Z"/><path d="m8.6 12.2 2.4 2.4 4.6-5"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',

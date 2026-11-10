@@ -7,7 +7,7 @@ import { go } from './eventos.js';
 import { ic } from './icones.js';
 import { render } from './render.js';
 import { saveSetSoon } from './simulado.js';
-import { $, API, API_ORIGEM, api, esc, toast } from './util.js';
+import { $, API, API_ORIGEM, api, esc, on, toast } from './util.js';
 
 // ---------- Gerar questões (wizard) ----------
 function viewGerar() {
@@ -333,4 +333,73 @@ function initModoProvaTimer(s) {
   }, 1000);
 }
 
-export { viewGerar, FT, wizEditalBox, wizStep1, donutSvg, wizStep2, wizStep3, wizStep4, uploadMaterial, generate, dispararRevanche, formatTempo, modoProvaTimer, initModoProvaTimer };
+/** Eventos da tela (gerar); chamada pela bindApp em eventos.js a cada desenho. */
+function ligarGerar() {
+  const w = S.wiz;
+  const fi = $('#fileIn'), drop = $('#drop');
+  const send = (file) => { const fd = new FormData(); fd.append('file', file); uploadMaterial(fd); };
+  if (fi) fi.onchange = () => fi.files[0] && send(fi.files[0]);
+  if (drop) {
+    ['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+    drop.addEventListener('drop', (e) => { const f = e.dataTransfer.files[0]; if (f) send(f); });
+  }
+  const wes = $('#wizEditalSel');
+  if (wes) wes.onchange = async () => {
+    w.editalId = wes.value;
+    const chosen = (S.editais || []).find((x) => x.id === w.editalId);
+    if (chosen?.banca && S.bancas.some((b) => b.id === chosen.banca)) w.banca = chosen.banca;
+    if (w.material) {
+      w.uploading = true; render();
+      try { const r = await api(`/materials/${w.material.id}/edital`, { method: 'POST', body: { editalId: w.editalId } }); w.material = r.material; refreshEditais({ silent: true }); }
+      catch (e) { toast(e.message); }
+      w.uploading = false;
+    }
+    render();
+  };
+  on('#wizToggleEditalUp', 'click', () => { w.showEditalUpload = !w.showEditalUpload; render(); });
+  const wef = $('#wizEditalFile');
+  if (wef) wef.onchange = async () => {
+    const f = wef.files[0]; if (!f) return;
+    const bancaIn = $('#wizEdBanca')?.value || w.banca || '';
+    const provaIn = $('#wizEdProva')?.value || '';
+    w.editalBusy = true; w.showEditalUpload = false; render();
+    try {
+      const fd = new FormData(); fd.append('file', f);
+      if (bancaIn) fd.append('banca', bancaIn);
+      if (provaIn) fd.append('provaId', provaIn);
+      const r = await api('/editais', { method: 'POST', form: fd });
+      await refreshEditais({ silent: true });
+      w.editalId = r.edital.id;
+      if (r.edital.banca && S.bancas.some((b) => b.id === r.edital.banca)) w.banca = r.edital.banca;
+      if (w.material) {
+        const rm = await api(`/materials/${w.material.id}/edital`, { method: 'POST', body: { editalId: w.editalId } });
+        w.material = rm.material;
+      }
+      toast(`Edital "${r.edital.titulo}" verticalizado (${r.edital.resumo.totalTopicos} tópicos)!`);
+    } catch (e) { toast(e.message); }
+    w.editalBusy = false; render();
+  };
+  on('#modePaste', 'click', () => { w.mode = 'paste'; w.err = ''; render(); });
+  on('#modeFile', 'click', () => { w.mode = 'file'; render(); });
+  on('#usePaste', 'click', () => uploadMaterial({ text: $('#pasteIn').value || '' }));
+  on('#resetFile', 'click', () => { S.wiz = newWiz(); render(); });
+  on('[data-step]', 'click', (e) => { w.step = +e.currentTarget.dataset.step; w.genErr = ''; render(); });
+  const ms = $('#matSel'); if (ms) ms.onchange = () => { w.materia = ms.value; };
+  const ai = $('#assIn'); if (ai) ai.oninput = () => { w.assunto = ai.value.trim(); };
+  on('#toStep3', 'click', () => { if (!w.materia) return toast('Selecione a matéria do material.'); w.step = 3; render(); });
+  on('[data-banca]', 'click', (e) => {
+    w.banca = e.currentTarget.dataset.banca;
+    if (!w.cadernoId) {
+      const matchCad = (S.cadernos || []).find((c) => c.banca === w.banca && (!w.editalId || c.editalId === w.editalId));
+      if (matchCad) w.cadernoId = matchCad.id;
+    }
+    render();
+  });
+  const wcs = $('#wizCadSel'); if (wcs) wcs.onchange = () => { w.cadernoId = wcs.value; };
+  on('[data-qtd]', 'click', (e) => { w.qtd = +e.currentTarget.dataset.qtd; render(); });
+  on('[data-nivel]', 'click', (e) => { w.nivel = e.currentTarget.dataset.nivel; render(); });
+  on('#gen', 'click', () => { if (!w.generating) generate(); });
+}
+
+export { viewGerar, FT, wizEditalBox, wizStep1, donutSvg, wizStep2, wizStep3, wizStep4, uploadMaterial, generate, dispararRevanche, formatTempo, modoProvaTimer, initModoProvaTimer, ligarGerar };

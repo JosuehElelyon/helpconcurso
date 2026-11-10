@@ -3,7 +3,8 @@
 import { brl } from './conta.js';
 import { S } from './estado.js';
 import { ic } from './icones.js';
-import { esc } from './util.js';
+import { render } from './render.js';
+import { esc, on } from './util.js';
 
 // ---------- Planos ----------
 function viewPlanos() {
@@ -57,4 +58,20 @@ function viewPlanos() {
     </div>`;
 }
 
-export { viewPlanos };
+/** Eventos da tela (planos); chamada pela bindApp em eventos.js a cada desenho. */
+function ligarPlanos() {
+  on('[data-periodo]', 'click', (e) => { S.planoPeriodo = e.currentTarget.dataset.periodo; render(); });
+  on('[data-upgrade]', 'click', (e) => {
+    const p = S.planosData.planos.find((x) => x.id === e.currentTarget.dataset.upgrade);
+    const anual = S.planoPeriodo === 'anual';
+    S.modal = {
+      title: `Plano ${p.nome} · ${anual ? 'anual' : 'mensal'}`,
+      html: `<p style="margin-top:0">Valor: <b>${brl(anual ? p.precoAnual : p.precoMensal)}</b> ${anual ? 'por ano' : 'por mês'}.</p>
+        <div class="banner info">${ic('info', 'sm')}<div>Ao confirmar, nossa equipe recebe o seu pedido e envia as instruções de pagamento para <b>${esc(S.user.email)}</b>. O plano é ativado assim que o pagamento for confirmado.</div></div>
+        <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn btn-ghost" data-mclose2>Voltar</button><button class="btn btn-primary" id="confirmUpgrade" data-plano="${p.id}">${ic('check', 'sm')} Confirmar pedido</button></div>`,
+    };
+    render();
+  });
+}
+
+export { viewPlanos, ligarPlanos };

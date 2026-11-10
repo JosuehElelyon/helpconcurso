@@ -761,3 +761,7 @@ ouvintes globais e o boot rodam ao carregar. JS/CSS passaram a revalidar o cache
   contrato de respostas (o teste pega o bug antigo).
 Prevenção: `npm run lint` no CI (substitui a checagem de sintaxe); teste de navegador ampliado para 20 verificações (todas as telas de
 aluno e admin, abas do admin, edital com tópicos, filtros e Simulado Prova Real). 163 testes.
+
+**Item 10, fase B (09/11/2026):** `bindApp` (1.134 linhas em `eventos.js`) dividida — cada bloco "if (S.view === ...)" virou `ligar<Tela>()`
+no módulo da tela (12 funções); `eventos.js` ficou com 196 linhas (eventos comuns). Gerado por parser, com checagem de que nenhum bloco
+usava variável local da bindApp. Lint limpo; e2e 21/21 (inclui responder questão e salvar). 163 testes.

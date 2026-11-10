@@ -1,8 +1,12 @@
 // Front do HelpConcurso — Enviar provas (todos os usuários).
 // Módulo gerado a partir do antigo public/app.js (item 10); entrada: public/app.js.
+import { schedulePoll } from './admin.js';
+import { refreshEditais } from './edital.js';
 import { BANCA, S } from './estado.js';
+import { go } from './eventos.js';
 import { ic } from './icones.js';
-import { esc, fmtDate } from './util.js';
+import { render } from './render.js';
+import { $, api, esc, fmtDate, on, toast } from './util.js';
 
 // ---------- Enviar provas (todos os usuários) ----------
 const PENDING_ST = ['CHECKING', 'QUEUED', 'PROCESSING', 'BATCH_PENDING'];
@@ -139,4 +143,95 @@ function viewContribuir() {
   </div>`;
 }
 
-export { PENDING_ST, ST_CLASS, stBadge, fonteBadge, SEV_LABEL, viewContribuir };
+/** Eventos da tela (contribuir); chamada pela bindApp em eventos.js a cada desenho. */
+function ligarEnviarProvas() {
+  const f = S.cform;
+  on('[data-cb]', 'click', (e) => { f.banca = e.currentTarget.dataset.cb; render(); });
+  ['Orgao', 'Cargo', 'Ano'].forEach((k) => { const el = $('#c' + k); if (el) el.oninput = () => { f[k.toLowerCase()] = el.value; }; });
+  const addFiles = (list) => { f.files = f.files.concat([...list]).slice(0, 10); if (f.files.length > 1) { f.gabarito = null; f.editalFile = null; } S.cResults = []; render(); };
+  const cf = $('#cFiles'), cd = $('#cDrop');
+  if (cf) cf.onchange = () => addFiles(cf.files);
+  if (cd) {
+    ['dragenter', 'dragover'].forEach((t) => cd.addEventListener(t, (e) => { e.preventDefault(); cd.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach((t) => cd.addEventListener(t, (e) => { e.preventDefault(); cd.classList.remove('over'); }));
+    cd.addEventListener('drop', (e) => addFiles(e.dataTransfer.files));
+  }
+  const cg = $('#cGab'); if (cg) cg.onchange = () => { f.gabarito = cg.files[0] || null; render(); };
+  const cl = $('#cLink');
+  if (cl) cl.oninput = () => { f.link = cl.value.trim(); const btn = $('#cForm button[type=submit]'); if (btn && !S.cBusy) btn.disabled = (!f.files.length && !f.link) || !f.banca; };
+  if (cl) cl.onchange = () => render();
+  const ces = $('#cEditalSel'); if (ces) ces.onchange = () => { f.editalId = ces.value; render(); };
+  const cef = $('#cEditalFile'); if (cef) cef.onchange = () => { f.editalFile = cef.files[0] || null; if (f.editalFile) f.editalId = ''; render(); };
+  on('#cRmEdital', 'click', () => { f.editalFile = null; render(); });
+  on('[data-rmc]', 'click', (e) => { f.files.splice(+e.currentTarget.dataset.rmc, 1); render(); });
+  on('[data-open-edital]', 'click', async (e) => {
+    const id = e.currentTarget.dataset.openEdital;
+    try { await api(`/editais/${id}/ativar`, { method: 'POST' }); } catch {}
+    go('edital');
+  });
+  on('[data-toggle-link-edital]', 'click', (e) => {
+    const id = e.currentTarget.dataset.toggleLinkEdital;
+    S.linkProvaId = S.linkProvaId === id ? null : id;
+    render();
+  });
+  on('[data-save-link-edital]', 'click', async (e) => {
+    const id = e.currentTarget.dataset.saveLinkEdital;
+    const edId = $('#lpEdSel')?.value || '';
+    S.linkBusy = true; render();
+    try {
+      await api(`/provas/${id}/edital`, { method: 'POST', body: { editalId: edId } });
+      S.minhas = (await api('/provas/minhas')).provas;
+      await refreshEditais({ silent: true });
+      S.linkProvaId = null;
+      toast(edId ? 'Edital vinculado à prova com sucesso!' : 'Vínculo de edital removido.');
+    } catch (err) { toast(err.message); }
+    S.linkBusy = false; render();
+  });
+  on('[data-upload-link-edital]', 'change', async (e) => {
+    const id = e.currentTarget.dataset.uploadLinkEdital;
+    const file = e.currentTarget.files[0]; if (!file) return;
+    S.linkBusy = true; render();
+    try {
+      const fd = new FormData(); fd.append('edital', file);
+      const r = await api(`/provas/${id}/edital`, { method: 'POST', form: fd });
+      S.minhas = (await api('/provas/minhas')).provas;
+      await refreshEditais({ silent: true });
+      S.linkProvaId = null;
+      toast(`Edital "${r.editalTitulo}" verticalizado e vinculado à prova!`);
+    } catch (err) { toast(err.message); }
+    S.linkBusy = false; render();
+  });
+  const form = $('#cForm');
+  if (form) form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    if (!f.banca) return toast('Escolha a banca.');
+    if (f.ano && !/^\d{4}$/.test(f.ano)) return toast('Ano inválido.');
+    S.cResults = [];
+    // Sem arquivo + link: um envio só, o servidor baixa a prova da fonte oficial
+    const files = f.files.length ? [...f.files] : [null];
+    let sharedEditalId = f.editalId || '';
+    for (let i = 0; i < files.length; i++) {
+      S.cBusy = files[i] ? `${i + 1}/${files.length}` : 'do link oficial'; render();
+      const nome = files[i] ? files[i].name : 'Link oficial';
+      const fd = new FormData();
+      fd.append('banca', f.banca); fd.append('orgao', f.orgao); fd.append('cargo', f.cargo); fd.append('ano', f.ano);
+      if (files[i]) fd.append('prova', files[i]);
+      if (f.link && files.length === 1) fd.append('officialUrl', f.link);
+      if (f.gabarito && files.length === 1) fd.append('gabarito', f.gabarito);
+      if (f.editalFile && i === 0) fd.append('edital', f.editalFile);
+      else if (sharedEditalId) fd.append('editalId', sharedEditalId);
+      try {
+        const r = await api('/provas', { method: 'POST', form: fd });
+        if (r.editalId && !sharedEditalId) sharedEditalId = r.editalId;
+        const aviso = (r.avisos || []).length ? ` Aviso: ${r.avisos.join(' ')}` : '';
+        S.cResults.push(r.duplicate ? { name: nome, dup: true, msg: r.message + aviso } : { name: nome, ok: true, msg: `Recebida. Em verificação.${r.prova?.oficialConfirmado ? ' Baixada da fonte oficial ✔' : ''}${r.editalId ? ' Edital vinculado!' : ''}${aviso}` });
+      } catch (e) { S.cResults.push({ name: nome, msg: e.message }); if (e.status === 429) break; }
+    }
+    S.cBusy = false; f.files = []; f.gabarito = null; f.editalFile = null; f.link = '';
+    try { S.minhas = (await api('/provas/minhas')).provas; await refreshEditais({ silent: true }); } catch {}
+    render();
+  };
+  schedulePoll();
+}
+
+export { PENDING_ST, ST_CLASS, stBadge, fonteBadge, SEV_LABEL, viewContribuir, ligarEnviarProvas };

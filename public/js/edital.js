@@ -2,10 +2,12 @@
 // Módulo gerado a partir do antigo public/app.js (item 10); entrada: public/app.js.
 import { fonteBadge } from './enviar-provas.js';
 import { BANCA, S } from './estado.js';
+import { go } from './eventos.js';
 import { donutSvg } from './gerar.js';
 import { ic } from './icones.js';
+import { confirmBox } from './modal.js';
 import { render } from './render.js';
-import { api, esc } from './util.js';
+import { $, api, esc, on, toast } from './util.js';
 
 // ---------- Meu Edital (verticalizado + gráficos de avanço) ----------
 function viewHomeEditalCard(ed) {
@@ -338,4 +340,136 @@ async function refreshEditais({ silent = false } = {}) {
   } catch { /* opcional */ }
 }
 
-export { viewHomeEditalCard, TOPIC_STATUS, viewEdital, refreshEditais };
+/** Eventos da tela (edital); chamada pela bindApp em eventos.js a cada desenho. */
+function ligarEdital() {
+  const w = S.wiz;
+  const efm = S.edForm || (S.edForm = { banca: '', orgao: '', cargo: '', ano: '', provaId: '' });
+  on('[data-edb]', 'click', (e) => { efm.banca = e.currentTarget.dataset.edb; render(); });
+  ['Orgao', 'Cargo', 'Ano'].forEach((k) => { const el = $('#ed' + k); if (el) el.oninput = () => { efm[k.toLowerCase()] = el.value; }; });
+  const eps = $('#edProvaSel');
+  if (eps) eps.onchange = () => { efm.provaId = eps.value; };
+  const submitEdital = async (payload) => {
+    if (efm.ano && !/^\d{4}$/.test(efm.ano)) return toast('Ano inválido.');
+    S.editalUploading = true; S.editalErr = ''; render();
+    try {
+      if (payload instanceof FormData) {
+        if (efm.banca) payload.append('banca', efm.banca);
+        if (efm.orgao) payload.append('orgao', efm.orgao);
+        if (efm.cargo) payload.append('cargo', efm.cargo);
+        if (efm.ano) payload.append('ano', efm.ano);
+        if (efm.provaId) payload.append('provaId', efm.provaId);
+        if (efm.link) payload.append('officialUrl', efm.link);
+      } else if (payload && typeof payload === 'object') {
+        Object.assign(payload, { banca: efm.banca, orgao: efm.orgao, cargo: efm.cargo, ano: efm.ano, provaId: efm.provaId, officialUrl: efm.link || '' });
+      }
+      const r = payload instanceof FormData ? await api('/editais', { method: 'POST', form: payload }) : await api('/editais', { method: 'POST', body: payload });
+      S.editalShowForm = false; S.edForm = null;
+      await refreshEditais({ silent: true });
+      const avisoLink = (r.warnings || []).find((w) => /link/i.test(w));
+      toast(`Edital verticalizado: ${r.edital.resumo.totalDisciplinas} disciplinas e ${r.edital.resumo.totalTopicos} tópicos!${r.edital.oficialConfirmado ? ' Baixado da fonte oficial ✔' : ''}${avisoLink ? ' ' + avisoLink : ''}`);
+    } catch (e) { S.editalErr = e.message; }
+    S.editalUploading = false; render();
+  };
+  const ef = $('#edFileIn'), edDrop = $('#edDrop');
+  if (ef) ef.onchange = () => { if (ef.files[0]) { const fd = new FormData(); fd.append('file', ef.files[0]); submitEdital(fd); } };
+  if (edDrop) {
+    ['dragenter', 'dragover'].forEach((t) => edDrop.addEventListener(t, (e) => { e.preventDefault(); edDrop.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach((t) => edDrop.addEventListener(t, (e) => { e.preventDefault(); edDrop.classList.remove('over'); }));
+    edDrop.addEventListener('drop', (e) => { const f = e.dataTransfer.files[0]; if (f) { const fd = new FormData(); fd.append('file', f); submitEdital(fd); } });
+  }
+  on('#edModePaste', 'click', () => { S.editalMode = 'paste'; S.editalErr = ''; render(); });
+  on('#edModeFile', 'click', () => { S.editalMode = 'file'; render(); });
+  on('#edUsePaste', 'click', () => submitEdital({ text: $('#edPasteIn')?.value || '' }));
+  const edl = $('#edLink'); if (edl) edl.oninput = () => { efm.link = edl.value.trim(); };
+  on('#edImportLink', 'click', () => (efm.link ? submitEdital({ text: '' }) : toast('Cole o link direto do edital no site oficial.')));
+  on('#edNewBtn', 'click', () => { S.editalShowForm = true; S.editalErr = ''; render(); });
+  on('#edCancelForm', 'click', () => { S.editalShowForm = false; S.editalErr = ''; render(); });
+  on('#edSendProva', 'click', () => {
+    const ed = S.activeEdital;
+    S.cform = { banca: ed?.banca && S.bancas.some((b) => b.id === ed.banca) ? ed.banca : '', orgao: ed?.orgao || '', cargo: ed?.cargo || '', ano: ed?.ano || '', files: [], gabarito: null, editalId: ed?.id || '', editalFile: null };
+    go('contribuir');
+  });
+  const sw = $('#edSwitch');
+  if (sw) sw.onchange = async () => {
+    try { const r = await api(`/editais/${sw.value}/ativar`, { method: 'POST' }); S.activeEdital = r.edital; await refreshEditais({ silent: true }); render(); }
+    catch (e) { toast(e.message); }
+  };
+  on('#edDelBtn', 'click', () => {
+    const ed = S.activeEdital; if (!ed) return;
+    confirmBox('Remover este edital?', `O edital "${ed.titulo}" será excluído. Seus materiais e simulados continuam salvos.`, 'Remover', true, async () => {
+      await api(`/editais/${ed.id}`, { method: 'DELETE' }).catch(() => {});
+      await refreshEditais();
+      toast('Edital removido');
+    });
+  });
+  on('#btnSimuladoProvaReal', 'click', () => {
+    const ed = S.activeEdital;
+    if (!ed) return;
+    const vert = ed.disciplinas || ed.verticalizado || [];
+    // Usa o modal do app (S.modal); antes chamava modal()/closeModal(), que não existiam — o botão não abria nada
+    S.modal = { title: 'Simulado no Formato da Prova Real', html: `
+      <div style="margin-bottom:14px">
+        <p style="margin:0 0 12px;font-size:14px">Simule as condições reais do seu concurso com questões oficiais da banca distribuídas conforme o peso das disciplinas do edital.</p>
+        <div class="field" style="margin-bottom:12px">
+          <label for="prQtdTotal">Quantidade total de questões</label>
+          <select class="select" id="prQtdTotal">
+            <option value="20">20 questões (Simulado rápido)</option>
+            <option value="30" selected>30 questões (Padrão)</option>
+            <option value="50">50 questões (Simulado intermediário)</option>
+            <option value="70">70 questões (Simulado extenso)</option>
+            <option value="100">100 questões (Prova completa)</option>
+            <option value="120">120 questões (Padrão CEBRASPE)</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:12px">
+          <label for="prTempoMin">Tempo de prova (Cronômetro regressivo)</label>
+          <select class="select" id="prTempoMin">
+            <option value="60">1 hora (60 minutos)</option>
+            <option value="90">1 hora e 30 minutos (90 minutos)</option>
+            <option value="120" selected>2 horas (120 minutos)</option>
+            <option value="180">3 horas (180 minutos)</option>
+            <option value="210">3 horas e 30 minutos (210 minutos)</option>
+            <option value="240">4 horas (240 minutos)</option>
+            <option value="0">Sem limite de tempo (Livre)</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:6px">
+          <label>Disciplinas verticalizadas do edital</label>
+          <div style="max-height:120px;overflow-y:auto;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:13px">
+            ${vert.map((d) => `<div>• <b>${esc(d.materia)}</b> <span class="hint">(peso ${Number(d.peso) || 1})</span></div>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="row" style="justify-content:flex-end;gap:8px">
+        <button type="button" class="btn btn-ghost" data-mclose2>Cancelar</button>
+        <button type="button" class="btn btn-primary" id="btnIniciarProvaReal">${ic('timer', 'sm')} Iniciar Prova Real</button>
+      </div>
+    ` };
+    render();
+  });
+  // Ligado aqui (e não dentro do clique acima) para continuar funcionando depois de qualquer redesenho
+  on('#btnIniciarProvaReal', 'click', async (e) => {
+    const ed = S.activeEdital;
+    const btn = e.currentTarget;
+    if (!ed) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner sm"></span> Montando prova...';
+    try {
+      // "0" = sem limite de tempo; por isso não usa "|| 120" no tempo
+      const qtdTotal = Number($('#prQtdTotal')?.value) || 30;
+      const tempoMinutos = Number($('#prTempoMin')?.value ?? 120);
+      const res = await api(`/editais/${ed.id}/simulado-prova-real`, { method: 'POST', body: { qtdTotal, tempoMinutos } });
+      S.modal = null;
+      S.sets.unshift(res.set);
+      S.active = res.set.id;
+      go('simulado');
+      toast(`Simulado Prova Real iniciado (${res.count} questões). Boa prova!`);
+    } catch (err) {
+      toast(err.message || 'Não foi possível gerar a prova real.');
+      btn.disabled = false;
+      btn.textContent = 'Iniciar Prova Real';
+    }
+  });
+}
+
+export { viewHomeEditalCard, TOPIC_STATUS, viewEdital, refreshEditais, ligarEdital };
