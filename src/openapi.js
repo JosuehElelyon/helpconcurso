@@ -263,6 +263,8 @@ const RESPOSTAS = {
   'get /editais': exigir({ editais: lista(ref('EditalResumo')), active: { anyOf: [ref('EditalPainel'), { type: 'null' }] } }),
   'get /editais/{id}': exigir({ edital: ref('EditalPainel') }),
   'post /editais/{id}/ativar': exigir({ edital: ref('EditalPainel') }),
+  'post /editais/{id}/simulado-prova-real': obj({ created: bool, set: ref('Simulado'), count: int, formato: str({ enum: ['me', 'ce'] }), distribuicao: lista(objLivre) }, ['created', 'set', 'count']),
+  'post /editais/{id}/topicos/{topicoId}/praticar-reais': obj({ created: bool, set: ref('Simulado'), count: int, doTopico: int, daDisciplina: int }, ['created', 'set', 'count']),
   'get /provas/minhas': exigir({ provas: lista(ref('ProvaMinha')) }),
   'get /me/conta': ref('Conta'),
   'patch /me/conta': ref('Conta'),

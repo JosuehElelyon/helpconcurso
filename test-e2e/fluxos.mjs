@@ -35,7 +35,7 @@ const limpar = () => db.query('DELETE FROM users WHERE email = ANY($1)', [[EMAIL
 
 const resultados = [];
 const ok = (nome, cond) => resultados.push({ nome, ok: !!cond });
-let browser;
+let browser, provaE2E = null;
 try {
   await limpar();
   const { rows: [u] } = await db.query(
@@ -44,6 +44,17 @@ try {
   // Simulado de edital sem banca (banca nula) — caso que já quebrou a tela
   await db.query(`INSERT INTO question_sets(user_id, banca, materia, nivel, formato, questoes, origem) VALUES ($1, NULL, 'Questão sem banca E2E', 'Prova real', 'me', $2, 'prova_real')`,
     [u.id, JSON.stringify([{ enunciado: 'Questão sem banca E2E: enunciado de teste', alternativas: ['a', 'b', 'c', 'd', 'e'], gabarito: 'A' }])]);
+
+  const { rows: [ed] } = await db.query(
+    `INSERT INTO editais (user_id, titulo, banca, verticalizado, text, word_count, active) VALUES ($1, 'Edital E2E', 'fgv', $2, 't', 10, true) RETURNING id`,
+    [u.id, JSON.stringify([{ id: 'd1', materia: 'Direito Administrativo', peso: 1, topicos: [{ id: 'd1-t1', codigo: '1', nome: 'Atos administrativos' }, { id: 'd1-t2', codigo: '2', nome: 'Licitações' }] }])]);
+  const { rows: [pv] } = await db.query(`INSERT INTO provas (banca, file_name, file_key, status, titulo) VALUES ('fgv', 'e2e.pdf', $1, 'READY', 'Prova E2E') RETURNING id`, [`e2e-${RUN}`]);
+  provaE2E = pv.id;
+  await db.query('INSERT INTO provas_editais (prova_id, edital_id, user_id) VALUES ($1, $2, $3)', [pv.id, ed.id, u.id]);
+  for (let i = 1; i <= 3; i++) {
+    await db.query(`INSERT INTO prova_questoes (prova_id, banca, materia, topico, numero, enunciado, alternativas, gabarito) VALUES ($1, 'fgv', 'Direito Administrativo', 'Atos administrativos', $2, $3, $4, 'A')`,
+      [pv.id, i, `Questão real E2E ${i} sobre atos administrativos`, JSON.stringify(['a', 'b', 'c', 'd', 'e'])]);
+  }
 
   fs.mkdirSync(CAPTURAS, { recursive: true });
   browser = await puppeteer.launch({ executablePath: navegador, headless: !process.env.E2E_VER, args: ['--no-first-run'] });
@@ -88,11 +99,27 @@ try {
   ok('aceite registrado e modal fechado', !(await page.$('#btnAceitarTermos')) && respondeu(/POST \/api\/v1\/me\/termos\/aceite 200/));
   ok(`aluno: as ${TELAS.length} telas abrem sem erro`, await percorrerTelas(TELAS, 'aluno'));
 
+  // 1b) Meu edital com tópicos: painel, filtros de tópicos e Simulado Prova Real
+  const errosAntesEdital = erros.length;
+  await page.evaluate(() => { location.hash = 'edital'; }); await sleep(1500);
+  ok('Meu edital com tópicos abre (lista tópico a tópico)', /tópico a tópico/i.test(await texto()) && erros.length === errosAntesEdital);
+  const filtros = await page.$$eval('[data-radar-filter]', (bs) => bs.map((b) => b.dataset.radarFilter));
+  for (const fl of filtros) { await page.click(`[data-radar-filter="${fl}"]`); await sleep(400); }
+  ok('filtros de tópicos do edital aparecem e funcionam', filtros.length >= 2 && erros.length === errosAntesEdital);
+  await page.evaluate(() => { location.hash = 'edital'; }); await sleep(800);
+  await page.click('#btnSimuladoProvaReal').catch(() => {}); await sleep(800);
+  await foto('2a-prova-real-modal');
+  const abriuModal = !!(await page.$('#btnIniciarProvaReal'));
+  if (abriuModal) { await page.click('#btnIniciarProvaReal'); await sleep(2000); }
+  await foto('2b-prova-real-iniciada');
+  ok('Simulado Prova Real: abre a configuração e inicia a prova', abriuModal && respondeu(/POST \/api\/v1\/editais\/[^ ]+\/simulado-prova-real 201/) && erros.length === errosAntesEdital);
+
   // 2) Simulado sem banca abre
   await page.goto(`${BASE}/#questoes`, { waitUntil: 'networkidle0' }); await sleep(800);
   await page.evaluate(() => [...document.querySelectorAll('button')].find((b) => /Baterias geradas/.test(b.innerText))?.click()); await sleep(800);
-  const item = await page.$('[data-open]');
-  if (item) { await item.click(); await sleep(1000); }
+  // Clica no simulado pelo nome (a prova real criada acima também aparece na lista)
+  await page.evaluate(() => [...document.querySelectorAll('[data-open]')].find((b) => /Questão sem banca E2E/.test(b.innerText))?.click());
+  await sleep(1000);
   await foto('2-simulado-sem-banca');
   ok('simulado sem banca abre', /Questão sem banca E2E/.test(await texto()));
 
@@ -148,6 +175,7 @@ try {
 } finally {
   await browser?.close().catch(() => {});
   await limpar().catch(() => {});
+  if (provaE2E) await db.query('DELETE FROM provas WHERE id=$1', [provaE2E]).catch(() => {});
   // O login do teste conta no limite de tentativas por IP: zera só esse contador para não atrapalhar quem usa o app local
   await db.query("DELETE FROM limites_requisicao WHERE chave LIKE '%:auth:%'").catch(() => {});
   await db.end();

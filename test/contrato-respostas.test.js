@@ -55,7 +55,12 @@ before(async () => {
     VALUES ($1,$2,$3,'fgv','Direito Administrativo','Médio','me',$4,$5,'anthropic:claude-haiku-5-5',$6) RETURNING id`,
   [u.id, ids.caderno, ids.edital, JSON.stringify([{ enunciado: 'Enunciado de teste do contrato', alternativas: ['a', 'b', 'c', 'd', 'e'], gabarito: 'A', comentario: 'c', tema: 't', topico_edital: '', verificada: true, ancorada: true }]),
     JSON.stringify({}), JSON.stringify({ geradas: 1, aprovadas: 1, descartadas: 0 })])).id;
-  await one(`INSERT INTO provas (banca, file_name, file_key, status, titulo, uploaded_by) VALUES ('fgv','c.pdf',$1,'READY','Prova do contrato',$2) RETURNING id`, [`contrato-${RUN}`, u.id]);
+  const prova = await one(`INSERT INTO provas (banca, file_name, file_key, status, titulo, uploaded_by) VALUES ('fgv','c.pdf',$1,'READY','Prova do contrato',$2) RETURNING id`, [`contrato-${RUN}`, u.id]);
+  await one('INSERT INTO provas_editais (prova_id, edital_id, user_id) VALUES ($1,$2,$3) RETURNING prova_id', [prova.id, ids.edital, u.id]);
+  for (let i = 1; i <= 2; i++) {
+    await one(`INSERT INTO prova_questoes (prova_id, banca, materia, topico, numero, enunciado, alternativas, gabarito) VALUES ($1,'fgv','Direito Administrativo','Atos administrativos',$2,$3,$4,'A') RETURNING id`,
+      [prova.id, i, `Questão real do contrato ${i} sobre atos administrativos`, JSON.stringify(['a', 'b', 'c', 'd', 'e'])]);
+  }
 
   const r = await fetch(URL + '/api/v1/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password: 'senha-forte-1' }) });
   assert.equal(r.status, 200);
@@ -83,6 +88,8 @@ test('Item 8: respostas das rotas principais batem com o contrato OpenAPI', asyn
   await conferir('get', '/editais', '/editais');
   await conferir('get', '/editais/{id}', `/editais/${ids.edital}`);
   await conferir('post', '/editais/{id}/ativar', `/editais/${ids.edital}/ativar`);
+  await conferir('post', '/editais/{id}/simulado-prova-real', `/editais/${ids.edital}/simulado-prova-real`, { qtdTotal: 5, tempoMinutos: 0 });
+  await conferir('post', '/editais/{id}/topicos/{topicoId}/praticar-reais', `/editais/${ids.edital}/topicos/d1-t1/praticar-reais`, { limite: 5 });
   await conferir('get', '/provas/minhas', '/provas/minhas');
   await conferir('get', '/me/conta', '/me/conta');
   await conferir('patch', '/me/conta', '/me/conta', { name: 'Contrato Atualizado', metaDiaria: 20 });

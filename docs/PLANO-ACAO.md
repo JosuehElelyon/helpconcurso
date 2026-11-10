@@ -746,3 +746,18 @@ servidor real e valida o corpo com o contrato (ajv, dependência só de desenvol
 teste falhar (exceções com motivo: verify/reset, que dependem do código do e-mail). Comprovado: renomear `cadernoId` na resposta
 do simulado quebra o teste. Regra: campo obrigatório = compromisso com clientes (app móvel); campo novo pode entrar sem quebrar.
 163 testes.
+
+### Item 10 — front dividido em módulos — concluído (09/11/2026)
+`public/app.js` (3.986 linhas) virou entrada de 57 linhas + 22 módulos em `public/js/` (um por seção), gerados por um script que usa um
+parser para calcular imports/exports (sem edição à mão); verificação de que nenhuma variável é reatribuída fora do seu módulo e de que só
+ouvintes globais e o boot rodam ao carregar. JS/CSS passaram a revalidar o cache (Nginx e Express), para não misturar versões.
+**Bugs que já estavam em produção, achados pela checagem de nomes indefinidos (ESLint `no-undef`):**
+- **"Meu edital" quebrava** para qualquer aluno com edital com tópicos (`filterTabs` nunca foi definido) — e os filtros de tópicos do
+  radar tinham o clique tratado mas nenhum botão na tela. Criada a barra de filtros (Urgentes, Reforçar, Zona segura, Cobrados).
+- **Botão "Simulado Prova Real" não fazia nada** (`modal()`, `closeModal()` e `v()` não existiam) — o F3 estava inacessível pela tela.
+  Agora usa o modal do app; "Sem limite de tempo" (0) não vira mais 2 horas.
+- **Simulado criado a partir do edital** (Prova Real e "Praticar questões reais") vinha no formato cru do banco: o front não entrava
+  no modo prova (sem cronômetro) e mostrava "Invalid Date". Formato único em `src/lib/visao-simulado.js`; as duas rotas entraram no
+  contrato de respostas (o teste pega o bug antigo).
+Prevenção: `npm run lint` no CI (substitui a checagem de sintaxe); teste de navegador ampliado para 20 verificações (todas as telas de
+aluno e admin, abas do admin, edital com tópicos, filtros e Simulado Prova Real). 163 testes.

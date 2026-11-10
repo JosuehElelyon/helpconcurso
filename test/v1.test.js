@@ -401,7 +401,8 @@ test('F1: questões reais por tópico do edital e criação de simulado a custo 
     assert.equal(rSim.status, 201, JSON.stringify(rSim.data));
     assert.equal(rSim.data.created, true);
     assert.equal(rSim.data.set.origem, 'prova_real');
-    assert.equal(rSim.data.set.model, 'prova_real');
+    // "model" não faz parte do formato público do simulado; o custo zero de IA é conferido no banco
+    assert.equal((await one('SELECT model FROM question_sets WHERE id=$1', [rSim.data.set.id])).model, 'prova_real');
   } else assert.equal(rSim.status, 404);
 });
 

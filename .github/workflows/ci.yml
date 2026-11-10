@@ -22,8 +22,8 @@ jobs:
       - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - run: npm ci
-      - name: Sintaxe de todos os arquivos JavaScript
-        run: find src scripts test test-e2e public \( -name '*.js' -o -name '*.mjs' \) -print0 | xargs -0 -n1 node --check
+      - name: Lint (sintaxe + nome usado sem estar definido, no front e no back)
+        run: npm run lint
       - name: Contrato OpenAPI exportado está em dia (rode "npm run openapi" e faça commit de docs/openapi.json)
         run: npm run openapi && git diff --exit-code docs/openapi.json
       - name: Testes (API, worker, fila, limites, contrato, front separado)

@@ -38,7 +38,15 @@ server {
     }
 
     # Arquivos estáticos com cache curto (os links já levam ?v=)
-    location ~* \.(?:js|css|svg|png|jpg|jpeg|webp|ico|woff2?)$ {
+    # JS/CSS: o front é dividido em módulos (public/js/) — sempre revalida (304 se nada mudou) para nunca misturar versões
+    location ~* \.(?:js|css)$ {
+        add_header Cache-Control "no-cache" always;
+        add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: ${CSP_EXTRA_ORIGENS}; script-src 'self'; connect-src 'self' ${CSP_EXTRA_ORIGENS}; object-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'" always;
+        add_header X-Content-Type-Options nosniff always;
+        try_files $uri =404;
+    }
+
+    location ~* \.(?:svg|png|jpg|jpeg|webp|ico|woff2?)$ {
         expires 1h;
         add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: ${CSP_EXTRA_ORIGENS}; script-src 'self'; connect-src 'self' ${CSP_EXTRA_ORIGENS}; object-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'" always;
         add_header X-Content-Type-Options nosniff always;

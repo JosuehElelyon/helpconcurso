@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { ah, HttpError, parseBody, checkId } from '../lib/http.js';
 import { requireAuth } from '../lib/auth.js';
 import { abrirFluxo } from '../lib/ndjson.js';
+import { visaoSimulado } from '../lib/visao-simulado.js';
 import { BANCA, NIVEIS } from '../lib/bancas.js';
 import { generationQuota } from '../services/quota.js';
 import { rate, report, listFeedback } from '../services/feedback.js';
@@ -17,29 +18,8 @@ r.use(requireAuth);
 r.param('id', checkId);
 const LET = ['A', 'B', 'C', 'D', 'E'];
 
-// Representação pública de um simulado na API
-const view = (s) => ({
-  id: s.id,
-  banca: s.banca,
-  materia: s.materia,
-  assunto: s.assunto,
-  nivel: s.nivel,
-  formato: s.formato,
-  arquivo: s.arquivo,
-  editalId: s.edital_id || null,
-  cadernoId: s.caderno_id || null,
-  questoes: s.questoes,
-  respostas: s.respostas,
-  finalizado: s.finalizado,
-  modoProva: s.modo_prova || false,
-  tempoLimiteMinutos: s.tempo_limite_minutos || null,
-  tempoGastoSegundos: s.tempo_gasto_segundos || 0,
-  duvidas: Array.isArray(s.duvidas) ? s.duvidas : [],
-  estatisticas: s.estatisticas || {},
-  origem: s.origem || 'ia',
-  revisao: s.review_stats ? { ...s.review_stats, motivos: undefined } : null,
-  createdAt: s.created_at,
-});
+// Representação pública de um simulado na API (formato único, em lib/visao-simulado.js)
+const view = visaoSimulado;
 
 const schemaGerar = z.object({
   materialId: z.string().uuid('Material inválido.'),

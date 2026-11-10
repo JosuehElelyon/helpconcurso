@@ -18,7 +18,8 @@
     "eval": "node --env-file-if-exists=.env scripts/benchmark-dificil.js",
     "test": "node --env-file-if-exists=.env --import ./test/setup.js --test test/*.test.js",
     "openapi": "node scripts/openapi.js",
-    "e2e": "node --env-file-if-exists=.env test-e2e/fluxos.mjs"
+    "e2e": "node --env-file-if-exists=.env test-e2e/fluxos.mjs",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
@@ -41,6 +42,8 @@
   },
   "devDependencies": {
     "ajv": "^8.17.1",
+    "eslint": "^9.17.0",
+    "globals": "^15.14.0",
     "puppeteer-core": "^23.11.1"
   }
 }

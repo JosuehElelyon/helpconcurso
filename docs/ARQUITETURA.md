@@ -49,6 +49,15 @@ Ainda com SQL fora de `repositories/` (módulos menores, migrar quando forem alt
 5. Rota abre o fluxo NDJSON (`lib/ndjson.js`); `executarGeracao` chama a IA (`ai/`), normaliza, passa no revisor, grava pelo
    repositório. Falha → devolve a cota. Aluno fechou a página → `AbortSignal` cancela a IA.
 
+## Front (public/)
+
+SPA sem framework em módulos ES: `public/app.js` é só a entrada (carrega os módulos e roda o `boot` por último);
+o código fica em `public/js/`, um módulo por área — `estado` (S), `util` (api, toast, esc), `render`, `eventos` (ligação de
+eventos de todas as telas, `bindApp`), `modal`, `sessao` e as telas (`auth`, `conta`, `gerar`, `simulado`, `cadernos`, `edital`,
+`desempenho`, `admin`…). Regras: nenhum código roda ao carregar um módulo (só declarações), exceto ouvintes globais e o boot;
+variável de módulo só é reatribuída no próprio módulo; JS/CSS sempre revalidam o cache (`no-cache`).
+`npm run lint` (ESLint, no CI) pega nome usado sem estar definido; `npm run e2e` abre todas as telas no navegador.
+
 ## Contrato da API
 
 - Versão atual: `/api/v1` (índice em `src/routes/index.js`). `/api/*` é apelido obsoleto (cabeçalho `Deprecation`).

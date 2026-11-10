@@ -7357,7 +7357,29 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "set": {
+                      "$ref": "#/components/schemas/Simulado"
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "doTopico": {
+                      "type": "integer"
+                    },
+                    "daDisciplina": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "created",
+                    "set",
+                    "count"
+                  ]
                 }
               }
             }
@@ -7448,7 +7470,36 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "set": {
+                      "$ref": "#/components/schemas/Simulado"
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "formato": {
+                      "type": "string",
+                      "enum": [
+                        "me",
+                        "ce"
+                      ]
+                    },
+                    "distribuicao": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "created",
+                    "set",
+                    "count"
+                  ]
                 }
               }
             }

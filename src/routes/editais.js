@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { editalLimit } from '../middleware/limites.js';
 import { ah, HttpError, checkId } from '../lib/http.js';
 import { requireAuth } from '../lib/auth.js';
+import { visaoSimulado } from '../lib/visao-simulado.js';
 import { uploader, fileOf } from '../lib/upload.js';
 import { linkOficialDeclarado } from '../lib/bancas.js';
 import { baixarDaFonteOficial } from '../lib/fonte-oficial.js';
@@ -100,7 +101,7 @@ r.post('/:id/topicos/:topicoId/praticar-reais', ah(async (req, res) => {
   if (!out.created) {
     throw new HttpError(404, out.message || 'Nenhuma questão encontrada para este tópico.');
   }
-  res.status(201).json(out);
+  res.status(201).json({ ...out, set: visaoSimulado(out.set) });
 }));
 
 r.post('/:id/simulado-prova-real', ah(async (req, res) => {
@@ -119,7 +120,7 @@ r.post('/:id/simulado-prova-real', ah(async (req, res) => {
   if (!out.created) {
     throw new HttpError(404, out.message || 'Nenhuma questão encontrada para montar a prova real.');
   }
-  res.status(201).json(out);
+  res.status(201).json({ ...out, set: visaoSimulado(out.set) });
 }));
 
 r.delete('/:id', ah(async (req, res) => { await excluirEdital(req.user, req.params.id); res.json({ ok: true }); }));

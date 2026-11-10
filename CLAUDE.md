@@ -116,6 +116,8 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
   e-mail ou armazenamento → confira o texto gerado** (a versão muda sozinha e pede novo aceite). Texto ainda sem revisão jurídica.
 - **Sprint 5.1 e reestruturação:** ver o fim de `docs/PLANO-ACAO.md` (A1–A6 feitos; A4 parcial). Desenho e regras: `docs/ARQUITETURA.md`. Teste de funcionalidade
   chama a rota HTTP, nunca uma cópia da lógica.
+- **Front em módulos (item 10):** `public/app.js` só carrega `public/js/*.js` (um módulo por área) e roda o boot. Tela nova → módulo
+  novo importado na entrada. `npm run lint` (ESLint `no-undef`, no CI) — foi ele que achou as telas quebradas.
 - **Teste de navegador:** `npm run e2e` (Edge/Chrome instalado, ambiente local rodando; fora do CI). Rode antes de entregar mudança de tela.
 - Nginx reconsulta o IP da API (`NGINX_RESOLVER`): reiniciar só a API não derruba mais o app.
 - App: http://localhost:3000 · Mailpit: http://localhost:8025 · S3 local (SeaweedFS no serviço `minio`): http://localhost:9000
