@@ -1,14 +1,15 @@
 import { Router } from 'express';
 import { editalLimit } from '../middleware/limites.js';
-import { one, many, query } from '../db.js';
 import { ah, HttpError, checkId } from '../lib/http.js';
 import { requireAuth } from '../lib/auth.js';
 import { uploader, fileOf } from '../lib/upload.js';
-import { deleteFile } from '../lib/storage.js';
 import { linkOficialDeclarado } from '../lib/bancas.js';
 import { baixarDaFonteOficial } from '../lib/fonte-oficial.js';
 import { assertCanUpload } from '../services/quota.js';
-import { createEditalForUser, buildEditalDashboard, getQuestoesReaisDoTopico, criarSimuladoQuestoesReais, criarSimuladoProvaReal } from '../services/edital.js';
+import {
+  createEditalForUser, buildEditalDashboard, getQuestoesReaisDoTopico, criarSimuladoQuestoesReais, criarSimuladoProvaReal,
+  editalDoAluno, listarEditais, ativarEdital, excluirEdital,
+} from '../services/edital.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -39,16 +40,12 @@ const summaryView = (e) => {
 };
 
 r.get('/', ah(async (req, res) => {
-  const rows = await many('SELECT * FROM editais WHERE user_id=$1 ORDER BY active DESC, created_at DESC LIMIT 30', [req.user.id]);
-  const activeRow = rows.find((x) => x.active) || rows[0] || null;
-  const active = activeRow ? await buildEditalDashboard(activeRow, req.user.id) : null;
+  const { rows, active } = await listarEditais(req.user);
   res.json({ editais: rows.map(summaryView), active });
 }));
 
 r.get('/:id', ah(async (req, res) => {
-  const e = await one('SELECT * FROM editais WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
-  if (!e) throw new HttpError(404, 'Edital não encontrado.');
-  res.json({ edital: await buildEditalDashboard(e, req.user.id) });
+  res.json({ edital: await buildEditalDashboard(await editalDoAluno(req.user, req.params.id), req.user.id) });
 }));
 
 r.post('/', editalLimit, uploader([{ name: 'file', maxCount: 1 }]), ah(async (req, res) => {
@@ -80,17 +77,10 @@ r.post('/', editalLimit, uploader([{ name: 'file', maxCount: 1 }]), ah(async (re
   res.status(201).json({ edital: await buildEditalDashboard(editalRow, req.user.id), warnings, reaproveitado });
 }));
 
-r.post('/:id/ativar', ah(async (req, res) => {
-  const e = await one('SELECT * FROM editais WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
-  if (!e) throw new HttpError(404, 'Edital não encontrado.');
-  await query('UPDATE editais SET active = (id = $2), updated_at=now() WHERE user_id=$1', [req.user.id, e.id]);
-  e.active = true;
-  res.json({ edital: await buildEditalDashboard(e, req.user.id) });
-}));
+r.post('/:id/ativar', ah(async (req, res) => res.json({ edital: await ativarEdital(req.user, req.params.id) })));
 
 r.get('/:id/topicos/:topicoId/questoes-reais', ah(async (req, res) => {
-  const e = await one('SELECT * FROM editais WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
-  if (!e) throw new HttpError(404, 'Edital não encontrado.');
+  const e = await editalDoAluno(req.user, req.params.id);
   const limite = Math.min(50, Math.max(1, Number(req.query.limite) || 10));
   const result = await getQuestoesReaisDoTopico(e, req.params.topicoId, limite);
   if (!result) throw new HttpError(404, 'Tópico não encontrado no edital.');
@@ -98,8 +88,7 @@ r.get('/:id/topicos/:topicoId/questoes-reais', ah(async (req, res) => {
 }));
 
 r.post('/:id/topicos/:topicoId/praticar-reais', ah(async (req, res) => {
-  const e = await one('SELECT * FROM editais WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
-  if (!e) throw new HttpError(404, 'Edital não encontrado.');
+  const e = await editalDoAluno(req.user, req.params.id);
   const limite = Math.min(25, Math.max(1, Number(req.body?.limite) || 10));
   const out = await criarSimuladoQuestoesReais({
     user: req.user,
@@ -115,8 +104,7 @@ r.post('/:id/topicos/:topicoId/praticar-reais', ah(async (req, res) => {
 }));
 
 r.post('/:id/simulado-prova-real', ah(async (req, res) => {
-  const e = await one('SELECT * FROM editais WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
-  if (!e) throw new HttpError(404, 'Edital não encontrado.');
+  const e = await editalDoAluno(req.user, req.params.id);
   const qtdTotal = Math.min(120, Math.max(5, Number(req.body?.qtdTotal) || 30));
   const tempoMinutos = req.body?.tempoMinutos !== undefined && req.body?.tempoMinutos !== null
     ? Math.max(0, Math.min(360, Number(req.body.tempoMinutos) || 0))
@@ -134,15 +122,6 @@ r.post('/:id/simulado-prova-real', ah(async (req, res) => {
   res.status(201).json(out);
 }));
 
-r.delete('/:id', ah(async (req, res) => {
-  const e = await one('DELETE FROM editais WHERE id=$1 AND user_id=$2 RETURNING file_key, active', [req.params.id, req.user.id]);
-  if (e) {
-    await deleteFile(e.file_key);
-    if (e.active) {
-      await query('UPDATE editais SET active=true WHERE id=(SELECT id FROM editais WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1)', [req.user.id]);
-    }
-  }
-  res.json({ ok: true });
-}));
+r.delete('/:id', ah(async (req, res) => { await excluirEdital(req.user, req.params.id); res.json({ ok: true }); }));
 
 export default r;

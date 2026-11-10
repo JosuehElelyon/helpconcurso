@@ -1,7 +1,6 @@
 // =====================================================================
 // Serviço de Editais Verticalizados e Cruzamento (Material × Edital × Questões)
 // =====================================================================
-import { one, many, query } from '../db.js';
 import { runJSON } from '../ai/index.js';
 import { editalParseSchema, editalMatchSchema } from '../ai/schemas.js';
 import crypto from 'node:crypto';
@@ -14,13 +13,13 @@ import { sanitizeText } from '../security/text-scan.js';
 import { decide } from '../security/policy.js';
 import { putFile, makeKey, deleteFile } from '../lib/storage.js';
 import { HttpError } from '../lib/http.js';
-import { questaoValida } from '../lib/questoes-validas.js';
 import { assertLimitePlano } from './quota.js';
 import { publicStatus } from './provas.js';
 import * as simuladosRepo from '../repositories/simulados.js';
-
-// Texto do usuário/IA dentro de ILIKE: % e _ viram literais
-const escaparLike = (t) => String(t || '').replace(/[\\%_]/g, (c) => `\\${c}`);
+import * as editaisRepo from '../repositories/editais.js';
+import * as provasRepo from '../repositories/provas.js';
+import * as materiaisRepo from '../repositories/materiais.js';
+import * as cadernosRepo from '../repositories/cadernos.js';
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 const cleanStr = (s, max = 220) => {
@@ -196,20 +195,13 @@ function resolveQuestionTopic(q, disc, allTopicsById) {
  */
 export async function buildEditalDashboard(edital, userId) {
   const [materials, sets, provasRows] = await Promise.all([
-    many('SELECT id, file_name, materia, assunto, edital_id, edital_match, created_at FROM materials WHERE user_id=$1 ORDER BY created_at DESC', [userId]),
-    many('SELECT id, material_id, edital_id, banca, materia, assunto, questoes, respostas, finalizado, created_at FROM question_sets WHERE user_id=$1 ORDER BY created_at DESC', [userId]),
-    many('SELECT id, banca, titulo, file_name, status, num_questoes, created_at FROM provas WHERE edital_id=$1 OR id=$2 ORDER BY created_at DESC', [edital.id, edital.prova_id || null]),
+    materiaisRepo.listarParaPainel(userId),
+    simuladosRepo.listarParaPainel(userId),
+    provasRepo.doEdital(edital.id, edital.prova_id),
   ]);
 
   const linkedProvaIds = provasRows.map((p) => p.id);
-  const realQuestions = (linkedProvaIds.length || edital.banca)
-    ? await many(
-      `SELECT q.materia, q.enunciado FROM prova_questoes q JOIN provas p ON p.id=q.prova_id
-       WHERE ${questaoValida('q')} AND p.status='READY' AND (p.id = ANY($1::uuid[]) OR ($2::text IS NOT NULL AND q.banca=$2))
-       LIMIT 400`,
-      [linkedProvaIds, edital.banca || null]
-    )
-    : [];
+  const realQuestions = (linkedProvaIds.length || edital.banca) ? await provasRepo.questoesParaIncidencia(linkedProvaIds, edital.banca) : [];
 
   const vert = edital.verticalizado || [];
   const allTopicsById = new Map();
@@ -510,10 +502,10 @@ export async function buildEditalDashboard(edital, userId) {
  */
 async function parseEditalCanonico(text, fileName, userId, signal, meta) {
   const chave = crypto.createHash('sha256').update(normNome(text)).update(`|cargo:${normNome(meta.cargo)}`).digest('hex');
-  const hit = await one('UPDATE editais_canonicos SET usos=usos+1, updated_at=now() WHERE chave=$1 RETURNING *', [chave]);
+  const hit = await editaisRepo.usarCanonico(chave);
   if (hit) {
     if (!hit.official_url && meta.officialUrl && meta.oficialConfirmado) {
-      await query('UPDATE editais_canonicos SET official_url=$2, oficial_confirmado=true, official_url_tipo=$3 WHERE id=$1', [hit.id, meta.officialUrl, meta.officialUrlTipo]);
+      await editaisRepo.confirmarFonteDoCanonico(hit.id, meta.officialUrl, meta.officialUrlTipo);
     }
     return {
       parsed: { titulo: hit.titulo, orgao: hit.orgao, cargo: hit.cargo, banca: hit.banca, ano: hit.ano, verticalizado: hit.verticalizado },
@@ -527,13 +519,11 @@ async function parseEditalCanonico(text, fileName, userId, signal, meta) {
     d.materiaId = await materiaId(d.materia);
     for (const t of d.topicos) t.topicoId = await topicoId(d.materiaId, t.nome);
   }
-  const row = await one(
-    `INSERT INTO editais_canonicos(chave,titulo,orgao,cargo,banca,ano,verticalizado,prompt_versao,official_url,oficial_confirmado,official_url_tipo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-     ON CONFLICT (chave) DO UPDATE SET usos = editais_canonicos.usos + 1, updated_at = now() RETURNING id`,
-    [chave, parsed.titulo, parsed.orgao, parsed.cargo, parsed.banca, parsed.ano, JSON.stringify(parsed.verticalizado), PROMPT_VERSAO.edital_parse,
-     ...(meta.oficialConfirmado ? [meta.officialUrl, true, meta.officialUrlTipo] : [null, false, null])]
-  );
+  const row = await editaisRepo.inserirCanonico({
+    chave, titulo: parsed.titulo, orgao: parsed.orgao, cargo: parsed.cargo, banca: parsed.banca, ano: parsed.ano,
+    verticalizado: parsed.verticalizado, promptVersao: PROMPT_VERSAO.edital_parse,
+    ...(meta.oficialConfirmado ? { officialUrl: meta.officialUrl, oficialConfirmado: true, officialUrlTipo: meta.officialUrlTipo } : {}),
+  });
   return { parsed, canonicoId: row.id, reaproveitado: false };
 }
 
@@ -584,20 +574,15 @@ export async function createEditalForUser({ user, file, text: rawText, banca, or
       ? [finalOrgao, finalCargo, finalAno].filter(Boolean).join(' · ')
       : parsed.titulo;
 
-    await query('UPDATE editais SET active=false WHERE user_id=$1', [user.id]);
+    await editaisRepo.desativarTodos(user.id);
     // Só vincula a uma prova enviada pelo próprio aluno (ou qualquer uma, se for admin)
-    const validProvaId = /^[0-9a-f-]{36}$/i.test(String(provaId || ''))
-      ? (await one('SELECT id FROM provas WHERE id=$1 AND (uploaded_by=$2 OR $3)', [provaId, user.id, user.role === 'ADMIN']))?.id || null
-      : null;
-    const e = await one(
-      `INSERT INTO editais(user_id,titulo,orgao,cargo,banca,ano,prova_id,file_name,file_key,mime_type,size,pages,text,word_count,verticalizado,sha256,security,ocr,active,canonico_id,official_url,oficial_confirmado,official_url_tipo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,true,$19,$20,$21,$22) RETURNING *`,
-      [user.id, finalTitulo, finalOrgao, finalCargo, finalBanca, finalAno, validProvaId, file?.name || null, fileKey, file?.mime || null, file?.buffer.length || null, pages, text, words(text), JSON.stringify(parsed.verticalizado), sha, JSON.stringify(security), ocr, canonicoId,
-       officialUrl, oficialConfirmado, officialUrlTipo]
-    );
-    if (validProvaId) {
-      await query('UPDATE provas SET edital_id=$2 WHERE id=$1', [validProvaId, e.id]);
-    }
+    const validProvaId = /^[0-9a-f-]{36}$/i.test(String(provaId || '')) ? await provasRepo.idEnviadaPor(provaId, user.id, user.role === 'ADMIN') : null;
+    const e = await editaisRepo.inserir({
+      userId: user.id, titulo: finalTitulo, orgao: finalOrgao, cargo: finalCargo, banca: finalBanca, ano: finalAno, provaId: validProvaId,
+      fileName: file?.name || null, fileKey, mimeType: file?.mime || null, size: file?.buffer.length || null, pages, text, wordCount: words(text),
+      verticalizado: parsed.verticalizado, sha256: sha, security, ocr, canonicoId, officialUrl, oficialConfirmado, officialUrlTipo,
+    });
+    if (validProvaId) await provasRepo.vincularEdital(validProvaId, e.id);
     return { editalRow: e, warnings, reaproveitado };
   } catch (err) {
     await deleteFile(fileKey);
@@ -633,21 +618,10 @@ export async function getQuestoesReaisDoTopico(edital, topicoIdOrCode, limite = 
   if (!targetTopico || !targetDisciplina) return null;
 
   const kw = norm(targetTopico.nome).split(' ').filter((w) => w.length >= 4 && !STOP_WORDS.has(w));
-  const pool = await many(
-    `SELECT q.id, q.numero, q.materia, q.topico, q.topico_id, q.comando, q.pegadinha_tipo,
-            q.dispositivos, q.habilidade, q.enunciado, q.alternativas, q.gabarito,
-            p.id AS prova_id, p.titulo AS prova_titulo, p.file_name, p.ano AS prova_ano, p.banca,
-            (p.edital_id = $1 OR p.id = $2) AS vinculada
-     FROM prova_questoes q
-     JOIN provas p ON p.id = q.prova_id
-     WHERE p.status = 'READY' AND ${questaoValida('q')}
-       AND q.gabarito IS NOT NULL AND length(trim(q.gabarito)) > 0
-       AND (($3::text IS NOT NULL AND q.banca = $3) OR p.edital_id = $1 OR p.id = $2)
-       AND (($4::text IS NOT NULL AND q.topico_id = $4) OR q.topico ILIKE $5 OR q.materia ILIKE $6)
-     ORDER BY q.id
-     LIMIT 400`,
-    [edital.id, edital.prova_id || null, edital.banca || null, targetTopico.topicoId || null, `%${targetTopico.nome}%`, `%${targetDisciplina.materia}%`]
-  );
+  const pool = await provasRepo.questoesReaisDoTopico({
+    editalId: edital.id, provaOrigemId: edital.prova_id, banca: edital.banca,
+    topicoId: targetTopico.topicoId, topicoNome: targetTopico.nome, materia: targetDisciplina.materia,
+  });
 
   const avaliadas = pool.map((q) => {
     const texto = norm(`${q.topico || ''} ${q.enunciado || ''}`);
@@ -695,7 +669,7 @@ export async function criarSimuladoQuestoesReais({ user, edital, topicoIdOrCode,
   // Caderno só do próprio aluno (C1)
   let targetCadernoId = null;
   if (cadernoId) {
-    const cad = UUID_RE.test(String(cadernoId)) ? await one('SELECT id FROM cadernos WHERE id=$1 AND user_id=$2', [cadernoId, user.id]) : null;
+    const cad = UUID_RE.test(String(cadernoId)) ? await cadernosRepo.buscar(cadernoId, user.id) : null;
     if (!cad) throw new HttpError(404, 'Caderno não encontrado.');
     targetCadernoId = cad.id;
   }
@@ -731,23 +705,17 @@ export async function criarSimuladoQuestoesReais({ user, edital, topicoIdOrCode,
     ancorada: true,
   }));
 
-  if (!targetCadernoId) {
-    const cad = await one('SELECT id FROM cadernos WHERE user_id=$1 AND edital_id=$2 ORDER BY updated_at DESC LIMIT 1', [user.id, edital.id]);
-    if (cad) targetCadernoId = cad.id;
-  }
+  if (!targetCadernoId) targetCadernoId = await cadernosRepo.maisRecenteDoEdital(user.id, edital.id);
   const taxTopicoId = topico.topicoId || (disciplina.materiaId ? await topicoId(disciplina.materiaId, topico.nome) : null);
 
-  const setRow = await one(
-    `INSERT INTO question_sets (
-       user_id, caderno_id, edital_id, banca, materia, assunto, nivel, formato,
-       arquivo, questoes, respostas, finalizado, model, origem, topico_id, topico_codigo
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-     RETURNING *`,
-    [user.id, targetCadernoId, edital.id, edital.banca || 'cebraspe', disciplina.materia, topico.nome, 'Prova real', formato,
-      `${edital.titulo || 'Edital'} · Questões reais da banca`, JSON.stringify(formattedQuestoes), JSON.stringify({}), false,
-      'prova_real', 'prova_real', taxTopicoId, topico.codigo || topico.id]
-  );
-  if (targetCadernoId) await query('UPDATE cadernos SET updated_at=now() WHERE id=$1', [targetCadernoId]);
+  // Edital sem banca: banca nula (antes forçava 'cebraspe' — R10 tinha corrigido só o Simulado Prova Real)
+  const setRow = await simuladosRepo.inserir({
+    user_id: user.id, caderno_id: targetCadernoId, edital_id: edital.id, banca: edital.banca || null, materia: disciplina.materia,
+    assunto: topico.nome, nivel: 'Prova real', formato, arquivo: `${edital.titulo || 'Edital'} · Questões reais da banca`,
+    questoes: formattedQuestoes, respostas: {}, finalizado: false, model: 'prova_real', origem: 'prova_real',
+    topico_id: taxTopicoId, topico_codigo: topico.codigo || topico.id,
+  });
+  if (targetCadernoId) await cadernosRepo.tocar(targetCadernoId);
 
   const doTopico = formattedQuestoes.filter((q) => q.topico_edital).length;
   return { created: true, set: setRow, count: formattedQuestoes.length, doTopico, daDisciplina: formattedQuestoes.length - doTopico, topico, disciplina, cadernoId: targetCadernoId };
@@ -769,14 +737,11 @@ export async function criarSimuladoProvaReal({
 }) {
   let targetCadernoId = null;
   if (cadernoId) {
-    const cad = UUID_RE.test(String(cadernoId)) ? await one('SELECT id FROM cadernos WHERE id=$1 AND user_id=$2', [cadernoId, user.id]) : null;
+    const cad = UUID_RE.test(String(cadernoId)) ? await cadernosRepo.buscar(cadernoId, user.id) : null;
     if (!cad) throw new HttpError(404, 'Caderno não encontrado.');
     targetCadernoId = cad.id;
   }
-  if (!targetCadernoId) {
-    const cad = await one('SELECT id FROM cadernos WHERE user_id=$1 AND edital_id=$2 ORDER BY updated_at DESC LIMIT 1', [user.id, edital.id]);
-    if (cad) targetCadernoId = cad.id;
-  }
+  if (!targetCadernoId) targetCadernoId = await cadernosRepo.maisRecenteDoEdital(user.id, edital.id);
 
   let formato = BANCA[edital.banca]?.formato || null;
   if (!formato) {
@@ -822,32 +787,10 @@ export async function criarSimuladoProvaReal({
     const dMatId = await materiaId(d.materia);
 
     // R10: Casar matéria estritamente pela taxonomia e nome completo (evita que %Direito% misture penal com constitucional)
-    const pool = await many(
-      `SELECT q.id, q.numero, q.materia, q.materia_id, q.topico, q.topico_id, q.comando, q.pegadinha_tipo,
-              q.dispositivos, q.habilidade, q.enunciado, q.alternativas, q.gabarito,
-              p.id AS prova_id, p.titulo AS prova_titulo, p.file_name, p.ano AS prova_ano, p.banca,
-              (p.edital_id = $1 OR p.id = $2) AS vinculada
-       FROM prova_questoes q
-       JOIN provas p ON p.id = q.prova_id
-       WHERE p.status = 'READY' AND ${questaoValida('q')}
-         AND q.gabarito IS NOT NULL AND length(trim(q.gabarito)) > 0
-         AND (($3::text IS NOT NULL AND q.banca = $3) OR p.edital_id = $1 OR p.id = $2)
-         AND (
-           ($4::text IS NOT NULL AND q.materia_id = $4)
-           OR q.materia ILIKE $5
-           OR q.topico ILIKE $5
-         )
-       ORDER BY (q.id = ANY($6::uuid[])) ASC, random()
-       LIMIT 300`,
-      [
-        edital.id,
-        edital.prova_id || null,
-        edital.banca || null,
-        dMatId !== 'outra' ? dMatId : null,
-        `%${escaparLike(d.materia)}%`,
-        jaUsadas,
-      ]
-    );
+    const pool = await provasRepo.questoesReaisDaDisciplina({
+      editalId: edital.id, provaOrigemId: edital.prova_id, banca: edital.banca,
+      materiaId: dMatId !== 'outra' ? dMatId : null, materia: d.materia, jaUsadas,
+    });
 
     const validas = pool
       .map((q) => ({ ...q, formato: formatoDaQuestao(q) }))
@@ -941,37 +884,16 @@ export async function criarSimuladoProvaReal({
     tempoGastoSegundos: 0,
   };
 
-  const setRow = await one(
-    `INSERT INTO question_sets (
-       user_id, caderno_id, edital_id, banca, materia, assunto, nivel, formato,
-       arquivo, questoes, respostas, finalizado, model, origem,
-       modo_prova, tempo_limite_minutos, tempo_gasto_segundos, duvidas, estatisticas
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-     RETURNING *`,
-    [
-      user.id,
-      targetCadernoId,
-      edital.id,
-      edital.banca || null,
-      edital.titulo || 'Simulado Geral',
-      `${edital.orgao || ''} ${edital.cargo || ''} · Simulado Prova Real`.trim(),
-      'Prova real',
-      formato,
-      `Simulado Prova Real · ${edital.titulo || 'Edital'}`,
-      JSON.stringify(formattedQuestoes),
-      JSON.stringify({}),
-      false,
-      'prova_real',
-      'prova_real',
-      true,
-      tempoMinutos > 0 ? Number(tempoMinutos) : null,
-      0,
-      JSON.stringify([]),
-      JSON.stringify(estatisticasIniciais),
-    ]
-  );
+  const setRow = await simuladosRepo.inserir({
+    user_id: user.id, caderno_id: targetCadernoId, edital_id: edital.id, banca: edital.banca || null,
+    materia: edital.titulo || 'Simulado Geral', assunto: `${edital.orgao || ''} ${edital.cargo || ''} · Simulado Prova Real`.trim(),
+    nivel: 'Prova real', formato, arquivo: `Simulado Prova Real · ${edital.titulo || 'Edital'}`,
+    questoes: formattedQuestoes, respostas: {}, finalizado: false, model: 'prova_real', origem: 'prova_real',
+    modo_prova: true, tempo_limite_minutos: tempoMinutos > 0 ? Number(tempoMinutos) : null, tempo_gasto_segundos: 0, duvidas: [],
+    estatisticas: estatisticasIniciais,
+  });
 
-  if (targetCadernoId) await query('UPDATE cadernos SET updated_at=now() WHERE id=$1', [targetCadernoId]);
+  if (targetCadernoId) await cadernosRepo.tocar(targetCadernoId);
 
   return {
     created: true,
@@ -982,4 +904,33 @@ export async function criarSimuladoProvaReal({
     distribuicao: resumoDisciplinas,
     cadernoId: targetCadernoId,
   };
+}
+
+// ---------- Operações da rota de editais (sem SQL na rota) ----------
+
+export async function editalDoAluno(user, id) {
+  const e = await editaisRepo.buscar(id, user.id);
+  if (!e) throw new HttpError(404, 'Edital não encontrado.');
+  return e;
+}
+
+/** Editais do aluno e o painel do ativo (ou do mais recente). */
+export async function listarEditais(user) {
+  const rows = await editaisRepo.listar(user.id);
+  const ativo = rows.find((x) => x.active) || rows[0] || null;
+  return { rows, active: ativo ? await buildEditalDashboard(ativo, user.id) : null };
+}
+
+export async function ativarEdital(user, id) {
+  const e = await editalDoAluno(user, id);
+  await editaisRepo.ativar(e.id, user.id);
+  return buildEditalDashboard({ ...e, active: true }, user.id);
+}
+
+/** Exclui o edital (e o arquivo); se era o ativo, o mais recente passa a ser. */
+export async function excluirEdital(user, id) {
+  const e = await editaisRepo.excluir(id, user.id);
+  if (!e) return;
+  await deleteFile(e.file_key);
+  if (e.active) await editaisRepo.ativarMaisRecente(user.id);
 }

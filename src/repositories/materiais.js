@@ -15,3 +15,7 @@ export const porIds = (userId, ids) => (ids.length ? many(
 
 export const idsDoEdital = async (userId, editalId, limite = 50) =>
   (await many('SELECT id FROM materials WHERE user_id=$1 AND edital_id=$2 ORDER BY created_at DESC LIMIT $3', [userId, editalId, limite])).map((m) => m.id);
+
+/** Materiais do aluno para o painel do edital (cobertura por tópico). */
+export const listarParaPainel = (userId) =>
+  many('SELECT id, file_name, materia, assunto, edital_id, edital_match, created_at FROM materials WHERE user_id=$1 ORDER BY created_at DESC', [userId]);

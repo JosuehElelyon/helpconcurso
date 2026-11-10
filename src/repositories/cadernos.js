@@ -42,3 +42,7 @@ export const removerDoMapa = (id, userId, coluna, chave) =>
 export const tocar = (id) => query('UPDATE cadernos SET updated_at=now() WHERE id=$1', [id]);
 
 export const excluir = (id, userId) => query('DELETE FROM cadernos WHERE id=$1 AND user_id=$2', [id, userId]);
+
+/** Caderno mais recente do aluno ligado a este edital (onde os simulados do edital caem por padrão). */
+export const maisRecenteDoEdital = async (userId, editalId) =>
+  (await one('SELECT id FROM cadernos WHERE user_id=$1 AND edital_id=$2 ORDER BY updated_at DESC LIMIT 1', [userId, editalId]))?.id || null;

@@ -151,3 +151,20 @@ test('LGPD: excluir a conta pede senha e confirmação, apaga os dados e mantém
   const sa = await admin.entrar();
   assert.equal((await sa('/api/v1/me/conta', { method: 'DELETE', body: { senha: SENHA, confirmacao: 'EXCLUIR' } })).status, 403);
 });
+
+test('A4/R10: "Praticar questões reais" de edital sem banca não força cebraspe; nome com % não vira curinga', async () => {
+  const { criarSimuladoQuestoesReais } = await import('../src/services/edital.js');
+  const { escaparLike } = await import('../src/repositories/provas.js');
+  assert.equal(escaparLike('100% a_b'), String.raw`100\% a\_b`);
+
+  const a = await criarAluno('reais-sem-banca');
+  const mat = `Penal ${RUN}`, top = `Crimes contra a pessoa ${RUN}`;
+  const edital = await one(`INSERT INTO editais (user_id, titulo, banca, verticalizado, text, word_count) VALUES ($1,'Edital sem banca',NULL,$2,'t',10) RETURNING *`,
+    [a.u.id, JSON.stringify([{ id: 'd1', materia: mat, peso: 1, topicos: [{ id: 'd1-t1', codigo: '1', nome: top }] }])]);
+  const prova = await one(`INSERT INTO provas (banca, file_name, file_key, status, titulo, edital_id) VALUES ('cebraspe','r.pdf',$1,'READY','Prova vinculada',$2) RETURNING id`, [`reais-${RUN}`, edital.id]);
+  await one(`INSERT INTO prova_questoes (prova_id, banca, materia, topico, numero, enunciado, alternativas, gabarito) VALUES ($1,'cebraspe',$2,$3,1,'Item sobre crimes contra a pessoa','[]','C') RETURNING id`, [prova.id, mat, top]);
+  const out = await criarSimuladoQuestoesReais({ user: a.u, edital, topicoIdOrCode: 'd1-t1', limite: 5 });
+  assert.equal(out.created, true, JSON.stringify(out));
+  assert.equal(out.set.banca, null, 'antes gravava cebraspe');
+  assert.equal(out.set.questoes.length, 1);
+});

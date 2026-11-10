@@ -2,8 +2,9 @@
 import { one, many, query } from '../db.js';
 
 const COLUNAS_INSERIR = ['user_id', 'material_id', 'edital_id', 'caderno_id', 'banca', 'materia', 'assunto', 'nivel', 'formato',
-  'arquivo', 'questoes', 'model', 'review_stats', 'origem', 'estatisticas', 'prompt_versao'];
-const JSONB = new Set(['questoes', 'review_stats', 'estatisticas']);
+  'arquivo', 'questoes', 'model', 'review_stats', 'origem', 'estatisticas', 'prompt_versao',
+  'respostas', 'finalizado', 'topico_id', 'topico_codigo', 'modo_prova', 'tempo_limite_minutos', 'tempo_gasto_segundos', 'duvidas'];
+const JSONB = new Set(['questoes', 'review_stats', 'estatisticas', 'respostas', 'duvidas']);
 
 export const buscar = (id, userId) => one('SELECT * FROM question_sets WHERE id=$1 AND user_id=$2', [id, userId]);
 
@@ -76,3 +77,8 @@ export async function idsDeQuestoesJaUsadas(userId, editalId, cadernoId = null) 
     [userId, editalId, cadernoId]);
   return rows.map((r) => r.qid).filter((id) => /^[0-9a-f-]{36}$/i.test(id || ''));
 }
+
+/** Simulados do aluno para o painel do edital (questões geradas/respondidas por tópico). */
+export const listarParaPainel = (userId) => many(
+  'SELECT id, material_id, edital_id, banca, materia, assunto, questoes, respostas, finalizado, created_at FROM question_sets WHERE user_id=$1 ORDER BY created_at DESC',
+  [userId]);
