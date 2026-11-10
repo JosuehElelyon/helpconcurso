@@ -17,8 +17,12 @@ export const usoDeIA = (dias) => many(
 export const usosPorFuncionalidade = (dias) => one(
   `SELECT
      (SELECT count(*) FROM question_sets WHERE created_at > now() - ($1 || ' days')::interval AND origem IN ('ia','revanche') AND coalesce(model, '') NOT LIKE 'mock:%')::int AS simulados,
+     (SELECT count(*) FROM question_sets WHERE created_at > now() - ($1 || ' days')::interval AND origem = 'ia' AND coalesce(model, '') NOT LIKE 'mock:%')::int AS simulados_ia,
+     (SELECT count(*) FROM question_sets WHERE created_at > now() - ($1 || ' days')::interval AND origem = 'revanche' AND coalesce(model, '') NOT LIKE 'mock:%')::int AS revanches,
+     (SELECT count(*) FROM question_sets WHERE created_at > now() - ($1 || ' days')::interval AND origem = 'prova_real')::int AS prova_real,
      (SELECT count(*) FROM materials WHERE created_at > now() - ($1 || ' days')::interval)::int AS materiais,
      (SELECT count(*) FROM questao_explicacoes WHERE created_at > now() - ($1 || ' days')::interval)::int AS explicacoes,
+     (SELECT count(*) FROM ai_usage WHERE created_at > now() - ($1 || ' days')::interval AND task = 'explain_mistake' AND provider <> 'mock' AND ok)::int AS explicacoes_novas,
      (SELECT count(*) FROM provas WHERE created_at > now() - ($1 || ' days')::interval)::int AS provas,
      (SELECT count(*) FROM editais WHERE created_at > now() - ($1 || ' days')::interval)::int AS editais,
      (SELECT count(*) FROM question_feedback WHERE report_status <> 'none' AND updated_at > now() - ($1 || ' days')::interval)::int AS reportes`,

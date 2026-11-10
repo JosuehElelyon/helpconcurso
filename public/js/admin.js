@@ -52,6 +52,14 @@ function viewProvas() {
         ${m.ia.custoTotal ? `<span class="badge brand" style="font-size:13px">Total estimado: R$ ${Number(m.ia.custoTotal.brl || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (US$ ${Number(m.ia.custoTotal.usd || 0).toFixed(4)})</span>` : ''}
         ${m.ia.limiteDia ? `<span class="${m.ia.limiteDia.atingido ? 'sev high' : 'badge'}" style="font-size:13px" title="AI_LIMITE_USD_DIA no .env (dia de Brasília)">Hoje: US$ ${Number(m.ia.limiteDia.gastoHojeUsd || 0).toFixed(4)}${m.ia.limiteDia.usd ? ` de US$ ${Number(m.ia.limiteDia.usd).toFixed(2)}${m.ia.limiteDia.atingido ? ' — limite atingido, IA pausada até amanhã' : ''}` : ' (sem limite diário)'}</span>` : ''}
       </div>
+      ${m.ia.resumoProduto ? `
+        <div class="row" style="gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <span class="badge" title="Simulados gerados com IA">${ic('spark', 'sm')} <b>${m.ia.resumoProduto.simuladosIA || 0}</b> simulados IA</span>
+          <span class="badge" title="Baterias de revanche geradas">${ic('target', 'sm')} <b>${m.ia.resumoProduto.revanches || 0}</b> revanches</span>
+          <span class="badge ok" title="Simulados no formato prova real">${ic('check', 'sm')} <b>${m.ia.resumoProduto.simuladosProvaReal || 0}</b> prova real (custo R$ 0)</span>
+          <span class="badge" title="Explicações Por que errei">${ic('brain', 'sm')} <b>${m.ia.resumoProduto.explicacoesTotais || 0}</b> "Por que errei?" (${m.ia.resumoProduto.explicacoesCache || 0} do cache)</span>
+        </div>
+      ` : ''}
       ${m.ia.usage.length ? `<table class="tbl"><thead><tr><th>Tarefa</th><th>Modelo</th><th>Chamadas</th><th>Falhas</th><th>Reserva</th><th>Tokens entrada</th><th>Tokens saída</th><th>Cache</th><th>Tempo médio</th><th>Custo est.</th></tr></thead><tbody>${m.ia.usage.map((u) => `<tr><td>${esc(u.task)}</td><td><code>${esc(u.provider)}:${esc(u.model)}</code></td><td>${u.chamadas}</td><td>${u.falhas}</td><td>${u.reservas}</td><td>${Number(u.entrada).toLocaleString('pt-BR')}</td><td>${Number(u.saida).toLocaleString('pt-BR')}</td><td>${Number(u.cache).toLocaleString('pt-BR')}${u.cachePct != null ? ` <span class="hint">(${u.cachePct}%)</span>` : ''}</td><td>${u.ms_medio != null ? (u.ms_medio / 1000).toFixed(1) + ' s' : '—'}</td><td><b>R$ ${Number(u.custoBrl || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b> <span class="hint">(US$ ${Number(u.custoUsd || 0).toFixed(4)})</span></td></tr>`).join('')}</tbody></table>` : '<p class="hint">Sem chamadas ainda.</p>'}
       ${(m.ia.custoPorFuncionalidade || []).length ? `<h3 style="margin:18px 0 8px;font-size:15px">Custo por funcionalidade (${m.ia.periodoDias} dias)</h3>
         <p class="hint" style="margin:0 0 8px">Base para preço e limites dos planos: quanto custa, em média, cada uso.</p>

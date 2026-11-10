@@ -8,6 +8,7 @@ import * as metricas from '../repositories/metricas.js';
 // Tarefa de IA → funcionalidade do produto e qual contagem de usos divide o custo
 const FUNCIONALIDADES = [
   { nome: 'Simulados e revanches (gerar + revisar)', tarefas: ['generate', 'generate_dificil', 'review'], usos: 'simulados', unidade: 'simulado' },
+  { nome: 'Simulados no Formato Prova Real (base de questões)', tarefas: [], usos: 'prova_real', unidade: 'simulado (custo zero)' },
   { nome: 'Envio de material (matéria, OCR, cruzar com edital)', tarefas: ['detect', 'ocr', 'edital_match'], usos: 'materiais', unidade: 'material' },
   { nome: '"Por que errei?"', tarefas: ['explain_mistake'], usos: 'explicacoes', unidade: 'explicação nova' },
   { nome: 'Provas da base (checar, extrair, analisar estilo)', tarefas: ['prova_check', 'prova_extract', 'prova_analysis'], usos: 'provas', unidade: 'prova' },
@@ -53,6 +54,19 @@ export async function painelIA({ dias = 30 } = {}) {
     aprovacaoAlunosPct: pct(q.gostei, q.gostei + q.nao_gostei),
   }));
 
+  const explicacoesTotais = usos?.explicacoes || 0;
+  const explicacoesNovas = usos?.explicacoes_novas || 0;
+  const explicacoesCache = Math.max(0, explicacoesTotais - explicacoesNovas);
+
+  const resumoProduto = {
+    simuladosIA: usos?.simulados_ia || 0,
+    revanches: usos?.revanches || 0,
+    simuladosProvaReal: usos?.prova_real || 0,
+    explicacoesNovas,
+    explicacoesCache,
+    explicacoesTotais,
+  };
+
   return {
     periodoDias: dias,
     routing: describeRouting(),
@@ -61,6 +75,7 @@ export async function painelIA({ dias = 30 } = {}) {
     usage,
     custoTotal: { usd: arred(totalUsd), brl: arred(totalUsd * USD_TO_BRL, 2), cotacao: USD_TO_BRL },
     custoPorFuncionalidade,
+    resumoProduto,
     qualidadePorModelo,
     limiteDia: { usd: config.ai.limiteUsdDia || null, gastoHojeUsd: arred(hojeUsd), atingido: !!config.ai.limiteUsdDia && hojeUsd >= config.ai.limiteUsdDia },
     jobs: Object.fromEntries(fila.map((j) => [j.status, j.n])),
