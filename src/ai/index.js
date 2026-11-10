@@ -115,7 +115,7 @@ async function logUsage(row) {
   }
   try {
     await query(`INSERT INTO ai_usage(task,provider,model,input_tokens,output_tokens,cache_read_tokens,duration_ms,ok,fallback,batch,error,user_id,prompt_versao,cache_write_tokens)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [row.task, row.provider, row.model, row.usage?.input ?? null, row.usage?.output ?? null, row.usage?.cacheRead ?? null, row.ms ?? null, row.ok, !!row.fallback, !!row.batch, row.error ? String(row.error).slice(0, 300) : null, row.userId || null, PROMPT_VERSAO[row.task] || null, row.usage?.cacheWrite ?? null]);
   } catch (e) { console.warn('[ai] falha ao registrar uso:', e.message); }
 }
