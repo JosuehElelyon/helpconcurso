@@ -582,7 +582,7 @@ export async function createEditalForUser({ user, file, text: rawText, banca, or
       fileName: file?.name || null, fileKey, mimeType: file?.mime || null, size: file?.buffer.length || null, pages, text, wordCount: words(text),
       verticalizado: parsed.verticalizado, sha256: sha, security, ocr, canonicoId, officialUrl, oficialConfirmado, officialUrlTipo,
     });
-    if (validProvaId) await provasRepo.vincularEdital(validProvaId, e.id);
+    if (validProvaId) await provasRepo.vincularEdital(validProvaId, e.id, user.id);
     return { editalRow: e, warnings, reaproveitado };
   } catch (err) {
     await deleteFile(fileKey);

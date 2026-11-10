@@ -162,9 +162,41 @@ test('A4/R10: "Praticar questões reais" de edital sem banca não força cebrasp
   const edital = await one(`INSERT INTO editais (user_id, titulo, banca, verticalizado, text, word_count) VALUES ($1,'Edital sem banca',NULL,$2,'t',10) RETURNING *`,
     [a.u.id, JSON.stringify([{ id: 'd1', materia: mat, peso: 1, topicos: [{ id: 'd1-t1', codigo: '1', nome: top }] }])]);
   const prova = await one(`INSERT INTO provas (banca, file_name, file_key, status, titulo, edital_id) VALUES ('cebraspe','r.pdf',$1,'READY','Prova vinculada',$2) RETURNING id`, [`reais-${RUN}`, edital.id]);
+  await one('INSERT INTO provas_editais (prova_id, edital_id, user_id) SELECT $1, id, user_id FROM editais WHERE id=$2 RETURNING prova_id', [prova.id, edital.id]);
   await one(`INSERT INTO prova_questoes (prova_id, banca, materia, topico, numero, enunciado, alternativas, gabarito) VALUES ($1,'cebraspe',$2,$3,1,'Item sobre crimes contra a pessoa','[]','C') RETURNING id`, [prova.id, mat, top]);
   const out = await criarSimuladoQuestoesReais({ user: a.u, edital, topicoIdOrCode: 'd1-t1', limite: 5 });
   assert.equal(out.created, true, JSON.stringify(out));
   assert.equal(out.set.banca, null, 'antes gravava cebraspe');
   assert.equal(out.set.questoes.length, 1);
+});
+
+test('Item 7: a mesma prova fica ligada ao edital de cada aluno, sem um vínculo sobrescrever o outro', async () => {
+  const ana = await criarAluno('vinc-ana'), bia = await criarAluno('vinc-bia');
+  const ca = await ana.entrar(), cb = await bia.entrar();
+  const novoEdital = (u, titulo) => one(`INSERT INTO editais (user_id, titulo, banca, verticalizado, text, word_count) VALUES ($1,$2,'fgv','[]','t',10) RETURNING id`, [u.id, titulo]);
+  const edAna = await novoEdital(ana.u, 'Edital da Ana'), edBia = await novoEdital(bia.u, 'Edital da Bia');
+  // Prova enviada pela Ana e já pronta na base compartilhada
+  const prova = await one(`INSERT INTO provas (banca, file_name, file_key, status, titulo, uploaded_by) VALUES ('fgv','v.pdf',$1,'READY','Prova compartilhada',$2) RETURNING id`, [`vinc-${RUN}`, ana.u.id]);
+
+  assert.equal((await ca(`/api/v1/provas/${prova.id}/edital`, { method: 'POST', body: { editalId: edAna.id } })).status, 200);
+  // A Bia não enviou a prova, mas ela está pronta na base: liga ao edital DELA (antes: 404, e a coluna única seria sobrescrita)
+  assert.equal((await cb(`/api/v1/provas/${prova.id}/edital`, { method: 'POST', body: { editalId: edBia.id } })).status, 200);
+  const links = await pool.query('SELECT edital_id FROM provas_editais WHERE prova_id=$1 ORDER BY created_at', [prova.id]);
+  assert.deepEqual(links.rows.map((r) => r.edital_id).sort(), [edAna.id, edBia.id].sort(), 'os dois vínculos coexistem');
+
+  // Edital alheio continua barrado
+  assert.equal((await cb(`/api/v1/provas/${prova.id}/edital`, { method: 'POST', body: { editalId: edAna.id } })).status, 404);
+
+  // "Minhas provas" da Ana mostra o edital DELA; o painel do edital de cada uma traz a prova
+  const minhas = await ca('/api/v1/provas/minhas');
+  assert.equal(minhas.data.provas.find((p) => p.id === prova.id).editalTitulo, 'Edital da Ana');
+  for (const [c, ed] of [[ca, edAna], [cb, edBia]]) {
+    const painel = await c(`/api/v1/editais/${ed.id}`);
+    assert.ok(JSON.stringify(painel.data).includes(prova.id), 'painel do edital traz a prova ligada');
+  }
+
+  // Ana desvincula: o vínculo da Bia continua
+  await ca(`/api/v1/provas/${prova.id}/edital`, { method: 'POST', body: {} });
+  const resta = await pool.query('SELECT edital_id FROM provas_editais WHERE prova_id=$1', [prova.id]);
+  assert.deepEqual(resta.rows.map((r) => r.edital_id), [edBia.id]);
 });

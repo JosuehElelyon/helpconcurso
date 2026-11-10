@@ -78,6 +78,7 @@ test('R10: Simulado Prova Real não força banca cebraspe em edital sem banca', 
      VALUES ($1, $2, 'Prova Teste', 'prova.pdf', 'k-prova', 'READY', 'FCC') RETURNING *`,
     [u.id, edital.id]
   );
+  await one('INSERT INTO provas_editais (prova_id, edital_id, user_id) SELECT $1, id, user_id FROM editais WHERE id=$2 RETURNING prova_id', [prova.id, edital.id]); // vínculo por aluno (024)
 
   const q1 = await one(
     `INSERT INTO prova_questoes (prova_id, banca, materia, enunciado, gabarito, alternativas)

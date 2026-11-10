@@ -66,8 +66,9 @@ export async function submitProva({ user, banca, orgao, cargo, ano, editalId, fi
       banca, orgao, cargo, ano, titulo: [orgao, cargo, ano].filter(Boolean).join(' · ') || file.name, fileName: file.name, fileKey,
       gabaritoName: gabarito?.name || null, gabaritoKey: gabKey, sha256: sec.sha256, gabaritoSha256: gab?.sha256 || null,
       text: sec.needsOcr ? null : sec.text, gabaritoText: gab?.text || null, needsOcr: sec.needsOcr, pages: sec.pages, security,
-      source: user.role === 'ADMIN' ? 'admin' : 'user', uploadedBy: user.id, editalId: validEditalId, officialUrl, oficialConfirmado, officialUrlTipo,
+      source: user.role === 'ADMIN' ? 'admin' : 'user', uploadedBy: user.id, officialUrl, oficialConfirmado, officialUrlTipo,
     });
+    if (validEditalId) await provasRepo.vincularEdital(p.id, validEditalId, user.id);
   } catch (e) {
     await deleteFile(fileKey); await deleteFile(gabKey);
     if (e.code === '23505') return { duplicate: true, message: 'Essa prova acabou de ser enviada por outra pessoa e já está na nossa base.' };

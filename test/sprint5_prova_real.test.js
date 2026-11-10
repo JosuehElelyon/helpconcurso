@@ -54,6 +54,7 @@ test('F3: criarSimuladoProvaReal distribui questões entre matérias conforme o 
      VALUES ('cebraspe', 'cebraspe', 'cebraspe.pdf', 'c/p', 'READY', 'Prova Cebraspe Teste', 'texto', $1) RETURNING id`,
     [edital.id]
   );
+  await one('INSERT INTO provas_editais (prova_id, edital_id, user_id) SELECT $1, id, user_id FROM editais WHERE id=$2 RETURNING prova_id', [prova.id, edital.id]); // vínculo por aluno (024)
 
   // Insere 6 questões de Português
   for (let i = 1; i <= 6; i++) {

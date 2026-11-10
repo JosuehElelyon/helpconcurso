@@ -728,3 +728,13 @@ aposentado pela Anthropic em 30/11/2026 — trocar o padrão para `claude-sonnet
 `ILIKE` das questões reais com % e _ escapados. 159 testes; e2e 14/14.
 Resta (~85 consultas, módulos menores): estrelas, feedback, cota, revanche, conhecimento, taxonomia, explicação, atividade, revisão,
 e as rotas me, materials, auth — migrar quando forem alterados.
+
+### Item 7 — vínculo prova ↔ edital por aluno — concluído (09/11/2026)
+Migração 024: tabela `provas_editais (prova_id, edital_id, user_id)`, com os vínculos antigos copiados; `provas.edital_id` fica
+obsoleta (não é lida nem gravada). Antes, a coluna única fazia o vínculo de um aluno sobrescrever o de outro na mesma prova
+(e quem não tinha enviado a prova não conseguia ligá-la ao seu edital). Agora:
+- cada aluno liga ao SEU edital provas que enviou ou que já estão prontas na base; desvincular só tira o vínculo dele;
+- envio de prova + edital (inclusive duplicata) liga a prova ao edital de quem enviou;
+- painel do edital, questões reais por tópico, Simulado Prova Real, cadernos e exemplos de estilo (`getKnowledge`) usam o vínculo
+  do aluno; "Minhas provas" e "provas disponíveis" mostram o edital DELE.
+Teste pela rota com duas alunas na mesma prova. 160 testes; e2e 14/14.

@@ -16,13 +16,15 @@ export const resumoPorIds = (ids) => (ids.length ? many(
 
 /** Provas que o aluno pode juntar a um caderno: as prontas e as que ele enviou (primeiro as dele). */
 export const disponiveisPara = (userId, limite = 150) => many(
-  `SELECT id, banca, titulo, file_name, orgao, cargo, ano, edital_id, status, num_questoes, uploaded_by, created_at
-   FROM provas WHERE status = 'READY' OR uploaded_by = $1
-   ORDER BY (uploaded_by = $1) DESC, created_at DESC LIMIT $2`, [userId, limite]);
+  `SELECT p.id, p.banca, p.titulo, p.file_name, p.orgao, p.cargo, p.ano, ed.edital_id, p.status, p.num_questoes, p.uploaded_by, p.created_at
+   FROM provas p
+   LEFT JOIN LATERAL (SELECT pe.edital_id FROM provas_editais pe WHERE pe.prova_id = p.id AND pe.user_id = $1 ORDER BY pe.created_at DESC LIMIT 1) ed ON true
+   WHERE p.status = 'READY' OR p.uploaded_by = $1
+   ORDER BY (p.uploaded_by = $1) DESC, p.created_at DESC LIMIT $2`, [userId, limite]);
 
 /** Provas do edital (ou a prova de origem do edital) que o aluno pode usar. */
 export const idsDoEdital = async (userId, editalId, provaOrigemId, limite = 20) => (await many(
-  `SELECT id FROM provas WHERE (edital_id=$1 OR id=$2) AND (uploaded_by=$3 OR status='READY') ORDER BY created_at DESC LIMIT $4`,
+  `SELECT p.id FROM provas p WHERE (EXISTS (SELECT 1 FROM provas_editais pe WHERE pe.prova_id = p.id AND pe.edital_id = $1) OR p.id=$2) AND (p.uploaded_by=$3 OR p.status='READY') ORDER BY p.created_at DESC LIMIT $4`,
   [editalId, provaOrigemId || null, userId, limite])).map((p) => p.id);
 
 export const idsEnviadasDaBanca = async (userId, banca, limite = 20) =>
@@ -38,11 +40,19 @@ export const questoesValidas = (provaId, limite = 80) => many(
 export const idEnviadaPor = async (id, userId, isAdmin) =>
   (await one('SELECT id FROM provas WHERE id=$1 AND (uploaded_by=$2 OR $3)', [id, userId, !!isAdmin]))?.id || null;
 
-export const vincularEdital = (provaId, editalId) => query('UPDATE provas SET edital_id=$2 WHERE id=$1', [provaId, editalId]);
+/**
+ * Liga a prova a UM edital do aluno (o dono do edital): troca o vínculo anterior dele com esta prova.
+ * Vínculos de outros alunos com a mesma prova não são tocados (antes, a coluna única provas.edital_id sobrescrevia).
+ */
+export async function vincularEdital(provaId, editalId, userId) {
+  await query('DELETE FROM provas_editais WHERE prova_id=$1 AND user_id=$2 AND edital_id<>$3', [provaId, userId, editalId]);
+  await query('INSERT INTO provas_editais (prova_id, edital_id, user_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [provaId, editalId, userId]);
+}
 
 /** Provas ligadas ao edital (ou a prova de origem dele). */
 export const doEdital = (editalId, provaOrigemId) => many(
-  'SELECT id, banca, titulo, file_name, status, num_questoes, created_at FROM provas WHERE edital_id=$1 OR id=$2 ORDER BY created_at DESC',
+  `SELECT p.id, p.banca, p.titulo, p.file_name, p.status, p.num_questoes, p.created_at FROM provas p
+   WHERE EXISTS (SELECT 1 FROM provas_editais pe WHERE pe.prova_id = p.id AND pe.edital_id = $1) OR p.id=$2 ORDER BY p.created_at DESC`,
   [editalId, provaOrigemId || null]);
 
 /** Questões reais (matéria e enunciado) das provas ligadas ou da banca — base da incidência por tópico. */
@@ -57,10 +67,10 @@ export const escaparLike = (t) => String(t || '').replace(/[\\%_]/g, (c) => `\\$
 const COLUNAS_REAIS = `q.id, q.numero, q.materia, q.materia_id, q.topico, q.topico_id, q.comando, q.pegadinha_tipo,
        q.dispositivos, q.habilidade, q.enunciado, q.alternativas, q.gabarito,
        p.id AS prova_id, p.titulo AS prova_titulo, p.file_name, p.ano AS prova_ano, p.banca,
-       (p.edital_id = $1 OR p.id = $2) AS vinculada`;
+       (p.id = $2 OR EXISTS (SELECT 1 FROM provas_editais pe WHERE pe.prova_id = p.id AND pe.edital_id = $1)) AS vinculada`;
 const REAIS_VALIDAS = `p.status = 'READY' AND ${questaoValida('q')}
    AND q.gabarito IS NOT NULL AND length(trim(q.gabarito)) > 0
-   AND (($3::text IS NOT NULL AND q.banca = $3) OR p.edital_id = $1 OR p.id = $2)`;
+   AND (($3::text IS NOT NULL AND q.banca = $3) OR p.id = $2 OR EXISTS (SELECT 1 FROM provas_editais pe WHERE pe.prova_id = p.id AND pe.edital_id = $1))`;
 
 /** Questões reais candidatas a um tópico do edital (da banca ou das provas ligadas). Ordem estável. */
 export const questoesReaisDoTopico = ({ editalId, provaOrigemId, banca, topicoId, topicoNome, materia }) => many(
@@ -107,7 +117,7 @@ export const inserir = (c) => one(
      text, gabarito_text, needs_ocr, page_count, security, source, uploaded_by, edital_id, status, official_url, oficial_confirmado, official_url_tipo)
    VALUES ($1,$1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'CHECKING',$20,$21,$22) RETURNING *`,
   [c.banca, c.orgao, c.cargo, c.ano, c.titulo, c.fileName, c.fileKey, c.gabaritoName, c.gabaritoKey, c.sha256, c.gabaritoSha256,
-    c.text, c.gabaritoText, c.needsOcr, c.pages, JSON.stringify(c.security), c.source, c.uploadedBy, c.editalId,
+    c.text, c.gabaritoText, c.needsOcr, c.pages, JSON.stringify(c.security), c.source, c.uploadedBy, null, // edital_id obsoleta (024): vínculo em provas_editais
     c.officialUrl, c.oficialConfirmado, c.officialUrlTipo]);
 
 /** Outras provas da banca com impressão digital (para achar duplicata por conteúdo). */
@@ -203,12 +213,12 @@ export const gabaritoEmUso = async (key) => !!(await one('SELECT 1 FROM provas W
 
 export const doAutorOuAdmin = (id, userId, isAdmin) => one('SELECT * FROM provas WHERE id=$1 AND (uploaded_by=$2 OR $3)', [id, userId, !!isAdmin]);
 
+/** Provas que o aluno enviou, com o edital DELE ligado a cada uma (edital_id/edital_titulo). */
 export const minhasComEdital = (userId) => many(
-  'SELECT p.*, e.titulo AS edital_titulo FROM provas p LEFT JOIN editais e ON e.id = p.edital_id WHERE p.uploaded_by=$1 ORDER BY p.created_at DESC LIMIT 200',
-  [userId]);
+  `SELECT p.*, ed.edital_id, ed.titulo AS edital_titulo FROM provas p
+   LEFT JOIN LATERAL (SELECT pe.edital_id, e.titulo FROM provas_editais pe JOIN editais e ON e.id = pe.edital_id
+                      WHERE pe.prova_id = p.id AND pe.user_id = $1 ORDER BY pe.created_at DESC LIMIT 1) ed ON true
+   WHERE p.uploaded_by=$1 ORDER BY p.created_at DESC LIMIT 200`, [userId]);
 
-export const desvincularEdital = (id) => query('UPDATE provas SET edital_id=NULL WHERE id=$1', [id]);
-
-/** Duplicata: a prova só ganha o edital se for de quem enviou e ainda não tiver edital. */
-export const vincularEditalSeDoAutorESemEdital = (provaId, editalId, userId) =>
-  query('UPDATE provas SET edital_id=$2 WHERE id=$1 AND uploaded_by=$3 AND edital_id IS NULL', [provaId, editalId, userId]);
+/** Tira os vínculos DESTE aluno com a prova (os de outros alunos ficam). */
+export const desvincularEdital = (provaId, userId) => query('DELETE FROM provas_editais WHERE prova_id=$1 AND user_id=$2', [provaId, userId]);

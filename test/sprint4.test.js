@@ -170,6 +170,7 @@ test('F7: questões anuladas são excluídas de questões reais para alunos', as
 
   const p = await one(`INSERT INTO provas(banca, banca_informada, file_name, file_key, status, titulo, edital_id, text)
                        VALUES ('fgv','fgv','ed_prova.pdf','ed/p','READY','Prova TRF Edital', $1, 'texto') RETURNING id`, [ed.id]);
+  await one('INSERT INTO provas_editais (prova_id, edital_id, user_id) SELECT $1, id, user_id FROM editais WHERE id=$2 RETURNING prova_id', [p.id, ed.id]); // vínculo por aluno (024)
 
   // Inserir questão válida e questão anulada sobre Licitações públicas
   await query(`INSERT INTO prova_questoes(prova_id, banca, materia, topico, enunciado, alternativas, gabarito, anulada)
