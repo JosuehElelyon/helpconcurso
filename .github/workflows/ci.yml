@@ -38,7 +38,7 @@ jobs:
         run: touch .env && docker compose config -q
       - name: Nginx do front (template + nginx -t)
         run: >
-          docker run --rm -e API_UPSTREAM=http://127.0.0.1:3000 -e API_URL=/api/v1 -e CSP_EXTRA_ORIGENS=
+          docker run --rm -e API_UPSTREAM=http://127.0.0.1:3000 -e NGINX_RESOLVER=127.0.0.11 -e API_URL=/api/v1 -e CSP_EXTRA_ORIGENS=
           -v "$PWD/deploy/nginx:/etc/nginx/templates:ro" nginx:1.27-alpine
           sh -c "/docker-entrypoint.d/20-envsubst-on-templates.sh >/dev/null && nginx -t"
       - name: Imagem da API/worker

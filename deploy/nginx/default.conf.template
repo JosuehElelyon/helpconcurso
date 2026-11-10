@@ -1,6 +1,7 @@
 # Nginx do front (A5): entrega public/ e repassa /api para a API.
 # Template processado pela imagem oficial do Nginx (envsubst) na subida. Variáveis:
 #   API_UPSTREAM        endereço interno da API (ex.: http://app:3000)
+#   NGINX_RESOLVER      DNS usado para reconsultar o endereço da API (no Docker: 127.0.0.11)
 #   API_URL             o que o front usa para chamar a API (padrão /api/v1, mesmo domínio via este proxy)
 #   CSP_EXTRA_ORIGENS   origens extras para connect-src/img-src (ex.: https://api.helpconcurso.com.br) — vazio no mesmo domínio
 server {
@@ -18,9 +19,13 @@ server {
         return 200 "window.HC_CONFIG = { apiUrl: '${API_URL}' };\n";
     }
 
-    # API: mesmo domínio para o navegador (cookie SameSite=Lax, sem CORS)
+    # API: mesmo domínio para o navegador (cookie SameSite=Lax, sem CORS).
+    # O endereço vai numa variável para o Nginx reconsultar o DNS (NGINX_RESOLVER; no Docker, 127.0.0.11) a cada 10 s:
+    # com proxy_pass fixo ele resolve só ao subir e, se a API reiniciar com outro IP, passa a mandar para o container errado.
     location /api/ {
-        proxy_pass ${API_UPSTREAM};
+        resolver ${NGINX_RESOLVER} valid=10s ipv6=off;
+        set $api_upstream ${API_UPSTREAM};
+        proxy_pass $api_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
