@@ -675,3 +675,47 @@ código (desde a v1.1) — bastava saber o e-mail. Agora 409. Teste de regressã
 **Pendente de decisão do Josueh (não dá para resolver no código):** nome do encarregado (DPO) e e-mail de privacidade
 (`LGPD_ENCARREGADO`, `LGPD_CONTATO` — hoje cai no e-mail do `SMTP_FROM`), hospedagem de produção (`LGPD_HOSPEDAGEM`) e
 **revisão do texto por advogado** antes de abrir para o público.
+
+---
+
+# Revisão do plano — 09/11/2026
+
+## Estado verificado hoje
+- Ambiente local completo no Docker (web/Nginx, app/API, worker, db, minio, mailpit) saudável; migrações até a 023.
+- 158 testes; CI do GitHub verde nos últimos commits (incluindo o job de infra).
+- **Teste de navegador** (novo, `npm run e2e`): 14/14 — login com aceite dos termos, simulado sem banca, exportar e excluir conta,
+  cadastro com termos/aceite, sem erros de JavaScript. Primeira vez que as telas novas foram exercitadas num navegador.
+
+## Achados e correções de hoje
+| # | Gravidade | Achado | Situação |
+|---|---|---|---|
+| H1 | **Alta (disponibilidade)** | Nginx resolvia o IP da API só ao subir: com a API reiniciando com outro IP, as requisições iam para o container errado (no teste, o worker) → app em 502 até reiniciar o Nginx | ✅ `resolver` + variável no `proxy_pass` (`NGINX_RESOLVER`); testado forçando a troca de IP |
+| H2 | **Alta (custo)** | `costUsd` descontava a leitura de cache da entrada (a API já desconta) e **não registrava a escrita no cache**: o prompt de sistema marcado para cache ficava fora do custo e do teto diário | ✅ migração 023 (`cache_write_tokens`), custo = entrada + leitura 0,1× + escrita 1,25× + saída |
+| H3 | Média (privacidade) | Termos usavam o e-mail do admin como contato de privacidade quando faltava `LGPD_CONTATO` | ✅ só `LGPD_CONTATO` ou o remetente do `SMTP_FROM` (hoje é o Gmail do Josueh — **definir `LGPD_CONTATO`**) |
+| H4 | Informativo | `generate`/`review` no Gemini/Groq em 02/11 | Sem violação: todas sem aluno (scripts de benchmark); a regra "material só no Claude" tem teste (`test/ai.test.js:52`) |
+| H5 | Informativo | Cache de prompt em 0% em todas as tarefas | Esperado com o volume atual (poucas gerações/dia, cache de 5 min); agora a escrita aparece no custo — reavaliar com uso real |
+| H6 | Baixa | Teste A2 (limite entre duas APIs) falhou 1 vez em 3 rodadas da suíte completa | Instável sob carga; não reproduzido isolado — observar |
+
+## Sprint 6 (parte 1) — concluída hoje
+Cada simulado guarda versão do prompt (migração 022) e modelo do revisor; painel admin `/admin/ia?dias=` com **custo por
+funcionalidade e custo médio por uso** e **qualidade por gerador × prompt × revisor** (descarte do revisor, 👍/👎, erros
+confirmados), % de cache. Primeiros números reais (30 dias, R$ 2,99 no total): prova ≈ R$ 0,066 · edital ≈ R$ 0,012 ·
+reporte ≈ R$ 0,004. Simulado ainda **sem amostra** (só 2 gerações reais; os demais foram com IA simulada).
+
+## Prioridades daqui em diante
+| Ordem | Item | Quem | Por quê |
+|---|---|---|---|
+| 1 | Push dos commits locais | Josueh | GitHub está atrás; CI valida |
+| 2 | **Uso real por 1–2 semanas** (Amanda + Josueh, com IA real) | Josueh/Amanda | Sem volume, o painel da Sprint 6 não decide preço nem modelo |
+| 3 | Definir `LGPD_CONTATO`, `LGPD_ENCARREGADO`, hospedagem; revisão jurídica dos termos | Josueh | Antes de abrir para o público |
+| 4 | Trocar a chave do OpenRouter colada no chat (O3); `TRUST_PROXY=2` e destino `http://web:80` se usar o túnel nomeado | Josueh | Segurança / IP real |
+| 5 | Sprint 6 parte 2: com os dados, decidir preços/limites dos planos e se o cache de prompt compensa (desligar no volume baixo?) | Josueh + Claude | Custo |
+| 6 | Resto do A4 quando mexer: SQL de `services/edital.js` (959 linhas), `provas.js`, `desempenho.js` → repositórios | Claude | Padrão de camadas |
+| 7 | Tabela de ligação prova ↔ edital (`provas.edital_id` é coluna única numa base compartilhada) | Claude | Dívida de modelo de dados |
+| 8 | Contrato OpenAPI com esquemas de resposta das rotas principais | Claude | Clientes futuros (app móvel) |
+| 9 | Fase 2 do conhecimento: `perfil_banca` consolidado | Claude | Qualidade das questões com menos tokens |
+| 10 | Front: dividir `public/app.js` (~4 mil linhas) em módulos ES | Claude | Manutenção |
+| 11 | Gateway de pagamento (Mercado Pago, Asaas ou Stripe) | Decisão do Josueh | Monetização |
+
+Observação: `claude-sonnet-4-5` aparece só como padrão do proxy de desenvolvimento FCC (`FCC_STRONG_MODEL`); esse modelo é
+aposentado pela Anthropic em 30/11/2026 — trocar o padrão para `claude-sonnet-5-5` se o FCC voltar a ser usado.

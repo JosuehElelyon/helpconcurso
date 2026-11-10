@@ -74,7 +74,8 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
 - **Modo lote** ligado (`AI_TRAINING_MODE=batch`): análise/extração de provas pela Batch API (50% mais barato; a prova leva
   de minutos a horas para ficar pronta).
 - Custo médio observado: prova ≈ US$ 0,02 (direto) · caderno ≈ US$ 0,07 · edital ≈ US$ 0,003. Maior gasto: `prova_analysis` (Sonnet).
-- O cache de prompt (`cacheSystem` na geração) quase não é reaproveitado com pouco tráfego; a escrita de cache não é registrada.
+- Cache de prompt (`cacheSystem` na geração): com pouco tráfego quase não é reaproveitado (cache de 5 min). Escrita no cache
+  (1,25×) é registrada em `ai_usage.cache_write_tokens` (migração 023) e entra no custo; `input_tokens` já vem sem leitura/escrita.
 - **Cascata grátis** (`AI_FREE_CASCADE`, desligada por padrão; ligada no .env do Josueh): Groq na triagem/revisão,
   Gemini na geração/análise, Claude de reserva (`routeFor()` em `src/ai/index.js`, catálogo `FREE_AGENT_CATALOG` em `src/config.js`).
   Custo 0 só para o que está em `AI_PROVEDORES_GRATIS`. **Material do aluno só no Claude** (`AI_TASKS[*].dados` +
@@ -84,6 +85,8 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
 - **Raciocínio do Claude 5.5** é cobrado como saída e conta no `max_tokens`: ligado (esforço `medium` + reserva) só em geração,
   revisão, análise de estilo e erro reportado; desligado no resto (`paramsClaude` em `src/ai/providers/anthropic.js`, `AI_ESFORCO_<TAREFA>`).
 - Uso real: tabela `ai_usage` (ou painel admin → IA; o provedor `mock` fica de fora). Para testar sem gastar: `AI_MOCK=true`.
+- **Painel de qualidade e custo (Sprint 6):** `/admin/ia?dias=` — custo por funcionalidade e custo médio por uso, qualidade por
+  gerador × versão de prompt × revisor (`question_sets.prompt_versao`, `review_stats.revisorModelo`). SQL em `repositories/metricas.js`.
 
 ## Como roda na máquina (Windows + Docker Desktop)
 - Pasta: `C:\helpconcursos\helpconcurso` (fora do OneDrive). Repositório git local já criado (branch `main`).
@@ -110,6 +113,8 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
   e-mail ou armazenamento → confira o texto gerado** (a versão muda sozinha e pede novo aceite). Texto ainda sem revisão jurídica.
 - **Sprint 5.1 e reestruturação:** ver o fim de `docs/PLANO-ACAO.md` (A1–A6 feitos; A4 parcial). Desenho e regras: `docs/ARQUITETURA.md`. Teste de funcionalidade
   chama a rota HTTP, nunca uma cópia da lógica.
+- **Teste de navegador:** `npm run e2e` (Edge/Chrome instalado, ambiente local rodando; fora do CI). Rode antes de entregar mudança de tela.
+- Nginx reconsulta o IP da API (`NGINX_RESOLVER`): reiniciar só a API não derruba mais o app.
 - App: http://localhost:3000 · Mailpit: http://localhost:8025 · S3 local (SeaweedFS no serviço `minio`): http://localhost:9000
 - A imagem `minio/minio` saiu do Docker Hub; o compose usa `chrislusf/seaweedfs`. Arquivos antigos do MinIO ficaram em `data/minio`.
 - Se o Docker Desktop fechar com "com.docker.build: exit status 1": encerre o processo órfão `com.docker.build`
@@ -119,7 +124,7 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
   e colocar a URL em `APP_URL` no `.env`.
 
 ## Pendências
-1. Resto do A4 e pendentes da revisão (R10, R12–R14) — ver "Próximos passos após a reestruturação" em `docs/PLANO-ACAO.md`.
+1. Prioridades em "Revisão do plano — 09/11/2026" no fim de `docs/PLANO-ACAO.md` (uso real para a Sprint 6, LGPD_*, resto do A4).
 2. Arquitetura de conhecimento (`docs/ARQUITETURA-CONHECIMENTO.md`). **Fase 1 pronta** (migração 007): taxonomia própria
    (`src/services/taxonomia.js`, semente na subida), vocabulário fechado de cobrança (`src/lib/cobranca.js`), `prova_extract` v2
    rotula cada questão real (tópico, comando, pegadinha, habilidade, leis), `editais_canonicos` (edital lido uma vez; chave =
