@@ -1,6 +1,6 @@
 // Questões reais ficam copiadas em simulados e cadernos. Quando a banca anula ou o gabarito definitivo muda depois,
 // a cópia precisa refletir isso ao ser exibida (G6): anulada não conta acerto/erro nem entra na revisão espaçada.
-import { many } from '../db.js';
+import * as provasRepo from '../repositories/provas.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -11,7 +11,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function carregarSituacaoOficial(listas) {
   const ids = new Set();
   for (const lista of listas) for (const q of Array.isArray(lista) ? lista : []) { const id = String(q?.id || ''); if (UUID.test(id)) ids.add(id); }
-  const rows = ids.size ? await many('SELECT id, anulada, gabarito, gabarito_definitivo FROM prova_questoes WHERE id = ANY($1::uuid[])', [[...ids]]) : [];
+  const rows = await provasRepo.situacaoOficial([...ids]);
   const porId = new Map(rows.map((r) => [String(r.id), r]));
   return (questoes) => {
     const lista = Array.isArray(questoes) ? questoes : [];

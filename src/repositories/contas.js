@@ -40,3 +40,6 @@ export async function dadosDoAluno(userId) {
   ]);
   return { perfil, materiais, editais, simulados, cadernos, atividade, avaliacoesEReportes, estrelas, pedidos, provasEnviadas };
 }
+
+export const contagemEditaisECadernos = (userId) =>
+  one('SELECT (SELECT count(*) FROM editais WHERE user_id=$1)::int AS editais, (SELECT count(*) FROM cadernos WHERE user_id=$1)::int AS cadernos', [userId]);

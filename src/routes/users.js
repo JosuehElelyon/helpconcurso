@@ -1,6 +1,6 @@
 // Rotas públicas de usuários (sem login): foto de perfil, usada em <img>.
 import { Router } from 'express';
-import { one } from '../db.js';
+import { avatarPublico } from '../services/contas.js';
 import { ah, checkId } from '../lib/http.js';
 import { getFile } from '../lib/storage.js';
 
@@ -8,7 +8,7 @@ const r = Router();
 r.param('id', checkId);
 
 r.get('/:id/avatar', ah(async (req, res) => {
-  const u = await one('SELECT avatar_url, avatar_key FROM users WHERE id=$1', [req.params.id]);
+  const u = await avatarPublico(req.params.id);
   if (!u || (!u.avatar_url && !u.avatar_key)) return res.status(404).json({ error: 'Avatar não encontrado.' });
   if (u.avatar_key) {
     try {

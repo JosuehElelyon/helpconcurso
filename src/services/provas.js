@@ -675,3 +675,6 @@ async function importarItemDoLote({ userId, banca, provaUrl, gabaritoUrl, orgao,
   console.log(`[lote] ${provaUrl} → ${res.duplicate ? 'duplicata' : 'importada ' + (res.prova?.id || '')}`);
 }
 registerJob('prova.importar', { run: importarItemDoLote, maxAttempts: 3, prioridade: -10 }); // fundo: não atrasa o aluno
+
+/** Provas prontas e questões reais por banca (vitrine de bancas). */
+export const contagemPorBanca = () => provasRepo.contagemProntasPorBanca();

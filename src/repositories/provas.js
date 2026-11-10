@@ -222,3 +222,11 @@ export const minhasComEdital = (userId) => many(
 
 /** Tira os vínculos DESTE aluno com a prova (os de outros alunos ficam). */
 export const desvincularEdital = (provaId, userId) => query('DELETE FROM provas_editais WHERE prova_id=$1 AND user_id=$2', [provaId, userId]);
+
+/** Situação oficial (anulada, gabarito definitivo) das questões reais pelos ids. */
+export const situacaoOficial = (ids) => (ids.length
+  ? many('SELECT id, anulada, gabarito, gabarito_definitivo FROM prova_questoes WHERE id = ANY($1::uuid[])', [ids]) : Promise.resolve([]));
+
+/** Provas prontas e questões reais por banca (vitrine de bancas). */
+export const contagemProntasPorBanca = () =>
+  many("SELECT banca, count(*)::int AS n, sum(num_questoes)::int AS q FROM provas WHERE status='READY' GROUP BY banca");

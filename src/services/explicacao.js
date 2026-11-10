@@ -4,7 +4,7 @@
 // com cache global em banco de dados para custo zero em acessos futuros
 // =====================================================================
 import crypto from 'node:crypto';
-import { one, query } from '../db.js';
+import * as explicacoesRepo from '../repositories/explicacoes.js';
 import { runJSON } from '../ai/index.js';
 import { explainMistakeSchema } from '../ai/schemas.js';
 import { promptExplainMistake } from '../lib/prompts.js';
@@ -21,12 +21,7 @@ export function respostasValidas(questao, formato) {
 
 /** Explicações NOVAS (geradas pela IA) pedidas pelo aluno hoje, no dia de Brasília. Cache não conta. */
 export async function explicacoesNovasHoje(userId) {
-  const r = await one(
-    `SELECT count(*)::int AS n FROM questao_explicacoes
-      WHERE criado_por=$1 AND (created_at AT TIME ZONE 'America/Sao_Paulo')::date = (now() AT TIME ZONE 'America/Sao_Paulo')::date`,
-    [userId]
-  );
-  return r?.n || 0;
+  return explicacoesRepo.novasHoje(userId);
 }
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -89,15 +84,7 @@ export async function obterOuGerarExplicacao({
   const questaoHash = calcularQuestaoHash(questao.enunciado, questao.alternativas);
 
   // 1. Consulta o cache global no banco de dados
-  const cachedRow = await one(
-    `SELECT id, questao_id, questao_hash, resposta_aluno, gabarito_oficial, formato,
-            diagnostico, pegadinha, exemplo_cotidiano, fundamentacao, dica_ouro, visual_svg,
-            model, created_at
-     FROM questao_explicacoes
-     WHERE (questao_id = $1 OR questao_hash = $2) AND resposta_aluno = $3 AND gabarito_oficial = $4
-     ORDER BY created_at DESC LIMIT 1`,
-    [questaoId, questaoHash, resp, gab]
-  );
+  const cachedRow = await explicacoesRepo.emCache({ questaoId, questaoHash, resposta: resp, gabarito: gab });
 
   if (cachedRow) {
     return {
@@ -145,31 +132,12 @@ export async function obterOuGerarExplicacao({
   const cleanSvg = sanitizeSvg(data.visual_svg);
 
   // 3. Grava no cache global
-  const newRow = await one(
-    `INSERT INTO questao_explicacoes (
-       questao_id, questao_hash, resposta_aluno, gabarito_oficial, formato,
-       diagnostico, pegadinha, exemplo_cotidiano, fundamentacao, dica_ouro, visual_svg,
-       model, tokens_in, tokens_out, criado_por
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-     RETURNING id, diagnostico, pegadinha, exemplo_cotidiano, fundamentacao, dica_ouro, visual_svg, model, created_at`,
-    [
-      questaoId,
-      questaoHash,
-      resp,
-      gab,
-      formato,
-      data.diagnostico,
-      data.pegadinha,
-      data.exemplo_cotidiano,
-      data.fundamentacao,
-      data.dica_ouro,
-      cleanSvg,
-      meta ? `${meta.provider}:${meta.model}` : 'ia',
-      meta?.tokensIn || 0,
-      meta?.tokensOut || 0,
-      user.id,
-    ]
-  );
+  const newRow = await explicacoesRepo.gravar({
+    questaoId, questaoHash, resposta: resp, gabarito: gab, formato,
+    diagnostico: data.diagnostico, pegadinha: data.pegadinha, exemploCotidiano: data.exemplo_cotidiano,
+    fundamentacao: data.fundamentacao, dicaOuro: data.dica_ouro, visualSvg: cleanSvg,
+    modelo: meta ? `${meta.provider}:${meta.model}` : 'ia', tokensIn: meta?.tokensIn || 0, tokensOut: meta?.tokensOut || 0, criadoPor: user.id,
+  });
 
   return {
     cached: false,

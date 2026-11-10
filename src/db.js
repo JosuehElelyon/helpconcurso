@@ -58,3 +58,6 @@ export async function transacao(fn) {
     c.release();
   }
 }
+
+/** Confere se o banco responde (saúde do serviço). */
+export const ping = () => pool.query('SELECT 1');

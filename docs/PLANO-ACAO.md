@@ -546,7 +546,7 @@ Escopo escolhido: **API + worker + camadas** (o front atual continua, servido à
 | A1 ✅ | `src/worker.js` separado: a fila de IA sai do processo da API (`ROLE=api|worker|all`; `all` mantém o modo atual no dev) | Escalar API e processamento de IA independentemente |
 | A2 ✅ | Limites de requisição num armazenamento compartilhado (Postgres) em vez da memória | Com 2+ instâncias da API, os limites continuam valendo |
 | A3 ✅ | `/api/v1` com contrato OpenAPI (`docs/openapi.yaml`) e `/api/*` como apelido durante a transição | Front e futuros clientes (app móvel) consomem um contrato estável |
-| A4 ◐ | Camadas: `routes` (HTTP) → `controllers` → `services` (regra) → `repositories` (SQL). Começando por sets, cadernos e editais | Rotas finas e regra de negócio testável sem HTTP |
+| A4 ✅ | Camadas: `routes` (HTTP) → `services` (regra) → `repositories` (SQL). Concluído em todo o back em 09/11/2026 | Rotas finas e regra de negócio testável sem HTTP |
 | A5 ✅ | Front servido à parte (Nginx no compose; CORS/cookies por `APP_URL`/`API_URL`) | Publicar o front num CDN e a API em outro lugar |
 | A6 ✅ | Docs (CLAUDE.md, DEPLOY.md, ARQUITETURA) e CI com os dois processos | A próxima sessão entende o desenho |
 
@@ -765,3 +765,13 @@ aluno e admin, abas do admin, edital com tópicos, filtros e Simulado Prova Real
 **Item 10, fase B (09/11/2026):** `bindApp` (1.134 linhas em `eventos.js`) dividida — cada bloco "if (S.view === ...)" virou `ligar<Tela>()`
 no módulo da tela (12 funções); `eventos.js` ficou com 196 linhas (eventos comuns). Gerado por parser, com checagem de que nenhum bloco
 usava variável local da bindApp. Lint limpo; e2e 21/21 (inclui responder questão e salvar). 163 testes.
+
+### A4 — concluído em todo o back (09/11/2026)
+As ~85 consultas que restavam saíram de serviços e rotas. Repositórios novos: `estrelas`, `feedback`, `cotas`, `atividade`,
+`conhecimento`, `taxonomia`, `explicacoes`; ampliados: `usuarios`, `planos`, `contas`, `materiais`, `simulados`, `provas`.
+Serviços novos: `autenticacao.js` (cadastro, código do e-mail, entrada, recuperação de senha) e `materiais.js` (envio com varredura,
+matéria, cruzamento com edital); `contas.js` ganhou Minha conta, senha, avatar e pedido de upgrade. Rotas `auth`, `me` e
+`materials` ficaram só com validação e resposta. `db.transacao(fn)` substitui os BEGIN/COMMIT feitos à mão (estrelas).
+Mudanças de comportamento mínimas: gravar a revisão espaçada a partir do simulado agora também atualiza `cadernos.updated_at`;
+ligar/desligar material ↔ edital filtra o dono também no UPDATE. `test/camadas.test.js` impede SQL fora de `repositories/`.
+165 testes; e2e 21/21.

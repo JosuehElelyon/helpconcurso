@@ -105,16 +105,15 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
   Respostas das rotas principais têm esquema (`RESPOSTAS`/`ESQUEMAS_RESPOSTA`) validado contra o servidor real em
   `test/contrato-respostas.test.js`: mudou o formato de uma resposta → atualize o esquema.
 - **Camadas (A4):** `routes/` só HTTP (zod + chamar serviço) → `services/` regra (sem req/res) → `repositories/` só SQL filtrando
-  pelo dono. Simulados, cadernos, editais, provas, admin e desempenho já seguem; estrelas/feedback/cota/conta/materiais/auth ainda têm SQL
-  fora de repositories/ (lista em docs/ARQUITETURA.md; migrar quando mexer). SQL novo só em
-  `repositories/`.
+  pelo dono. **Concluído em todo o back (09/11/2026)**: nenhuma rota ou serviço importa `db.js` (exceto `/health`, que usa `db.ping()`)
+  e nenhuma rota importa `repositories/` — `test/camadas.test.js` falha se voltar. Transação: `transacao(fn)` em `src/db.js`.
 - **Front separado (A5):** no compose, `web` (Nginx) é a entrada em http://localhost:3000 e repassa `/api` para `app`
   (`SERVIR_FRONT=false`, API direta em 127.0.0.1:3100). Front lê a API de `public/config.js` (`window.HC_CONFIG.apiUrl`).
   `CORS_ORIGINS` para front em outro domínio; `TRUST_PROXY` = nº de proxies na frente (túnel + Nginx = 2).
 - **LGPD:** termos em `GET /api/v1/termos`, gerados de `src/lib/termos.js` a partir da config (operadores reais); `LGPD_*` no .env.
   Aceite gravado (`users.termos_versao`); exportar (`GET /me/exportar`) e excluir conta (`DELETE /me/conta`). **Novo provedor de IA,
   e-mail ou armazenamento → confira o texto gerado** (a versão muda sozinha e pede novo aceite). Texto ainda sem revisão jurídica.
-- **Sprint 5.1 e reestruturação:** ver o fim de `docs/PLANO-ACAO.md` (A1–A6 feitos; A4 parcial). Desenho e regras: `docs/ARQUITETURA.md`. Teste de funcionalidade
+- **Sprint 5.1 e reestruturação:** ver o fim de `docs/PLANO-ACAO.md` (A1–A6 feitos). Desenho e regras: `docs/ARQUITETURA.md`. Teste de funcionalidade
   chama a rota HTTP, nunca uma cópia da lógica.
 - **Front em módulos (item 10):** `public/app.js` só carrega `public/js/*.js` (um módulo por área) e roda o boot. Tela nova → módulo
   novo importado na entrada, com `view<Tela>()` e `ligar<Tela>()` (eventos), chamada pela `bindApp` em `eventos.js`. `npm run lint` (ESLint `no-undef`, no CI) — foi ele que achou as telas quebradas.
@@ -129,7 +128,7 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
   e colocar a URL em `APP_URL` no `.env`.
 
 ## Pendências
-1. Prioridades em "Revisão do plano — 09/11/2026" no fim de `docs/PLANO-ACAO.md` (uso real para a Sprint 6, LGPD_*, resto do A4).
+1. Prioridades em "Revisão do plano — 09/11/2026" no fim de `docs/PLANO-ACAO.md` (uso real para a Sprint 6, LGPD_*).
 2. Arquitetura de conhecimento (`docs/ARQUITETURA-CONHECIMENTO.md`). **Fase 1 pronta** (migração 007): taxonomia própria
    (`src/services/taxonomia.js`, semente na subida), vocabulário fechado de cobrança (`src/lib/cobranca.js`), `prova_extract` v2
    rotula cada questão real (tópico, comando, pegadinha, habilidade, leis), `editais_canonicos` (edital lido uma vez; chave =

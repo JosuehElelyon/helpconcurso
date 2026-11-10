@@ -88,3 +88,10 @@ export const buscarParaTarefa = (id) => one('SELECT * FROM question_sets WHERE i
 
 export const definirQuestoes = (id, questoes) =>
   query('UPDATE question_sets SET questoes=$2, updated_at=now() WHERE id=$1', [id, JSON.stringify(questoes)]);
+
+/** Simulado do aluno que está dentro do caderno informado. */
+export const buscarDoCaderno = (id, userId, cadernoId) =>
+  one('SELECT * FROM question_sets WHERE id=$1 AND user_id=$2 AND caderno_id=$3', [id, userId, cadernoId]);
+
+export const recentesDoCaderno = (cadernoId, userId, limite = 5) =>
+  many('SELECT * FROM question_sets WHERE caderno_id=$1 AND user_id=$2 ORDER BY created_at DESC LIMIT $3', [cadernoId, userId, limite]);

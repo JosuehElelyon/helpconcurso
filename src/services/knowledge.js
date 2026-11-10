@@ -1,8 +1,7 @@
 // "Conhecimento" de uma banca = perfil base + estilo agregado das provas + questões reais de exemplo.
 // Só entram provas READY e questões que passaram na varredura de segurança (flagged = false).
 import crypto from 'node:crypto';
-import { many } from '../db.js';
-import { questaoValida } from '../lib/questoes-validas.js';
+import * as conhecimentoRepo from '../repositories/conhecimento.js';
 import { COMANDOS, PEGADINHAS } from '../lib/cobranca.js';
 
 // Ordem dos exemplos: varia por dia, mas é a mesma para todos os alunos no dia (system estável → cache do provedor)
@@ -20,27 +19,18 @@ const tokenize = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/
 
 export async function getKnowledge(banca, materia, nExemplos = 6, editalId = null, assunto = '', provaIds = []) {
   const pIds = Array.isArray(provaIds) ? provaIds.filter((id) => /^[0-9a-f-]{36}$/i.test(id)) : [];
-  const provas = await many(
-    `SELECT p.id, p.analysis FROM provas p
-     WHERE p.banca=$1 AND p.status='READY'
-     ORDER BY (p.id = ANY($3::uuid[])) DESC, (EXISTS (SELECT 1 FROM provas_editais pe WHERE pe.prova_id = p.id AND pe.edital_id = $2)) DESC, p.created_at DESC LIMIT 40`,
-    [banca, editalId || null, pIds]
-  );
+  const provas = await conhecimentoRepo.analisesDaBanca(banca, editalId, pIds);
   const an = provas.map((p) => p.analysis || {});
   let exemplos = [];
   const dia = diaBR();
   if (nExemplos > 0) {
-    const base = `SELECT q.id, q.materia, q.enunciado, q.alternativas, q.gabarito,
-                         (EXISTS (SELECT 1 FROM provas_editais pe WHERE pe.prova_id = p.id AND pe.edital_id = $3)) AS from_edital, (p.id = ANY($4::uuid[])) AS from_caderno
-                  FROM prova_questoes q JOIN provas p ON p.id=q.prova_id
-                  WHERE q.banca=$1 AND p.status='READY' AND ${questaoValida('q')}`;
     let pool = [];
     if (materia) {
-      pool = await many(`${base} AND q.materia ILIKE $2 ORDER BY (p.id = ANY($4::uuid[])) DESC, (EXISTS (SELECT 1 FROM provas_editais pe WHERE pe.prova_id = p.id AND pe.edital_id = $3)) DESC, md5(q.id::text || $5) LIMIT 40`, [banca, `%${materia}%`, editalId || null, pIds, dia]);
+      pool = await conhecimentoRepo.exemplosDaMateria({ banca, materia, editalId, provaIds: pIds, dia });
     }
     if (pool.length < nExemplos) {
       const ids = pool.map((e) => e.id);
-      const extra = await many(`${base} AND NOT (q.id = ANY($2::uuid[])) ORDER BY (p.id = ANY($4::uuid[])) DESC, (EXISTS (SELECT 1 FROM provas_editais pe WHERE pe.prova_id = p.id AND pe.edital_id = $3)) DESC, md5(q.id::text || $6) LIMIT $5`, [banca, ids, editalId || null, pIds, 30, dia]);
+      const extra = await conhecimentoRepo.exemplosDaBanca({ banca, excluirIds: ids, editalId, provaIds: pIds, dia, limite: 30 });
       pool = pool.concat(extra);
     }
     const kw = tokenize(`${materia || ''} ${assunto || ''}`);
@@ -66,17 +56,9 @@ export async function getKnowledge(banca, materia, nExemplos = 6, editalId = nul
     const filtroMateria = materia ? `%${materia}%` : null;
     const fmt = (rows, vocab) => rows.map((r) => `${vocab ? vocab[r.k] || r.k : r.k} (${r.n} questões)`);
     const [pegs, cmds, disps] = await Promise.all([
-      many(`SELECT q.pegadinha_tipo AS k, count(*)::int AS n FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
-            WHERE q.banca=$1 AND p.status='READY' AND ${questaoValida('q')} AND q.pegadinha_tipo IS NOT NULL AND q.pegadinha_tipo <> 'nenhuma'
-              AND ($2::text IS NULL OR q.materia ILIKE $2)
-            GROUP BY 1 ORDER BY n DESC, k LIMIT 6`, [banca, filtroMateria]),
-      many(`SELECT q.comando AS k, count(*)::int AS n FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
-            WHERE q.banca=$1 AND p.status='READY' AND ${questaoValida('q')} AND q.comando IS NOT NULL AND q.comando <> 'outro'
-            GROUP BY 1 ORDER BY n DESC, k LIMIT 5`, [banca]),
-      many(`SELECT d AS k, count(*)::int AS n FROM prova_questoes q JOIN provas p ON p.id = q.prova_id,
-                   jsonb_array_elements_text(coalesce(q.dispositivos, '[]'::jsonb)) AS d
-            WHERE q.banca=$1 AND p.status='READY' AND ${questaoValida('q')} AND ($2::text IS NULL OR q.materia ILIKE $2)
-            GROUP BY 1 HAVING count(*) >= 2 ORDER BY n DESC, k LIMIT 6`, [banca, filtroMateria]),
+      conhecimentoRepo.pegadinhasDaBanca(banca, filtroMateria),
+      conhecimentoRepo.comandosDaBanca(banca),
+      conhecimentoRepo.dispositivosDaBanca(banca, filtroMateria),
     ]);
     pegadinhasRotuladas = fmt(pegs, PEGADINHAS);
     comandosRotulados = fmt(cmds, COMANDOS);

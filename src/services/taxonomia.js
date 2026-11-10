@@ -1,7 +1,7 @@
 // Taxonomia própria do HelpConcurso (matéria → tópico). Ver docs/ARQUITETURA-CONHECIMENTO.md.
 // IDs são slugs determinísticos: o mesmo nome (sem acento/maiúsculas/pontuação) sempre cai no mesmo ID,
 // então edital, prova real e questão gerada se encontram sem precisar de IA.
-import { query, many } from '../db.js';
+import * as taxonomiaRepo from '../repositories/taxonomia.js';
 import { MATERIAS } from '../lib/bancas.js';
 
 export const normNome = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -24,16 +24,14 @@ let materiaIndex = null; // nome_norm/sinônimo → id
 /** Cria (se faltar) as matérias-semente. Idempotente; chamado na subida do servidor. */
 export async function ensureTaxonomiaSeed() {
   for (const nome of MATERIAS) {
-    await query(`INSERT INTO taxonomia(id, tipo, nome, nome_norm, sinonimos, origem) VALUES ($1,'materia',$2,$3,$4,'semente')
-                 ON CONFLICT (id) DO UPDATE SET sinonimos = EXCLUDED.sinonimos`,
-      [slug(nome), nome, normNome(nome), JSON.stringify(SINONIMOS[nome] || [])]);
+    await taxonomiaRepo.semearMateria(slug(nome), nome, normNome(nome), SINONIMOS[nome]);
   }
   materiaIndex = null;
 }
 
 async function loadMateriaIndex() {
   if (materiaIndex) return materiaIndex;
-  const rows = await many("SELECT id, nome_norm, sinonimos FROM taxonomia WHERE tipo='materia'");
+  const rows = await taxonomiaRepo.materias();
   const idx = new Map();
   for (const r of rows) {
     idx.set(r.nome_norm, r.id);
@@ -61,6 +59,6 @@ export async function topicoId(matId, nome) {
   if (!matId || n.length < 3) return null;
   const id = `${matId}/${slug(nome)}`;
   const limpo = String(nome).trim().replace(/\s+/g, ' ').slice(0, 160);
-  await query(`INSERT INTO taxonomia(id, tipo, pai_id, nome, nome_norm) VALUES ($1,'topico',$2,$3,$4) ON CONFLICT DO NOTHING`, [id, matId, limpo, n]);
+  await taxonomiaRepo.garantirTopico(id, matId, limpo, n);
   return id;
 }

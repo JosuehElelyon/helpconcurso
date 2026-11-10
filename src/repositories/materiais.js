@@ -22,3 +22,20 @@ export const listarParaPainel = (userId) =>
 
 /** Texto do material pelo id, sem filtrar dono — só para tarefas de fundo (verificação de erro reportado). */
 export const textoParaTarefa = async (id) => (await one('SELECT text FROM materials WHERE id=$1', [id]))?.text ?? null;
+
+/** Materiais do aluno com o texto (lista da tela de materiais). */
+export const listarCompletos = (userId, limite = 100) =>
+  many('SELECT * FROM materials WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2', [userId, limite]);
+
+export const inserir = (c) => one(
+  `INSERT INTO materials(user_id,file_name,file_key,mime_type,size,pages,text,word_count,materia,detect,edital_id,edital_match,sha256,security,ocr)
+   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+  [c.userId, c.fileName, c.fileKey, c.mime, c.size, c.pages, c.text, c.wordCount, c.materia, c.detect ? JSON.stringify(c.detect) : null,
+    c.editalId, c.editalMatch ? JSON.stringify(c.editalMatch) : null, c.sha256, JSON.stringify(c.security), c.ocr]);
+
+/** Liga (ou desliga, com editalId null) o material a um edital do aluno. */
+export const definirEdital = (id, userId, editalId, cruzamento) =>
+  one('UPDATE materials SET edital_id=$3, edital_match=$4 WHERE id=$1 AND user_id=$2 RETURNING *',
+    [id, userId, editalId, cruzamento ? JSON.stringify(cruzamento) : null]);
+
+export const excluir = (id, userId) => one('DELETE FROM materials WHERE id=$1 AND user_id=$2 RETURNING file_key', [id, userId]);

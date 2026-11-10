@@ -1,12 +1,9 @@
 import { Router } from 'express';
 import { authLimit, emailLimit } from '../middleware/limites.js';
 import { z } from 'zod';
-import { one, query } from '../db.js';
-import { ah, HttpError, parseBody } from '../lib/http.js';
-import { hashPassword, checkPassword, setSession, clearSession, publicUser, issueCode, consumeCode } from '../lib/auth.js';
-import { sendVerificationEmail, sendResetEmail } from '../lib/mailer.js';
-import { config } from '../config.js';
-import { versaoDosTermos } from '../lib/termos.js';
+import { ah, parseBody } from '../lib/http.js';
+import { setSession, clearSession, publicUser } from '../lib/auth.js';
+import * as Auth from '../services/autenticacao.js';
 
 const r = Router();
 r.use(authLimit);
@@ -14,9 +11,6 @@ r.use(authLimit);
 const email = z.string().trim().toLowerCase().email('Informe um e-mail válido.');
 const password = z.string().min(8, 'A senha precisa ter ao menos 8 caracteres.').max(200);
 const code = z.string().trim().regex(/^\d{6}$/, 'O código tem 6 dígitos.');
-const CODE_MSG = { expired: 'Código expirado. Peça um novo.', attempts: 'Muitas tentativas erradas. Peça um novo código.', invalid: 'Código incorreto.' };
-
-const byEmail = (e) => one('SELECT * FROM users WHERE email=$1', [e]);
 
 r.get('/me', (req, res) => res.json({ user: publicUser(req.user) || null }));
 
@@ -25,75 +19,38 @@ r.post('/register', emailLimit, ah(async (req, res) => {
     name: z.string().trim().min(2, 'Informe seu nome.').max(80), email, password,
     aceitouTermos: z.literal(true, { errorMap: () => ({ message: 'Para criar a conta, aceite os Termos de Uso e a Política de Privacidade.' }) }),
   }), req.body);
-  const isAdminEmail = config.adminEmails.includes(b.email);
-  const isInvited = isAdminEmail || config.allowedEmails.includes(b.email);
-  if (config.registrationMode === 'allowlist' && !isInvited) {
-    throw new HttpError(403, 'O cadastro está aberto apenas para convidados nesta fase de testes.');
-  }
-  let user = await byEmail(b.email);
-  // Conta confirmada nunca é sobrescrita pelo cadastro (nem de convidado/admin): quem esqueceu a senha usa "Esqueci a senha".
-  // Toda conta só é ativada pelo código enviado ao e-mail — é isso que prova que a pessoa é dona do endereço.
-  if (user?.email_verified_at) throw new HttpError(409, 'Já existe uma conta com este e-mail. Entre ou recupere a senha.');
-  const hash = await hashPassword(b.password);
-  const role = isAdminEmail ? 'ADMIN' : 'USER';
-  // Aceite dos termos registrado com a versão vigente (LGPD: prova de que o aluno foi informado)
-  if (user) user = await one('UPDATE users SET name=$2, password_hash=$3, role=$4, termos_versao=$5, termos_aceitos_em=now(), updated_at=now() WHERE id=$1 RETURNING *', [user.id, b.name, hash, role, versaoDosTermos()]);
-  else user = await one('INSERT INTO users(name,email,password_hash,role,termos_versao,termos_aceitos_em) VALUES ($1,$2,$3,$4,$5,now()) RETURNING *', [b.name, b.email, hash, role, versaoDosTermos()]);
-  const { code: c, ttlMin } = await issueCode(user.id, 'VERIFY_EMAIL');
-  const mailRes = await sendVerificationEmail(user, c, ttlMin);
-  const aviso = mailRes?.sent === false ? 'Conta criada, mas o e-mail com o código falhou agora. Toque em "Reenviar código" em instantes.' : null;
-  res.status(201).json({ ok: true, email: user.email, aviso });
+  res.status(201).json({ ok: true, ...(await Auth.cadastrar(b)) });
 }));
 
 r.post('/verify', ah(async (req, res) => {
   const b = parseBody(z.object({ email, code }), req.body);
-  const user = await byEmail(b.email);
-  if (!user) throw new HttpError(400, CODE_MSG.invalid);
-  // Conta já confirmada: nunca abre sessão por aqui (antes abria sem conferir o código — quem soubesse o e-mail entrava)
-  if (user.email_verified_at) throw new HttpError(409, 'Este e-mail já está confirmado. Entre com sua senha.', { jaConfirmado: true });
-  const v = await consumeCode(user.id, 'VERIFY_EMAIL', b.code);
-  if (!v.ok) throw new HttpError(400, CODE_MSG[v.reason]);
-  const u = await one('UPDATE users SET email_verified_at=now(), updated_at=now() WHERE id=$1 RETURNING *', [user.id]);
+  const u = await Auth.confirmarEmail(b.email, b.code);
   setSession(res, u);
   res.json({ user: publicUser(u) });
 }));
 
 r.post('/resend', emailLimit, ah(async (req, res) => {
   const b = parseBody(z.object({ email }), req.body);
-  const user = await byEmail(b.email);
-  if (user && !user.email_verified_at) { const { code: c, ttlMin } = await issueCode(user.id, 'VERIFY_EMAIL'); await sendVerificationEmail(user, c, ttlMin); }
+  await Auth.reenviarCodigo(b.email);
   res.json({ ok: true });
 }));
 
 r.post('/login', ah(async (req, res) => {
   const b = parseBody(z.object({ email, password: z.string().min(1, 'Informe a senha.') }), req.body);
-  const user = await byEmail(b.email);
-  if (!user || !(await checkPassword(b.password, user.password_hash))) throw new HttpError(401, 'E-mail ou senha incorretos.');
-  if (!user.email_verified_at) {
-    const { code: c, ttlMin } = await issueCode(user.id, 'VERIFY_EMAIL');
-    await sendVerificationEmail(user, c, ttlMin);
-    throw new HttpError(403, 'Confirme seu e-mail. Enviamos um novo código.', { needsVerification: true, email: user.email });
-  }
-  if (config.adminEmails.includes(user.email) && user.role !== 'ADMIN') await query("UPDATE users SET role='ADMIN' WHERE id=$1", [user.id]), (user.role = 'ADMIN');
+  const user = await Auth.entrar(b.email, b.password);
   setSession(res, user);
   res.json({ user: publicUser(user) });
 }));
 
 r.post('/forgot', emailLimit, ah(async (req, res) => {
   const b = parseBody(z.object({ email }), req.body);
-  const user = await byEmail(b.email);
-  if (user) { const { code: c, ttlMin } = await issueCode(user.id, 'RESET_PASSWORD'); await sendResetEmail(user, c, ttlMin); }
-  // Mesma resposta exista ou não a conta (evita descobrir e-mails cadastrados)
+  await Auth.esqueciSenha(b.email);
   res.json({ ok: true });
 }));
 
 r.post('/reset', ah(async (req, res) => {
   const b = parseBody(z.object({ email, code, password }), req.body);
-  const user = await byEmail(b.email);
-  if (!user) throw new HttpError(400, CODE_MSG.invalid);
-  const v = await consumeCode(user.id, 'RESET_PASSWORD', b.code);
-  if (!v.ok) throw new HttpError(400, CODE_MSG[v.reason]);
-  const u = await one('UPDATE users SET password_hash=$2, sessao_versao=COALESCE(sessao_versao, 1) + 1, email_verified_at=COALESCE(email_verified_at, now()), updated_at=now() WHERE id=$1 RETURNING *', [user.id, await hashPassword(b.password)]);
+  const u = await Auth.redefinirSenha(b.email, b.code, b.password);
   setSession(res, u);
   res.json({ user: publicUser(u) });
 }));

@@ -1,6 +1,7 @@
 // Bateria de Revanche: as questões erradas que servem de base vêm SEMPRE do servidor (simulado ou caderno do próprio
 // aluno) — nunca do corpo da requisição. Assim o texto que entra no prompt é limitado e já passou pelas barreiras.
-import { one, many, query } from '../db.js';
+import * as cadernosRepo from '../repositories/cadernos.js';
+import * as simuladosRepo from '../repositories/simulados.js';
 import { HttpError } from '../lib/http.js';
 import { calcularRevisao, estadoEfetivo } from '../lib/revisao-espacada.js';
 import { carregarSituacaoOficial } from './situacao-oficial.js';
@@ -25,7 +26,7 @@ const errou = (q, r) => q && !q.anulada && r != null && r !== '' && q.gabarito &
 /** Caderno do aluno (ou 404). */
 export async function cadernoDoAluno(cadernoId, userId) {
   if (!cadernoId) return null;
-  const c = UUID.test(String(cadernoId)) ? await one('SELECT * FROM cadernos WHERE id=$1 AND user_id=$2', [cadernoId, userId]) : null;
+  const c = UUID.test(String(cadernoId)) ? await cadernosRepo.buscar(cadernoId, userId) : null;
   if (!c) throw new HttpError(404, 'Caderno não encontrado.');
   return c;
 }
@@ -37,7 +38,7 @@ export async function questaoDoCaderno(caderno, key, userId) {
     const [, setId, idxStr] = k.split(':');
     const idx = Number(idxStr);
     if (!UUID.test(setId) || !Number.isInteger(idx) || idx < 0) return null;
-    const s = await one('SELECT * FROM question_sets WHERE id=$1 AND user_id=$2 AND caderno_id=$3', [setId, userId, caderno.id]);
+    const s = await simuladosRepo.buscarDoCaderno(setId, userId, caderno.id);
     if (!s) return null;
     const qs = (await carregarSituacaoOficial([s.questoes]))(s.questoes);
     const q = qs[idx];
@@ -66,7 +67,7 @@ export async function coletarQuestoesErradas({ userId, setId = null, indices = [
   let originalSet = null;
 
   if (setId) {
-    originalSet = UUID.test(String(setId)) ? await one('SELECT * FROM question_sets WHERE id=$1 AND user_id=$2', [setId, userId]) : null;
+    originalSet = UUID.test(String(setId)) ? await simuladosRepo.buscar(setId, userId) : null;
     if (!originalSet) throw new HttpError(404, 'Simulado não encontrado.');
     const qs = (await carregarSituacaoOficial([originalSet.questoes]))(originalSet.questoes);
     const resp = originalSet.respostas || {};
@@ -81,7 +82,7 @@ export async function coletarQuestoesErradas({ userId, setId = null, indices = [
       if (found && errou(found.q, found.resposta)) base.push(paraBase(found.q, found.resposta, key, found.set || caderno));
     }
   } else if (caderno) {
-    const sets = await many('SELECT * FROM question_sets WHERE caderno_id=$1 AND user_id=$2 ORDER BY created_at DESC LIMIT 5', [caderno.id, userId]);
+    const sets = await simuladosRepo.recentesDoCaderno(caderno.id, userId, 5);
     const situacao = await carregarSituacaoOficial(sets.map((s) => s.questoes));
     for (const s of sets) {
       const qs = situacao(s.questoes);
@@ -102,7 +103,7 @@ export async function coletarQuestoesErradas({ userId, setId = null, indices = [
  */
 export async function aplicarVitoriaRevanche({ userId, cadernoId, keys = [], setIdLegado = null }) {
   if (!cadernoId) return 0;
-  const c = await one('SELECT revisao_espacada FROM cadernos WHERE id=$1 AND user_id=$2', [cadernoId, userId]);
+  const c = await cadernosRepo.buscar(cadernoId, userId);
   if (!c) return 0;
   const mapa = c.revisao_espacada || {};
   const alvo = keys.length ? keys : setIdLegado ? Object.keys(mapa).filter((k) => k.startsWith(`set:${setIdLegado}:`)) : [];
@@ -114,7 +115,6 @@ export async function aplicarVitoriaRevanche({ userId, cadernoId, keys = [], set
     if (novo) novos[key] = { ...novo, revancheVencida: true };
   }
   if (!Object.keys(novos).length) return 0;
-  await query("UPDATE cadernos SET revisao_espacada = coalesce(revisao_espacada, '{}'::jsonb) || $3::jsonb, updated_at=now() WHERE id=$1 AND user_id=$2",
-    [cadernoId, userId, JSON.stringify(novos)]);
+  await cadernosRepo.mesclarMapa(cadernoId, userId, 'revisao_espacada', novos);
   return Object.keys(novos).length;
 }
