@@ -1,7 +1,7 @@
 // Painel de IA do admin (Sprint 6 — medir): custo por tarefa e por funcionalidade, custo médio por uso, aproveitamento do
 // cache de prompt e qualidade por modelo/versão de prompt. É a base para decidir modelos, preços e limites dos planos.
 import { config } from '../config.js';
-import { costUsd, spentTodayUsd, USD_TO_BRL } from '../ai/pricing.js';
+import { costUsd, spentTodayUsd, spentTotalUsd, USD_TO_BRL } from '../ai/pricing.js';
 import { describeRouting } from '../ai/index.js';
 import * as metricas from '../repositories/metricas.js';
 
@@ -20,9 +20,9 @@ const arred = (n, casas = 4) => Number(Number(n || 0).toFixed(casas));
 const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : null);
 
 export async function painelIA({ dias = 30 } = {}) {
-  const [bruto, usos, qualidadeModelo, qualidade, revisor, fila, hojeUsd] = await Promise.all([
+  const [bruto, usos, qualidadeModelo, qualidade, revisor, fila, hojeUsd, acumuladoUsd] = await Promise.all([
     metricas.usoDeIA(dias), metricas.usosPorFuncionalidade(dias), metricas.qualidadePorModelo(dias),
-    metricas.qualidadePorBanca(), metricas.totaisDoRevisor(dias), metricas.filaPorSituacao(), spentTodayUsd(),
+    metricas.qualidadePorBanca(), metricas.totaisDoRevisor(dias), metricas.filaPorSituacao(), spentTodayUsd(), spentTotalUsd(),
   ]);
 
   let totalUsd = 0;
@@ -78,6 +78,7 @@ export async function painelIA({ dias = 30 } = {}) {
     resumoProduto,
     qualidadePorModelo,
     limiteDia: { usd: config.ai.limiteUsdDia || null, gastoHojeUsd: arred(hojeUsd), atingido: !!config.ai.limiteUsdDia && hojeUsd >= config.ai.limiteUsdDia },
+    limiteTotal: { usd: config.ai.limiteUsdTotal || null, gastoTotalUsd: arred(acumuladoUsd), atingido: !!config.ai.limiteUsdTotal && acumuladoUsd >= config.ai.limiteUsdTotal },
     jobs: Object.fromEntries(fila.map((j) => [j.status, j.n])),
     qualidade,
     revisor,

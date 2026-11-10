@@ -1,9 +1,10 @@
 // Front do HelpConcurso — Minha conta.
 // Módulo gerado a partir do antigo public/app.js (item 10); entrada: public/app.js.
+import { ContaPainel, modalCartaoRecorrenteHtml, modalRedefinirSenhaHtml } from './components/ContaPainel.js';
 import { S } from './estado.js';
 import { ic } from './icones.js';
 import { render } from './render.js';
-import { $, API, API_ORIGEM, api, esc, on, renderAvatar, toast } from './util.js';
+import { $, API, API_ORIGEM, api, esc, on, toast } from './util.js';
 
 // ---------- Minha conta ----------
 async function loadConta() {
@@ -63,86 +64,114 @@ async function showAvatarModal() {
   render();
 }
 
+function detectarBandeira(num) {
+  const d = String(num || '').replace(/\D/g, '');
+  if (!d) return 'outro';
+  if (/^4/.test(d)) return 'visa';
+  if (/^(5[1-5]|2(22[1-9]|2[3-9]\d|[3-6]\d\d|7[01]\d|720))/.test(d)) return 'mastercard';
+  if (/^(34|37)/.test(d)) return 'amex';
+  if (/^(606282|3841)/.test(d)) return 'hipercard';
+  if (/^(4011|4312|4389|4514|4573|5041|5066|5067|509|6277|6362|6363|650|651|655)/.test(d)) return 'elo';
+  return 'outro';
+}
+
+function validarLuhn(num) {
+  const d = String(num || '').replace(/\D/g, '');
+  if (d.length < 13 || d.length > 19) return false;
+  let soma = 0;
+  let alt = false;
+  for (let i = d.length - 1; i >= 0; i--) {
+    let n = Number(d[i]);
+    if (alt) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    soma += n;
+    alt = !alt;
+  }
+  return soma % 10 === 0;
+}
+
+const BRAND_LABEL = { visa: 'VISA', mastercard: 'MASTERCARD', elo: 'ELO', amex: 'AMEX', hipercard: 'HIPERCARD', outro: 'CARTÃO' };
+
+let mpSdkPromise = null;
+function carregarSdkMercadoPago() {
+  if (window.MercadoPago) return Promise.resolve(window.MercadoPago);
+  if (mpSdkPromise) return mpSdkPromise;
+  mpSdkPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://sdk.mercadopago.com/js/v2';
+    s.async = true;
+    s.onload = () => (window.MercadoPago ? resolve(window.MercadoPago) : reject(new Error('SDK não carregado')));
+    s.onerror = () => reject(new Error('Falha ao carregar MercadoPago.js'));
+    document.head.appendChild(s);
+  });
+  return mpSdkPromise;
+}
+
 function viewConta() {
   const c = S.conta;
   if (!c) return '<div class="progress-box"><div class="spinner"></div><div class="hint">Carregando sua conta…</div></div>';
-  const p = c.perfil, pl = c.plano, uso = c.uso;
-  const faltam = diasAte(p.dataProva);
-  const uso1 = (rotulo, usado, limite) => limite === null || limite === undefined
-    ? `<div class="use-row"><div class="use-head"><span>${rotulo}</span><b>${usado} · sem limite</b></div></div>`
-    : `<div class="use-row"><div class="use-head"><span>${rotulo}</span><b>${usado} de ${limite}</b></div><div class="use-track ${usado >= limite ? 'full' : ''}"><i style="width:${Math.min(100, Math.round((usado / Math.max(1, limite)) * 100))}%"></i></div></div>`;
-  const bancas = S.bancas || [];
-  return `<div class="profile-hero card">
-      <div class="avatar-wrap">
-        ${renderAvatar(p, 'xl')}
-        <button type="button" class="avatar-edit-btn" id="openAvatarModal" title="Alterar foto de perfil" aria-label="Alterar foto de perfil">${ic('camera', 'sm')}</button>
-      </div>
-      <div class="ph-main">
-        <div class="eyebrow">Minha conta</div>
-        <h1 class="page-title" style="margin:2px 0">${esc(p.name)}</h1>
-        <div class="hint">${esc(p.email)} · membro desde ${p.membroDesde ? new Date(p.membroDesde).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) : '—'}</div>
-        <div class="row" style="margin-top:8px;gap:8px">
-          <button type="button" class="btn btn-ghost btn-xs" id="openAvatarModal2">${ic('camera', 'sm')} Alterar foto de perfil</button>
-          ${p.avatarUrl ? `<button type="button" class="link-btn danger-soft" id="btnRemoverAvatar" style="font-size:12px">Remover foto</button>` : ''}
-        </div>
-      </div>
-      <div class="ph-side">
-        <span class="plan-pill p-${esc(pl.id)}">${ic('crown', 'sm')} Plano ${esc(pl.nome)}</span>
-        ${faltam !== null ? `<div class="countdown ${faltam < 0 ? 'past' : ''}">${ic('calendar', 'sm')} ${faltam > 1 ? `Faltam <b>${faltam}</b> dias para a prova` : faltam === 1 ? 'A prova é <b>amanhã</b>' : faltam === 0 ? 'A prova é <b>hoje</b>. Boa prova!' : 'Data da prova já passou'}</div>` : ''}
-      </div>
-    </div>
-    <div class="account-grid">
-      <div class="stack">
-        <form class="card card-pad" id="contaForm" novalidate>
-          <h3 class="card-title">${ic('user', 'sm')} Dados pessoais</h3>
-          <div class="field"><label for="cNome">Nome</label><input class="input" id="cNome" maxlength="80" autocomplete="name" value="${esc(p.name)}" required></div>
-          <div class="field"><label for="cEmail">E-mail</label><input class="input" id="cEmail" value="${esc(p.email)}" disabled><span class="hint">Para trocar o e-mail, fale com o suporte.</span></div>
-          <div class="form-2">
-            <div class="field"><label for="cTel">Telefone <span class="hint">(opcional)</span></label><input class="input" id="cTel" inputmode="tel" maxlength="20" autocomplete="tel" placeholder="(61) 99999-0000" value="${esc(p.telefone)}"></div>
-            <div class="field"><label for="cMeta">Meta diária de questões</label><input class="input" id="cMeta" type="number" min="0" max="500" inputmode="numeric" placeholder="Ex.: 30" value="${p.metaDiaria ?? ''}"></div>
-          </div>
-          <div class="field"><label for="cAlvo">Concurso que você está mirando</label><input class="input" id="cAlvo" maxlength="120" placeholder="Ex.: TRF-1 · Técnico Judiciário" value="${esc(p.concursoAlvo)}"></div>
-          <div class="form-2">
-            <div class="field"><label for="cBanca">Banca preferida</label><select class="select" id="cBanca"><option value="">Nenhuma</option>${bancas.map((b) => `<option value="${b.id}" ${p.bancaPreferida === b.id ? 'selected' : ''}>${esc(b.nome)}</option>`).join('')}</select></div>
-            <div class="field"><label for="cData">Data da prova</label><input class="input" id="cData" type="date" value="${esc(p.dataProva)}"></div>
-          </div>
-          <button class="btn btn-primary" type="submit" ${S.contaBusy ? 'disabled' : ''}>${S.contaBusy ? '<span class="spinner sm"></span>' : ic('check', 'sm')} Salvar alterações</button>
-        </form>
-        <div class="card card-pad account-card-grow">
-          <div>
-            <h3 class="card-title">${ic('shield', 'sm')} Seus dados (LGPD)</h3>
-            <p class="hint" style="margin-top:0">Baixe uma cópia de tudo o que guardamos sobre você ou exclua sua conta de vez.</p>
-          </div>
-          <div class="row" style="gap:8px;flex-wrap:wrap">
-            <button type="button" class="btn btn-ghost" id="btnExportarDados">${ic('download', 'sm')} Baixar meus dados</button>
-            <button type="button" class="btn btn-ghost" data-open-termos>${ic('shield', 'sm')} Termos e privacidade</button>
-            ${S.user?.role === 'ADMIN' ? '' : `<button type="button" class="btn btn-ghost danger-soft" id="btnExcluirConta">Excluir minha conta</button>`}
-          </div>
-        </div>
-      </div>
-      <div class="stack">
-        <div class="card card-pad plan-card-mini p-${esc(pl.id)}">
-          <h3 class="card-title">${ic('crown', 'sm')} Seu plano: ${esc(pl.nome)}</h3>
-          ${pl.ate ? `<div class="hint" style="margin:-6px 0 12px">Válido até ${new Date(pl.ate).toLocaleDateString('pt-BR')}</div>` : ''}
-          ${uso1('Simulados hoje', uso.simuladosHoje, pl.limites.simuladosDia)}
-          ${uso1('Difícil/Misto hoje', uso.dificeisHoje, pl.limites.dificeisDia)}
-          ${uso1('Editais', uso.editais, pl.limites.editais)}
-          ${uso1('Cadernos', uso.cadernos, pl.limites.cadernos)}
-          ${uso.creditosExtras ? `<div class="hint" style="margin-top:8px">+ ${uso.creditosExtras} geração(ões) extra(s) por estrelas e provas aprovadas</div>` : ''}
-          ${c.pedidoPendente ? `<div class="banner warn" style="margin:14px 0 0">${ic('info', 'sm')}<div>Pedido do plano <b>${esc(c.pedidoPendente.planoNome)}</b> (${esc(c.pedidoPendente.periodicidade)}, ${brl(c.pedidoPendente.valor)}) aguardando confirmação. ${c.pedidoPendente.pixCopiaCola ? `<button type="button" class="btn btn-sm btn-primary" id="btnVerPixPendente" style="margin-left:8px">Pagar com Pix</button>` : ''} <button type="button" class="link-btn" id="cancelPedido">Cancelar pedido</button></div></div>`
-            : pl.id !== 'aprovacao' && pl.id !== 'admin' ? `<button class="btn btn-accent btn-block" data-go="planos" style="margin-top:14px">${ic('crown', 'sm')} Ver planos e ampliar</button>` : ''}
-        </div>
-        <form class="card card-pad account-card-grow" id="senhaForm" novalidate>
-          <div>
-            <h3 class="card-title">${ic('lock', 'sm')} Segurança</h3>
-            <div class="field"><label for="sAtual">Senha atual</label><input class="input" id="sAtual" type="password" autocomplete="current-password" required></div>
-            <div class="field"><label for="sNova">Nova senha</label><input class="input" id="sNova" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo 8 caracteres" required></div>
-          </div>
-          <button class="btn btn-ghost" type="submit" style="align-self:flex-start">${ic('lock', 'sm')} Trocar senha</button>
-        </form>
-        <button class="btn btn-ghost btn-block danger-soft" data-logout>${ic('logout', 'sm')} Sair da conta</button>
-      </div>
-    </div>`;
+  return ContaPainel({
+    conta: c,
+    bancas: S.bancas || [],
+    userRole: S.user?.role || 'USER',
+    busy: !!S.contaBusy,
+    faltamDias: diasAte(c.perfil?.dataProva),
+    brlFn: brl,
+  });
+}
+
+function ligarPreviewCartao() {
+  const ccNum = $('#ccNum');
+  const ccNome = $('#ccNome');
+  const ccVal = $('#ccVal');
+  const ccCpf = $('#ccCpf');
+  const ccCvv = $('#ccCvv');
+
+  const syncPreview = () => {
+    const dig = (ccNum?.value || '').replace(/\D/g, '');
+    const brand = detectarBandeira(dig);
+    const brandEl = $('#ccPreviewBrand');
+    if (brandEl) brandEl.textContent = BRAND_LABEL[brand] || 'CARTÃO';
+
+    const numEl = $('#ccPreviewNum');
+    if (numEl) {
+      const padded = (dig + '••••••••••••••••').slice(0, 16);
+      numEl.textContent = `${padded.slice(0, 4)} ${padded.slice(4, 8)} ${padded.slice(8, 12)} ${padded.slice(12, 16)}`;
+    }
+    const nameEl = $('#ccPreviewName');
+    if (nameEl) nameEl.textContent = (ccNome?.value.trim() || 'NOME NO CARTÃO').toUpperCase().slice(0, 26);
+
+    const expEl = $('#ccPreviewExp');
+    if (expEl) expEl.textContent = ccVal?.value.trim() || 'MM/AA';
+  };
+
+  if (ccNum) {
+    ccNum.oninput = () => {
+      const d = ccNum.value.replace(/\D/g, '').slice(0, 16);
+      ccNum.value = d.replace(/(\d{4})(?=\d)/g, '$1 ');
+      syncPreview();
+    };
+  }
+  if (ccNome) ccNome.oninput = syncPreview;
+  if (ccVal) {
+    ccVal.oninput = () => {
+      const d = ccVal.value.replace(/\D/g, '').slice(0, 4);
+      ccVal.value = d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d;
+      syncPreview();
+    };
+  }
+  if (ccCvv) {
+    ccCvv.oninput = () => { ccCvv.value = ccCvv.value.replace(/\D/g, '').slice(0, 4); };
+  }
+  if (ccCpf) {
+    ccCpf.oninput = () => {
+      const d = ccCpf.value.replace(/\D/g, '').slice(0, 11);
+      ccCpf.value = d.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+    };
+  }
+  syncPreview();
 }
 
 /** Eventos da tela (conta); chamada pela bindApp em eventos.js a cada desenho. */
@@ -156,14 +185,134 @@ function ligarConta() {
     catch (e) { toast(e.message); }
     S.contaBusy = false; render();
   };
-  const sf = $('#senhaForm');
+
+  on('#btnAbrirModalSenha', 'click', () => {
+    S.modal = { title: 'Redefinir senha', html: modalRedefinirSenhaHtml() };
+    render();
+    setTimeout(() => $('#sAtual')?.focus(), 40);
+  });
+
+  const sf = $('#senhaFormModal');
   if (sf) sf.onsubmit = async (ev) => {
     ev.preventDefault();
-    const senhaAtual = $('#sAtual').value, novaSenha = $('#sNova').value;
+    const senhaAtual = $('#sAtual').value;
+    const novaSenha = $('#sNova').value;
+    const confirma = $('#sConfirma').value;
+    if (!senhaAtual) return toast('Informe sua senha atual.');
     if (novaSenha.length < 8) return toast('A nova senha precisa ter ao menos 8 caracteres.');
-    try { await api('/me/conta/senha', { method: 'POST', body: { senhaAtual, novaSenha } }); toast('Senha alterada.'); $('#sAtual').value = ''; $('#sNova').value = ''; }
-    catch (e) { toast(e.message); }
+    if (novaSenha !== confirma) return toast('A confirmação da nova senha não confere.');
+    try {
+      await api('/me/conta/senha', { method: 'POST', body: { senhaAtual, novaSenha } });
+      S.modal = null;
+      toast('Senha redefinida com sucesso!');
+      render();
+    } catch (e) { toast(e.message); }
   };
+
+  const abrirModalCartao = () => {
+    S.modal = {
+      title: 'Adicionar cartão para cobrança recorrente',
+      html: modalCartaoRecorrenteHtml(S.conta?.perfil?.name || S.user?.name || ''),
+    };
+    render();
+    setTimeout(() => $('#ccNum')?.focus(), 40);
+  };
+  on('#btnAbrirModalCartao', 'click', abrirModalCartao);
+  on('#btnAbrirModalCartaoEmpty', 'click', abrirModalCartao);
+
+  const cardForm = $('#cartaoFormModal');
+  if (cardForm) {
+    ligarPreviewCartao();
+    cardForm.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const digits = ($('#ccNum')?.value || '').replace(/\D/g, '');
+      const holderName = ($('#ccNome')?.value || '').trim();
+      const valStr = ($('#ccVal')?.value || '').trim();
+      const cvv = ($('#ccCvv')?.value || '').replace(/\D/g, '');
+      const cpf = ($('#ccCpf')?.value || '').replace(/\D/g, '');
+      const recorrenteAtivo = !!$('#ccRecorrente')?.checked;
+
+      if (!validarLuhn(digits)) return toast('Número de cartão inválido. Confira os dígitos.');
+      if (holderName.length < 3) return toast('Informe o nome impresso no cartão.');
+      const mVal = valStr.match(/^(\d{2})\/(\d{2})$/);
+      if (!mVal) return toast('Informe a validade no formato MM/AA.');
+      const expMonth = Number(mVal[1]);
+      const expYear = 2000 + Number(mVal[2]);
+      if (expMonth < 1 || expMonth > 12) return toast('Mês de validade inválido.');
+      if (cvv.length < 3 || cvv.length > 4) return toast('Informe um código CVV válido.');
+      if (cpf && cpf.length !== 11) return toast('CPF inválido. Preencha os 11 dígitos ou deixe em branco.');
+
+      const btn = $('#btnSalvarCartaoModal');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner sm"></span> Validando…'; }
+
+      const brand = detectarBandeira(digits);
+      const last4 = digits.slice(-4);
+      const docLast4 = cpf ? cpf.slice(-4) : null;
+      let cardToken = null;
+
+      try {
+        const pubKey = S.conta?.cobrancaConfig?.mercadoPagoPublicKey;
+        if (pubKey) {
+          const MP = await carregarSdkMercadoPago();
+          const mp = new MP(pubKey, { locale: 'pt-BR' });
+          const tk = await mp.createCardToken({
+            cardNumber: digits,
+            cardholderName: holderName,
+            cardExpirationMonth: String(expMonth).padStart(2, '0'),
+            cardExpirationYear: String(expYear),
+            securityCode: cvv,
+            identificationType: cpf ? 'CPF' : undefined,
+            identificationNumber: cpf || undefined,
+          });
+          cardToken = tk?.id || null;
+        }
+
+        const res = await api('/me/conta/cartoes', {
+          method: 'POST',
+          body: { brand, last4, expMonth, expYear, holderName, docLast4, cardToken, recorrenteAtivo },
+        });
+        if (res.conta) S.conta = res.conta;
+        S.modal = null;
+        toast('Cartão salvo para cobrança recorrente!');
+        render();
+      } catch (e) {
+        toast(e.message || 'Não foi possível salvar o cartão.');
+        if (btn) { btn.disabled = false; btn.innerHTML = `${ic('check', 'sm')} Salvar cartão`; }
+      }
+    };
+  }
+
+  on('[data-toggle-rec]', 'click', async (e) => {
+    const id = e.currentTarget.dataset.toggleRec;
+    const next = e.currentTarget.dataset.recNext === '1';
+    try {
+      const res = await api(`/me/conta/cartoes/${encodeURIComponent(id)}`, { method: 'PATCH', body: { recorrenteAtivo: next } });
+      if (res.conta) S.conta = res.conta;
+      toast(next ? 'Cobrança recorrente reativada.' : 'Cobrança recorrente pausada para este cartão.');
+      render();
+    } catch (err) { toast(err.message); }
+  });
+
+  on('[data-default-card]', 'click', async (e) => {
+    const id = e.currentTarget.dataset.defaultCard;
+    try {
+      const res = await api(`/me/conta/cartoes/${encodeURIComponent(id)}`, { method: 'PATCH', body: { isDefault: true } });
+      if (res.conta) S.conta = res.conta;
+      toast('Cartão definido como principal.');
+      render();
+    } catch (err) { toast(err.message); }
+  });
+
+  on('[data-del-card]', 'click', async (e) => {
+    const id = e.currentTarget.dataset.delCard;
+    try {
+      const res = await api(`/me/conta/cartoes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (res.conta) S.conta = res.conta;
+      toast('Cartão removido da sua conta.');
+      render();
+    } catch (err) { toast(err.message); }
+  });
+
   on('#btnExportarDados', 'click', async () => {
     try {
       const r = await fetch(API + '/me/exportar', { credentials: API_ORIGEM ? 'include' : 'same-origin' });

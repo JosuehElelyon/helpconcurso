@@ -1907,5 +1907,960 @@ img.avatar{object-fit:cover;display:block;border-radius:50%}
   }
 }
 
+/* =========================================================
+   Minhas Estrelas (Painel Gamificado + Grid Unificado 2x2)
+   ========================================================= */
+.stars-page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.stars-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.32fr) minmax(320px, 1fr);
+  gap: 20px;
+  align-items: stretch;
+}
+.stars-hero-card,
+.stars-vault-card,
+.stars-missions-card,
+.stars-ledger-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Card Superior Esquerdo: Patente & XP */
+.stars-hero-card {
+  background: linear-gradient(140deg, #101E29 0%, #162B3A 55%, #0F3A33 100%);
+  color: #F3F1EA;
+  border-radius: 18px;
+  padding: 24px 26px;
+  gap: 18px;
+  justify-content: space-between;
+  box-shadow: 0 12px 30px rgba(16, 30, 41, 0.16);
+  position: relative;
+  overflow: hidden;
+}
+.stars-hero-card::after {
+  content: '';
+  position: absolute;
+  top: -70px;
+  right: -70px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(242, 166, 43, 0.16) 0%, transparent 70%);
+  pointer-events: none;
+}
+.stars-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.stars-hero-eyebrow {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.stars-hero-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.stars-stat-pill {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #E5E7EB;
+  white-space: nowrap;
+}
+.stars-stat-pill.accent {
+  background: rgba(242, 166, 43, 0.15);
+  border-color: rgba(242, 166, 43, 0.4);
+  color: #FDE68A;
+}
+.stars-level-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.stars-level-emblem {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(242, 166, 43, 0.24) 0%, rgba(242, 166, 43, 0.08) 100%);
+  border: 1.5px solid rgba(242, 166, 43, 0.5);
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+  flex: none;
+  box-shadow: 0 4px 16px rgba(242, 166, 43, 0.2);
+}
+.stars-level-info {
+  min-width: 0;
+}
+.stars-level-name {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #FFFFFF;
+}
+.stars-level-sub {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: #CBD5E1;
+}
+.stars-xp-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.stars-xp-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #CBD5E1;
+}
+.stars-xp-meta b {
+  color: #FDE68A;
+}
+.stars-xp-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.stars-xp-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #F59E0B 0%, #FDE68A 100%);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.45);
+  transition: width 0.5s ease;
+}
+.stars-levels-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: auto;
+}
+.stars-tier-tile {
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.stars-tier-tile.current {
+  border-color: var(--accent);
+  background: rgba(242, 166, 43, 0.14);
+  box-shadow: 0 0 0 1px rgba(242, 166, 43, 0.35);
+}
+.stars-tier-tile.done {
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.12);
+}
+.stars-tier-tile.locked {
+  opacity: 0.68;
+}
+.stars-tier-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+}
+.stars-tier-ic {
+  font-size: 16px;
+}
+.stars-tier-min {
+  font-size: 11px;
+  font-weight: 800;
+  color: #FDE68A;
+}
+.stars-tier-name {
+  font-size: 12px;
+  font-weight: 800;
+  color: #FFFFFF;
+  line-height: 1.25;
+}
+.stars-tier-status {
+  font-size: 10.5px;
+  color: #CBD5E1;
+  font-weight: 600;
+}
+
+/* Card Superior Direito: Cofre & Resgate */
+.stars-vault-card {
+  gap: 16px;
+  justify-content: space-between;
+  border-radius: 18px;
+}
+.stars-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.stars-sec-title {
+  margin: 2px 0 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.stars-vault-display {
+  background: linear-gradient(135deg, #FFFDF7 0%, #FEF3C7 100%);
+  border: 1.5px solid #FDE68A;
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.stars-vault-display.ready {
+  background: linear-gradient(135deg, #F0FDF4 0%, #FEF3C7 100%);
+  border-color: #86EFAC;
+}
+.stars-vault-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.stars-medallion {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #FFFFFF 0%, #FEF9C3 100%);
+  border: 1.5px solid #FCD34D;
+  display: grid;
+  place-items: center;
+  flex: none;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.22);
+}
+.stars-medallion-svg {
+  width: 30px;
+  height: 30px;
+  display: block;
+}
+.stars-vault-num {
+  font-size: 36px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: #78350F;
+}
+.stars-vault-unit {
+  font-size: 13px;
+  font-weight: 700;
+  color: #92400E;
+  margin-top: 2px;
+}
+.stars-vault-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stars-vault-prog-txt {
+  font-size: 12px;
+  color: #78350F;
+}
+.stars-vault-bar {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(180, 83, 9, 0.14);
+  overflow: hidden;
+}
+.stars-vault-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #F59E0B 0%, #10B981 100%);
+  transition: width 0.4s ease;
+}
+.stars-redeem-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+.stars-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  overflow: hidden;
+  flex: none;
+}
+.stars-step-btn {
+  width: 32px;
+  height: 38px;
+  border: 0;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+  cursor: pointer;
+}
+.stars-step-btn:hover:not(:disabled) {
+  background: var(--line-2);
+}
+.stars-step-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.stars-step-input {
+  width: 44px;
+  height: 38px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  text-align: center;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.stars-redeem-btn {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  justify-content: center;
+  white-space: nowrap;
+}
+.stars-vault-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-2);
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: auto;
+}
+.stars-roadmap-tag {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  font-weight: 700;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* Linha 2 · Card Esquerdo: Missões */
+.stars-missions-card {
+  gap: 14px;
+  border-radius: 18px;
+}
+.stars-missions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+.stars-mission-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.stars-mission-item:hover {
+  border-color: #C7D7D1;
+  background: var(--surface);
+}
+.stars-mission-ico {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.stars-mission-ico.brand { background: var(--brand-soft); color: var(--brand-ink); }
+.stars-mission-ico.warn { background: #FEF3C7; color: #B45309; }
+.stars-mission-ico.ok { background: #DCFCE7; color: #166534; }
+.stars-mission-body {
+  flex: 1;
+  min-width: 0;
+}
+.stars-mission-title {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.stars-mission-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.stars-mission-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.stars-reward-pill {
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: #92400E;
+  border: 1px solid #FDE68A;
+  white-space: nowrap;
+}
+.stars-reward-pill.top {
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+  border-color: #A7F3D0;
+}
+.stars-card-note {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line-2);
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* Linha 2 · Card Direito: Extrato */
+.stars-ledger-card {
+  gap: 14px;
+  border-radius: 18px;
+}
+.stars-ledger-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  max-height: 310px;
+  overflow-y: auto;
+}
+.stars-ledger-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+}
+.stars-ledger-ico {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.stars-ledger-ico.pos { background: #DCFCE7; color: #166534; }
+.stars-ledger-ico.neg { background: #FEF3C7; color: #B45309; }
+.stars-ledger-main {
+  flex: 1;
+  min-width: 0;
+}
+.stars-ledger-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stars-ledger-meta {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.stars-ledger-val {
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex: none;
+}
+.stars-ledger-val.pos {
+  background: #DCFCE7;
+  color: #166534;
+}
+.stars-ledger-val.neg {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+@media (max-width: 960px) {
+  .stars-layout {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .stars-levels-track {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .stars-redeem-box {
+    flex-wrap: wrap;
+  }
+  .stars-mission-item {
+    flex-wrap: wrap;
+  }
+}
+
+/* =========================================================
+   Minha Conta (Perfil Moderno + Gamificação + Cartão Recorrente)
+   ========================================================= */
+.acc-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding: 22px 24px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  border-radius: 18px;
+}
+.acc-hero-left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  flex: 1;
+}
+.acc-identity {
+  min-width: 0;
+}
+.acc-name {
+  margin: 2px 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  line-height: 1.2;
+}
+.acc-sub {
+  font-size: 13px;
+  color: var(--muted);
+}
+.acc-hero-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.acc-gamif-card {
+  background: linear-gradient(135deg, #FFFFFF 0%, #F2FAF6 55%, #FEF9EC 100%);
+  border: 1.5px solid #C6E2DA;
+  border-radius: 18px;
+  padding: 16px 20px;
+  margin-bottom: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  box-shadow: 0 4px 14px rgba(14, 122, 101, 0.05);
+}
+.acc-gamif-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 260px;
+}
+.acc-gamif-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.acc-gamif-patente {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.acc-gamif-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(105px, 1fr));
+  gap: 10px;
+}
+.acc-metric-tile {
+  background: var(--surface);
+  border: 1px solid #C6E2DA;
+  border-radius: 12px;
+  padding: 10px 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.acc-metric-tile:not(.static):hover {
+  transform: translateY(-1px);
+  border-color: var(--brand);
+  box-shadow: 0 4px 10px rgba(14, 122, 101, 0.1);
+}
+.acc-metric-tile.static {
+  cursor: default;
+}
+.acc-metric-tile b {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.acc-metric-tile span {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.acc-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(300px, 1fr);
+  gap: 20px;
+  align-items: stretch;
+}
+.acc-form-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-radius: 18px;
+}
+.acc-form-foot {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-2);
+  display: flex;
+  justify-content: flex-start;
+}
+.acc-right-stack {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.acc-billing-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+}
+.acc-security-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-radius: 18px;
+}
+.acc-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.acc-usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.acc-cards-divider {
+  border-top: 1px dashed var(--line);
+  margin: 16px 0 14px;
+}
+.acc-cards-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.acc-mini-ico {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+/* Cartões de Crédito Recorrentes */
+.cc-empty-cta {
+  width: 100%;
+  text-align: center;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1.5px dashed #C6E2DA;
+  background: linear-gradient(180deg, #FAFDFB 0%, #F2FAF6 100%);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  margin-top: auto;
+}
+.cc-empty-cta:hover {
+  border-color: var(--brand);
+  box-shadow: 0 4px 12px rgba(14, 122, 101, 0.08);
+}
+.cc-empty-brands {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.cc-empty-brands span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+.cc-empty-txt {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.cc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cc-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.cc-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.cc-brand-badge {
+  min-width: 56px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: #FFFFFF;
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  display: grid;
+  place-items: center;
+  flex: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+}
+.cc-item-info {
+  min-width: 0;
+}
+.cc-item-num {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.cc-item-meta {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cc-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.cc-rec-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cc-rec-pill .cc-rec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.cc-rec-pill.on {
+  background: #DCFCE7;
+  border-color: #86EFAC;
+  color: #166534;
+}
+.cc-rec-pill.on .cc-rec-dot {
+  background: #16A34A;
+}
+
+/* Segurança & Privacidade Compacto */
+.acc-action-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.acc-action-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 190px;
+}
+.acc-action-ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--brand);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.acc-action-title {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.acc-lgpd-row {
+  padding-top: 10px;
+  border-top: 1px dashed var(--line-2);
+}
+
+/* Preview Cartão Virtual na Modal */
+.cc-preview {
+  background: linear-gradient(135deg, #101E29 0%, #16303D 55%, #0E7A65 100%);
+  color: #FFFFFF;
+  border-radius: 16px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 10px 24px rgba(16, 30, 41, 0.2);
+}
+.cc-preview-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.cc-chip {
+  width: 34px;
+  height: 24px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, #FDE68A 0%, #D97706 100%);
+  display: inline-block;
+}
+.cc-preview-brand {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #FDE68A;
+}
+.cc-preview-num {
+  font-family: monospace;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.cc-preview-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+.cc-lbl {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: #CBD5E1;
+  font-weight: 700;
+}
+.cc-val {
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+.cc-check-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+@media (max-width: 960px) {
+  .acc-main-grid {
+    grid-template-columns: 1fr;
+  }
+  .acc-gamif-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .acc-hero-right {
+    align-items: flex-start;
+  }
+}
+
 
 

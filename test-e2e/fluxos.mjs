@@ -147,6 +147,23 @@ try {
   });
   ok('tela Desempenho alinha KPIs, quadrantes de Pareto e botões lado a lado', (await mesmaAltura('.desemp-kpi-grid > .desemp-kpi-card')) && (await mesmaAltura('.quadrantes-grid > .quadrante-box')) && paretoOk);
 
+  await page.evaluate(() => { location.hash = 'estrelas'; }); await sleep(1200);
+  await foto('9h-estrelas');
+  const estrelasOk = await page.evaluate(() => {
+    const hero = document.querySelector('.stars-hero-card');
+    const vault = document.querySelector('.stars-vault-card');
+    const miss = document.querySelector('.stars-missions-card');
+    const ledg = document.querySelector('.stars-ledger-card');
+    if (!hero || !vault || !miss || !ledg) return false;
+    const h = hero.getBoundingClientRect(), v = vault.getBoundingClientRect();
+    const m = miss.getBoundingClientRect(), l = ledg.getBoundingClientRect();
+    const topEq = Math.abs(h.height - v.height) <= 2;
+    const botEq = Math.abs(m.height - l.height) <= 2;
+    const colAlign = Math.abs(h.right - m.right) <= 2 && Math.abs(v.left - l.left) <= 2;
+    return topEq && botEq && colAlign;
+  });
+  ok('tela Minhas estrelas exibe cofre gamificado e cards 100% alinhados', estrelasOk);
+
   // 1b) Meu edital com tópicos: painel, filtros de tópicos e Simulado Prova Real
   const errosAntesEdital = erros.length;
   await page.evaluate(() => { location.hash = 'edital'; }); await sleep(1500);
@@ -175,10 +192,28 @@ try {
   if (alt) { await alt.click(); await sleep(1500); }
   ok('responder uma questão salva a resposta', !!alt && respondeu(/PATCH \/api\/v1\/sets\/[^ ]+ 200/));
 
-  // 3) Minha conta: exportar e excluir
+  // 3) Minha conta: gamificação, alinhamento, modal de senha, cartão recorrente, exportar e excluir
   await page.goto(`${BASE}/#conta`, { waitUntil: 'networkidle0' }); await sleep(800);
   await foto('3-minha-conta');
-  ok('colunas da tela Minha conta alinhadas na mesma altura', await mesmaAltura('.account-grid > .stack'));
+  const semRedundanciaConta = await page.evaluate(() => !document.querySelector('#senhaForm') && !document.querySelector('.acc-main-grid [data-logout]'));
+  ok('colunas da tela Minha conta alinhadas, com gamificação e sem campos redundantes', (await mesmaAltura('.acc-main-grid > *')) && !!(await page.$('.acc-gamif-card')) && semRedundanciaConta);
+
+  // Modal de redefinir senha
+  await page.click('#btnAbrirModalSenha'); await page.waitForSelector('#senhaFormModal');
+  ok('modal de redefinir senha abre corretamente', !!(await page.$('#sAtual')) && !!(await page.$('#sNova')) && !!(await page.$('#sConfirma')));
+  await page.click('#senhaFormModal [data-mclose2]'); await sleep(400);
+
+  // Modal de adicionar cartão para cobrança recorrente (número de teste Visa Luhn válido)
+  await page.click('#btnAbrirModalCartao'); await page.waitForSelector('#cartaoFormModal');
+  await page.type('#ccNum', '4111111111111111');
+  await page.$eval('#ccNome', (el) => { el.value = ''; });
+  await page.type('#ccNome', 'ALUNO E2E');
+  await page.type('#ccVal', '1230');
+  await page.type('#ccCvv', '123');
+  await page.click('#btnSalvarCartaoModal'); await sleep(1200);
+  await foto('3b-conta-cartao');
+  ok('cartão recorrente salvo e exibido em Minha conta', /1111/.test(await texto()) && /Recorrente ativo/i.test(await texto()));
+
   ok('botões de LGPD em Minha conta', (await page.$('#btnExportarDados')) && (await page.$('#btnExcluirConta')));
   await page.click('#btnExportarDados'); await sleep(1500);
   ok('exportar dados responde 200', respondeu(/GET \/api\/v1\/me\/exportar 200/));

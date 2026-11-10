@@ -1,7 +1,7 @@
 // Componente UI puro: faixa de patente, XP e estatísticas acumuladas (mapeia nivelId do backend).
 import { esc } from '../util.js';
 
-const PATENTES_UI = {
+export const PATENTES_UI = {
   desbravador: { nome: 'Desbravador', icone: '🌱', cor: '#10B981' },
   focado: { nome: 'Focado', icone: '🎯', cor: '#0E7A65' },
   estrategista: { nome: 'Estrategista', icone: '🧠', cor: '#2563EB' },

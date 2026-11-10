@@ -38,9 +38,21 @@ test('limite diário: abaixo do teto chama a IA; acima, bloqueia só modelos pag
     // Modelo grátis (mock) continua atendendo mesmo acima do teto
     const gratis = await runJSON('detect', { prompt: 'Material: atos administrativos.' }, detectSchema);
     assert.equal(gratis.meta.provider, 'mock');
-    // Modelo pago é bloqueado com code=budget
+  // Modelo pago é bloqueado com code=budget
     Object.assign(config.ai.tasks.detect, { primary: 'anthropic:claude-haiku-5-5', fallback: null });
     await assert.rejects(runJSON('detect', { prompt: 'Material: atos administrativos.' }, detectSchema), (e) => e.code === 'budget');
+
+    // Limite total acumulado também bloqueia somente modelos pagos quando atingido
+    config.ai.limiteUsdDia = 0;
+    config.ai.limiteUsdTotal = 0.05;
+    _resetBudgetCache();
+    Object.assign(config.ai.tasks.detect, { primary: 'mock:simulado', fallback: null });
+    const gratisTotal = await runJSON('detect', { prompt: 'Material: atos administrativos.' }, detectSchema);
+    assert.equal(gratisTotal.meta.provider, 'mock');
+    Object.assign(config.ai.tasks.detect, { primary: 'anthropic:claude-haiku-5-5', fallback: null });
+    await assert.rejects(runJSON('detect', { prompt: 'Material: atos administrativos.' }, detectSchema), (e) => e.code === 'budget');
+    config.ai.limiteUsdTotal = 0;
+    config.ai.limiteUsdDia = 0.05;
   } finally {
     Object.assign(config.ai.tasks.detect, { primary: 'mock:simulado', fallback: null });
     await query("DELETE FROM ai_usage WHERE task='teste_limite'");

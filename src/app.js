@@ -26,7 +26,9 @@ export function createApp() {
       'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], // atributos style= do front
       'font-src': ["'self'", 'https://fonts.gstatic.com'],
       'img-src': ["'self'", 'data:'],
-      'script-src': ["'self'"],
+      'script-src': ["'self'", 'https://sdk.mercadopago.com'],
+      'connect-src': ["'self'", 'https://api.mercadopago.com'],
+      'frame-src': ["'self'", 'https://*.mercadopago.com', 'https://*.mercadopago.com.br'],
       'object-src': ["'none'"],
       'frame-ancestors': ["'none'"],
       'form-action': ["'self'"],

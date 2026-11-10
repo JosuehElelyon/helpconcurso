@@ -12,7 +12,7 @@ import { createAnthropic } from './providers/anthropic.js';
 import { createOpenAICompat } from './providers/openai-compat.js';
 import { createMock } from './providers/mock.js';
 import { SECURITY_RULES } from './guard.js';
-import { costUsd, spentTodayUsd, isFreeModel } from './pricing.js';
+import { costUsd, spentTodayUsd, spentTotalUsd, isFreeModel } from './pricing.js';
 import { PROMPT_VERSAO } from '../lib/prompts.js';
 
 const providers = new Map();
@@ -89,29 +89,44 @@ export const _resetBreakers = () => breaker.clear();
 
 const sleep = (ms, signal) => new Promise((res, rej) => { const t = setTimeout(res, ms); signal?.addEventListener('abort', () => { clearTimeout(t); rej(new AiAbortError()); }, { once: true }); });
 
-// ---------- Limite diário de gasto (AI_LIMITE_USD_DIA) ----------
-// O gasto do dia vem do banco a cada 60 s; entre uma leitura e outra, somamos o custo de cada chamada concluída.
-const budget = { day: '', usd: 0, at: 0 };
+// ---------- Limite de gasto (AI_LIMITE_USD_DIA e AI_LIMITE_USD_TOTAL) ----------
+// Os gastos vêm do banco a cada 60 s; entre uma leitura e outra, somamos o custo pago de cada chamada concluída.
+const budget = { day: '', usd: 0, totalUsd: 0, at: 0 };
 const todayBR = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 async function assertBudget(task) {
-  const limit = config.ai.limiteUsdDia;
-  if (!limit || config.ai.mock) return;
+  const limitDia = config.ai.limiteUsdDia;
+  const limitTotal = config.ai.limiteUsdTotal;
+  if ((!limitDia && !limitTotal) || config.ai.mock) return;
   const day = todayBR();
   if (budget.day !== day || Date.now() - budget.at > 60000) {
-    try { budget.usd = await spentTodayUsd(); budget.day = day; budget.at = Date.now(); }
-    catch (e) { console.warn('[ai] não foi possível ler o gasto do dia:', e.message); return; }
+    try {
+      const [hoje, total] = await Promise.all([
+        limitDia ? spentTodayUsd() : Promise.resolve(0),
+        limitTotal ? spentTotalUsd() : Promise.resolve(0),
+      ]);
+      budget.usd = hoje;
+      budget.totalUsd = total;
+      budget.day = day;
+      budget.at = Date.now();
+    } catch (e) { console.warn('[ai] não foi possível ler o gasto de IA:', e.message); return; }
   }
-  if (budget.usd >= limit) {
-    console.error(`[ERRO-IA] [LIMITE-DIARIO] tarefa=${task} gasto_hoje=US$${budget.usd.toFixed(4)} limite=US$${limit}`);
-    throw new AiError(`Limite diário de gasto com IA atingido (US$ ${limit}).`, { code: 'budget', retryable: false, fallback: false });
+  if (limitDia && budget.usd >= limitDia) {
+    console.error(`[ERRO-IA] [LIMITE-DIARIO] tarefa=${task} gasto_hoje=US$${budget.usd.toFixed(4)} limite=US$${limitDia}`);
+    throw new AiError(`Limite diário de gasto com IA paga atingido (US$ ${limitDia}).`, { code: 'budget', retryable: false, fallback: false });
+  }
+  if (limitTotal && budget.totalUsd >= limitTotal) {
+    console.error(`[ERRO-IA] [LIMITE-TOTAL] tarefa=${task} gasto_total=US$${budget.totalUsd.toFixed(4)} limite=US$${limitTotal}`);
+    throw new AiError(`Limite total de gasto com IA paga atingido (US$ ${limitTotal}).`, { code: 'budget', retryable: false, fallback: false });
   }
 }
 
 export const _resetBudgetCache = () => { budget.at = 0; }; // para testes
 
 async function logUsage(row) {
-  if (row.ok && row.usage && row.provider !== 'mock' && budget.day === todayBR()) {
-    budget.usd += costUsd(row.model, row.usage.input, row.usage.output, row.usage.cacheRead, row.batch, row.provider, row.usage.cacheWrite);
+  if (row.ok && row.usage && row.provider !== 'mock') {
+    const c = costUsd(row.model, row.usage.input, row.usage.output, row.usage.cacheRead, row.batch, row.provider, row.usage.cacheWrite);
+    if (budget.day === todayBR()) budget.usd += c;
+    budget.totalUsd += c;
   }
   try {
     await query(`INSERT INTO ai_usage(task,provider,model,input_tokens,output_tokens,cache_read_tokens,duration_ms,ok,fallback,batch,error,user_id,prompt_versao,cache_write_tokens)

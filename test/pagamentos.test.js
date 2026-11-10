@@ -132,3 +132,66 @@ test('Pagamentos: ativação atômica via aprovarEAtivarPlano com idempotência'
   });
   assert.equal(ativ2, null, 'idempotência não reaplica pedido já aprovado');
 });
+
+test('Cartões recorrentes: PCI-safe (rejeita PAN/CVV), cria, pausa recorrência, isola dono e remove', async () => {
+  const a = await criarAluno('cartaouser1');
+  const b = await criarAluno('cartaouser2');
+  const ca = await a.entrar();
+  const cb = await b.entrar();
+
+  // Visão da conta inclui gamificação e lista vazia de cartões
+  const contaIni = await ca('/api/v1/me/conta');
+  assert.equal(contaIni.status, 200);
+  assert.ok(contaIni.data.gamificacao && typeof contaIni.data.gamificacao.xp === 'number');
+  assert.deepEqual(contaIni.data.cartoes, []);
+
+  // Rejeita envio de número completo ou CVV em claro (PCI-safe via .strict)
+  const panReject = await ca('/api/v1/me/conta/cartoes', {
+    method: 'POST',
+    body: { brand: 'visa', last4: '4242', expMonth: 12, expYear: 2030, holderName: 'Aluno Teste', cardNumber: '4242424242424242', cvv: '123' },
+  });
+  assert.equal(panReject.status, 400);
+
+  // Rejeita validade vencida
+  const vencido = await ca('/api/v1/me/conta/cartoes', {
+    method: 'POST',
+    body: { brand: 'visa', last4: '4242', expMonth: 1, expYear: 2024, holderName: 'Aluno Teste' },
+  });
+  assert.equal(vencido.status, 400);
+
+  // Salva cartão 1 e cartão 2
+  const add1 = await ca('/api/v1/me/conta/cartoes', {
+    method: 'POST',
+    body: { brand: 'visa', last4: '4242', expMonth: 10, expYear: 2030, holderName: 'ALUNO E2E', docLast4: '8900', recorrenteAtivo: true },
+  });
+  assert.equal(add1.status, 201);
+  assert.equal(add1.data.cartao.last4, '4242');
+  assert.equal(add1.data.cartao.isDefault, true);
+  assert.equal(add1.data.cartao.recorrenteAtivo, true);
+
+  const add2 = await ca('/api/v1/me/conta/cartoes', {
+    method: 'POST',
+    body: { brand: 'mastercard', last4: '5555', expMonth: 8, expYear: 2031, holderName: 'ALUNO E2E', recorrenteAtivo: true },
+  });
+  assert.equal(add2.status, 201);
+  assert.equal(add2.data.cartao.isDefault, true);
+
+  // Pausa recorrência no cartão 2 e define cartão 1 como principal
+  const pauseRes = await ca(`/api/v1/me/conta/cartoes/${add2.data.cartao.id}`, {
+    method: 'PATCH',
+    body: { recorrenteAtivo: false },
+  });
+  assert.equal(pauseRes.status, 200);
+  assert.equal(pauseRes.data.cartao.recorrenteAtivo, false);
+
+  // Isolamento: usuário B não altera nem remove cartão de A
+  assert.equal((await cb(`/api/v1/me/conta/cartoes/${add1.data.cartao.id}`, { method: 'PATCH', body: { recorrenteAtivo: false } })).status, 404);
+  assert.equal((await cb(`/api/v1/me/conta/cartoes/${add1.data.cartao.id}`, { method: 'DELETE' })).status, 404);
+
+  // Remove cartão 2 (padrão) -> cartão 1 volta a ser principal automaticamente
+  const del2 = await ca(`/api/v1/me/conta/cartoes/${add2.data.cartao.id}`, { method: 'DELETE' });
+  assert.equal(del2.status, 200);
+  assert.equal(del2.data.conta.cartoes.length, 1);
+  assert.equal(del2.data.conta.cartoes[0].id, add1.data.cartao.id);
+  assert.equal(del2.data.conta.cartoes[0].isDefault, true);
+});

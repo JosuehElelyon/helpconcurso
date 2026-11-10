@@ -116,8 +116,9 @@ export const config = {
     timeoutMs: num('AI_TIMEOUT_MS', 240000),
     // Dupla extração com consenso de gabarito (dois modelos grátis conferem cada questão)
     consensoGabarito: bool('AI_CONSENSO_GABARITO', true),
-    // Teto de gasto real com IA por dia (US$, dia de Brasília). 0 = sem limite. Ao atingir, novas chamadas são recusadas.
+    // Teto de gasto real com IA por dia (US$, dia de Brasília) e opcional total acumulado. 0 = sem limite.
     limiteUsdDia: num('AI_LIMITE_USD_DIA', 0),
+    limiteUsdTotal: num('AI_LIMITE_USD_TOTAL', 0),
     keys: {
       anthropic: env('ANTHROPIC_API_KEY'),
       // FCC depende de um programa aberto no Windows: só em desenvolvimento, e só se ligado

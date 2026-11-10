@@ -23,7 +23,7 @@ export const excluirUsuario = (userId) => query('DELETE FROM users WHERE id=$1',
 
 /** Todos os dados pessoais do aluno, para portabilidade (art. 18, V). */
 export async function dadosDoAluno(userId) {
-  const [perfil, materiais, editais, simulados, cadernos, atividade, avaliacoesEReportes, estrelas, pedidos, provasEnviadas] = await Promise.all([
+  const [perfil, materiais, editais, simulados, cadernos, atividade, avaliacoesEReportes, estrelas, pedidos, cartoes, provasEnviadas] = await Promise.all([
     one(`SELECT id, name, email, role, telefone, concurso_alvo, banca_preferida, data_prova, meta_diaria, plano, plano_ate,
                 stars_total, stars_balance, termos_versao, termos_aceitos_em, email_verified_at, created_at FROM users WHERE id=$1`, [userId]),
     many('SELECT id, file_name, materia, assunto, word_count, text, edital_id, created_at FROM materials WHERE user_id=$1 ORDER BY created_at', [userId]),
@@ -36,9 +36,10 @@ export async function dadosDoAluno(userId) {
     many('SELECT * FROM question_feedback WHERE user_id=$1 ORDER BY created_at', [userId]),
     many('SELECT * FROM star_events WHERE user_id=$1 ORDER BY created_at', [userId]),
     many('SELECT id, plano, periodicidade, valor, status, created_at FROM plano_pedidos WHERE user_id=$1 ORDER BY created_at', [userId]),
+    many('SELECT id, gateway, brand, last4, exp_month, exp_year, holder_name, is_default, recorrente_ativo, created_at FROM user_payment_methods WHERE user_id=$1 ORDER BY created_at', [userId]),
     many('SELECT id, banca, titulo, orgao, cargo, ano, status, created_at FROM provas WHERE uploaded_by=$1 ORDER BY created_at', [userId]),
   ]);
-  return { perfil, materiais, editais, simulados, cadernos, atividade, avaliacoesEReportes, estrelas, pedidos, provasEnviadas };
+  return { perfil, materiais, editais, simulados, cadernos, atividade, avaliacoesEReportes, estrelas, pedidos, cartoes, provasEnviadas };
 }
 
 export const contagemEditaisECadernos = (userId) =>

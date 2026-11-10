@@ -1,9 +1,16 @@
-// Serviço de Pagamentos e Assinaturas (Mercado Pago: Pix instantâneo e Webhooks)
+// Serviço de Pagamentos, Cartões Recorrentes e Assinaturas (Mercado Pago: Pix instantâneo, Webhooks e Cofre de Cartão)
 import { HttpError } from '../lib/http.js';
 import { PLANOS } from '../lib/planos.js';
 import { config } from '../config.js';
 import * as planosRepo from '../repositories/planos.js';
-import { criarPagamentoPix, consultarPagamento, validarAssinaturaWebhook } from '../lib/mercadopago.js';
+import * as cartoesRepo from '../repositories/cartoes.js';
+import {
+  criarPagamentoPix,
+  consultarPagamento,
+  validarAssinaturaWebhook,
+  salvarCartaoClienteMercadoPago,
+  removerCartaoClienteMercadoPago,
+} from '../lib/mercadopago.js';
 import { sendUpgradePedidoEmail, sendPlanoAtivadoEmail } from '../lib/mailer.js';
 
 export function formatarPedido(p) {
@@ -159,4 +166,106 @@ export async function processarWebhookMercadoPago({ body = {}, query = {}, heade
   }
 
   return { processado: true, status: 'aprovado', pedidoId: pedido.id };
+}
+
+// ---------- Cartões de Crédito para Cobrança Recorrente ----------
+export function formatarCartao(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    gateway: r.gateway,
+    brand: r.brand,
+    last4: r.last4,
+    expMonth: Number(r.exp_month),
+    expYear: Number(r.exp_year),
+    holderName: r.holder_name,
+    docLast4: r.doc_last4 || null,
+    isDefault: Boolean(r.is_default),
+    recorrenteAtivo: Boolean(r.recorrente_ativo),
+    conectadoGateway: Boolean(r.gateway_card_id),
+    createdAt: r.created_at,
+  };
+}
+
+export const cobrancaConfigPublica = () => ({
+  mercadoPagoPublicKey: config.mercadopago.publicKey || null,
+  gatewayAtivo: Boolean(config.mercadopago.accessToken),
+});
+
+export async function listarCartoesUsuario(userId) {
+  const rows = await cartoesRepo.listarPorUsuario(userId);
+  return rows.map(formatarCartao);
+}
+
+export async function adicionarCartaoRecorrente(user, payload) {
+  const agora = new Date();
+  const anoAtual = agora.getUTCFullYear();
+  const mesAtual = agora.getUTCMonth() + 1;
+  if (payload.expYear < anoAtual || (payload.expYear === anoAtual && payload.expMonth < mesAtual)) {
+    throw new HttpError(400, 'Este cartão está com a validade vencida.');
+  }
+
+  let gateway = config.mercadopago.accessToken ? 'mercadopago' : 'sandbox';
+  let gatewayCustomerId = null;
+  let gatewayCardId = null;
+  let brand = payload.brand.toLowerCase();
+  let last4 = payload.last4;
+  let expMonth = payload.expMonth;
+  let expYear = payload.expYear;
+  let holderName = payload.holderName;
+
+  if (config.mercadopago.accessToken && payload.cardToken) {
+    try {
+      const mp = await salvarCartaoClienteMercadoPago({
+        email: user.email,
+        nome: payload.holderName,
+        token: payload.cardToken,
+      });
+      if (mp) {
+        gateway = 'mercadopago';
+        gatewayCustomerId = mp.customerId;
+        gatewayCardId = mp.cardId;
+        brand = (mp.brand || brand).toLowerCase();
+        last4 = mp.last4 || last4;
+        expMonth = mp.expMonth || expMonth;
+        expYear = mp.expYear || expYear;
+        holderName = mp.holderName || holderName;
+      }
+    } catch (err) {
+      throw new HttpError(400, err.message || 'Falha ao validar cartão no gateway de pagamento.');
+    }
+  }
+
+  const row = await cartoesRepo.adicionarComoPadrao(user.id, {
+    gateway,
+    gatewayCustomerId,
+    gatewayCardId,
+    brand,
+    last4,
+    expMonth,
+    expYear,
+    holderName,
+    docLast4: payload.docLast4 || null,
+    recorrenteAtivo: payload.recorrenteAtivo !== false,
+  });
+
+  return formatarCartao(row);
+}
+
+export async function atualizarCartaoRecorrente(userId, cardId, { recorrenteAtivo, isDefault }) {
+  const row = await cartoesRepo.atualizar(cardId, userId, { recorrenteAtivo, isDefault });
+  if (!row) throw new HttpError(404, 'Cartão não encontrado.');
+  return formatarCartao(row);
+}
+
+export async function removerCartaoRecorrente(userId, cardId) {
+  const removido = await cartoesRepo.remover(cardId, userId);
+  if (!removido) throw new HttpError(404, 'Cartão não encontrado.');
+  if (removido.gateway_customer_id && removido.gateway_card_id) {
+    await removerCartaoClienteMercadoPago({
+      customerId: removido.gateway_customer_id,
+      cardId: removido.gateway_card_id,
+    });
+  }
+  return { ok: true };
 }

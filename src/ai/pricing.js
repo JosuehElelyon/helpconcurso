@@ -41,11 +41,17 @@ export function costUsd(model, inputTokens, outputTokens, cacheTokens = 0, batch
   return batch ? usd * BATCH_DISCOUNT : usd;
 }
 
-/** Gasto real (sem o provedor simulado e sem provedores gratuitos) desde a meia-noite de Brasília. */
-export async function spentTodayUsd() {
+async function somarGastoUsd(filtroSql = '') {
   const rows = await many(`SELECT provider, model, batch, coalesce(sum(input_tokens),0)::bigint AS ent, coalesce(sum(output_tokens),0)::bigint AS sai, coalesce(sum(cache_read_tokens),0)::bigint AS cache, coalesce(sum(cache_write_tokens),0)::bigint AS escrita
                            FROM ai_usage
-                           WHERE provider <> 'mock' AND created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')
+                           WHERE provider <> 'mock' ${filtroSql}
                            GROUP BY provider, model, batch`);
   return rows.reduce((acc, r) => acc + costUsd(r.model, r.ent, r.sai, r.cache, r.batch, r.provider, r.escrita), 0);
 }
+
+/** Gasto real (sem o provedor simulado e sem provedores gratuitos) desde a meia-noite de Brasília. */
+export const spentTodayUsd = () =>
+  somarGastoUsd("AND created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')");
+
+/** Gasto real total acumulado (sem provedor simulado e sem provedores gratuitos). */
+export const spentTotalUsd = () => somarGastoUsd();

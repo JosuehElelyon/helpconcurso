@@ -7,7 +7,9 @@ import { PLANOS, planoDoUsuario } from '../lib/planos.js';
 import { sendUpgradePedidoEmail } from '../lib/mailer.js';
 import { config } from '../config.js';
 import { generationQuota } from './quota.js';
-import { criarPedidoUpgrade, obterPedidoPendente } from './pagamentos.js';
+import { criarPedidoUpgrade, obterPedidoPendente, listarCartoesUsuario } from './pagamentos.js';
+import { obterMetas } from './metas.js';
+import { summary as resumoEstrelas } from './stars.js';
 import * as contas from '../repositories/contas.js';
 import * as usuarios from '../repositories/usuarios.js';
 import * as planos from '../repositories/planos.js';
@@ -43,14 +45,44 @@ const perfil = (u) => ({
   membroDesde: u.created_at,
 });
 
-/** Tela "Minha conta": perfil, plano, uso de hoje e pedido de upgrade pendente. */
+/** Tela "Minha conta": perfil, gamificação, plano, cartões recorrentes, uso de hoje e pedido de upgrade pendente. */
 export async function visaoConta(u) {
   const plano = planoDoUsuario(u);
-  const [uso, pedido, contagem] = await Promise.all([generationQuota(u), planos.pendenteDoAluno(u.id), contas.contagemEditaisECadernos(u.id)]);
+  const [uso, pedido, contagem, metasDados, estrelasDados, cartoes] = await Promise.all([
+    generationQuota(u),
+    planos.pendenteDoAluno(u.id),
+    contas.contagemEditaisECadernos(u.id),
+    obterMetas(u),
+    resumoEstrelas(u.id),
+    listarCartoesUsuario(u.id),
+  ]);
+  const g = metasDados.gamificacao || {};
   return {
     perfil: perfil(u),
     plano: { id: plano.id, nome: plano.nome, ate: plano.id === u.plano ? u.plano_ate : null, limites: plano.limites },
     uso: { simuladosHoje: uso.usedToday, dificeisHoje: uso.dificeisHoje, creditosExtras: uso.bonus, editais: contagem.editais, cadernos: contagem.cadernos },
+    gamificacao: {
+      xp: g.xp || 0,
+      nivelId: g.nivelId || 'desbravador',
+      proximoNivelId: g.proximoNivelId || null,
+      xpParaProximo: g.xpParaProximo || 0,
+      progressoNivelPct: g.progressoNivelPct || 0,
+      estrelasTotal: estrelasDados.total || 0,
+      estrelasSaldo: estrelasDados.balance || 0,
+      nivelComunitario: estrelasDados.level?.nome || 'Iniciante',
+      nivelComunitarioIcone: estrelasDados.level?.icone || '☆',
+      sequenciaAtual: metasDados.sequencia?.atual || 0,
+      sequenciaRecorde: metasDados.sequencia?.recorde || 0,
+      totalRespondidas: g.totalRespondidas || 0,
+      totalAcertos: g.totalAcertos || 0,
+      taxaAcertoHistorico: g.taxaAcertoHistorico || 0,
+      diasAtivos: g.diasAtivos || 0,
+    },
+    cartoes,
+    cobrancaConfig: {
+      mercadoPagoPublicKey: config.mercadopago.publicKey || null,
+      gatewayAtivo: Boolean(config.mercadopago.accessToken),
+    },
     pedidoPendente: pedido ? { ...pedido, planoNome: PLANOS[pedido.plano]?.nome || pedido.plano } : null,
   };
 }

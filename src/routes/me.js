@@ -6,6 +6,7 @@ import { ah, parseBody, HttpError } from '../lib/http.js';
 import { requireAuth, publicUser, setSession, clearSession } from '../lib/auth.js';
 import * as Contas from '../services/contas.js';
 import * as Metas from '../services/metas.js';
+import * as Pagamentos from '../services/pagamentos.js';
 import { summary, redeem } from '../services/stars.js';
 import { resumoHoje } from '../services/atividade.js';
 import { obterDesempenhoCompleto } from '../services/desempenho.js';
@@ -136,6 +137,50 @@ r.post('/conta/upgrade', ah(async (req, res) => {
 }));
 r.delete('/conta/upgrade', ah(async (req, res) => {
   res.json(await Contas.cancelarUpgrade(req.user));
+}));
+
+// ---------- Cartões para Cobrança Recorrente (PCI-safe: nunca recebe PAN/CVV em claro) ----------
+const BANDEIRAS_CARTAO = ['visa', 'mastercard', 'elo', 'amex', 'hipercard', 'outro'];
+
+r.get('/conta/cartoes', ah(async (req, res) => {
+  res.json({
+    cartoes: await Pagamentos.listarCartoesUsuario(req.user.id),
+    cobrancaConfig: Pagamentos.cobrancaConfigPublica(),
+  });
+}));
+
+r.post('/conta/cartoes', ah(async (req, res) => {
+  const b = parseBody(z.object({
+    brand: z.enum(BANDEIRAS_CARTAO).default('outro'),
+    last4: z.string().regex(/^\d{4}$/, 'Últimos 4 dígitos inválidos.'),
+    expMonth: z.coerce.number().int().min(1, 'Mês de validade inválido.').max(12, 'Mês de validade inválido.'),
+    expYear: z.coerce.number().int().min(2024, 'Ano de validade inválido.').max(2100),
+    holderName: z.string().trim().min(3, 'Informe o nome impresso no cartão.').max(120)
+      .refine((v) => SEV[scanText(v).severity] < SEV.medium, 'Nome com conteúdo não permitido.'),
+    docLast4: z.string().regex(/^\d{4}$/).optional().nullable(),
+    cardToken: z.string().trim().min(4).max(200).optional().nullable(),
+    recorrenteAtivo: z.boolean().optional().default(true),
+  }).strict('Não envie número completo ou CVV do cartão.'), req.body);
+
+  const cartao = await Pagamentos.adicionarCartaoRecorrente(req.user, b);
+  res.status(201).json({ cartao, conta: await Contas.visaoConta(req.user) });
+}));
+
+r.patch('/conta/cartoes/:id', ah(async (req, res) => {
+  const { id } = parseBody(z.object({ id: z.string().uuid('Identificador de cartão inválido.') }), req.params);
+  const b = parseBody(z.object({
+    recorrenteAtivo: z.boolean().optional(),
+    isDefault: z.boolean().optional(),
+  }).refine((x) => x.recorrenteAtivo !== undefined || x.isDefault !== undefined, 'Informe a alteração desejada.'), req.body);
+
+  const cartao = await Pagamentos.atualizarCartaoRecorrente(req.user.id, id, b);
+  res.json({ cartao, conta: await Contas.visaoConta(req.user) });
+}));
+
+r.delete('/conta/cartoes/:id', ah(async (req, res) => {
+  const { id } = parseBody(z.object({ id: z.string().uuid('Identificador de cartão inválido.') }), req.params);
+  await Pagamentos.removerCartaoRecorrente(req.user.id, id);
+  res.json({ ok: true, conta: await Contas.visaoConta(req.user) });
 }));
 
 export default r;

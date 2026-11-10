@@ -50,7 +50,8 @@ function viewProvas() {
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <h3 style="margin:0;font-size:16px">Uso e Custos da IA (30 dias)</h3>
         ${m.ia.custoTotal ? `<span class="badge brand" style="font-size:13px">Total estimado: R$ ${Number(m.ia.custoTotal.brl || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (US$ ${Number(m.ia.custoTotal.usd || 0).toFixed(4)})</span>` : ''}
-        ${m.ia.limiteDia ? `<span class="${m.ia.limiteDia.atingido ? 'sev high' : 'badge'}" style="font-size:13px" title="AI_LIMITE_USD_DIA no .env (dia de Brasília)">Hoje: US$ ${Number(m.ia.limiteDia.gastoHojeUsd || 0).toFixed(4)}${m.ia.limiteDia.usd ? ` de US$ ${Number(m.ia.limiteDia.usd).toFixed(2)}${m.ia.limiteDia.atingido ? ' — limite atingido, IA pausada até amanhã' : ''}` : ' (sem limite diário)'}</span>` : ''}
+        ${m.ia.limiteDia ? `<span class="${m.ia.limiteDia.atingido ? 'sev high' : 'badge'}" style="font-size:13px" title="AI_LIMITE_USD_DIA no .env (dia de Brasília)">Hoje: US$ ${Number(m.ia.limiteDia.gastoHojeUsd || 0).toFixed(4)}${m.ia.limiteDia.usd ? ` de US$ ${Number(m.ia.limiteDia.usd).toFixed(2)}${m.ia.limiteDia.atingido ? ' — limite atingido, IA paga pausada até amanhã' : ''}` : ' (sem limite diário)'}</span>` : ''}
+        ${m.ia.limiteTotal?.usd ? `<span class="${m.ia.limiteTotal.atingido ? 'sev high' : 'badge'}" style="font-size:13px" title="AI_LIMITE_USD_TOTAL no .env (teto acumulado)">Total acumulado: US$ ${Number(m.ia.limiteTotal.gastoTotalUsd || 0).toFixed(4)} de US$ ${Number(m.ia.limiteTotal.usd).toFixed(2)}${m.ia.limiteTotal.atingido ? ' — teto total atingido, IA paga bloqueada' : ''}</span>` : ''}
       </div>
       ${m.ia.resumoProduto ? `
         <div class="row" style="gap:10px;margin-bottom:14px;flex-wrap:wrap">

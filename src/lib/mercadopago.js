@@ -122,3 +122,71 @@ export function validarAssinaturaWebhook({ xSignature, xRequestId, dataId }) {
     return false;
   }
 }
+
+/** Garante Customer no Mercado Pago e associa um token de cartão (Customer & Cards API) para cobrança recorrente. */
+export async function salvarCartaoClienteMercadoPago({ email, nome, token }) {
+  const accessToken = config.mercadopago.accessToken;
+  if (!accessToken || !token) return null;
+
+  const headers = {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  };
+
+  let customerId = null;
+  const searchRes = await fetch(`${MP_API_URL}/v1/customers/search?email=${encodeURIComponent(email)}`, { headers });
+  if (searchRes.ok) {
+    const searchData = await searchRes.json();
+    customerId = searchData?.results?.[0]?.id || null;
+  }
+
+  if (!customerId) {
+    const partes = String(nome || 'Aluno HelpConcurso').trim().split(/\s+/);
+    const createCust = await fetch(`${MP_API_URL}/v1/customers`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        email,
+        first_name: partes[0] || 'Aluno',
+        last_name: partes.slice(1).join(' ') || 'HelpConcurso',
+      }),
+    });
+    const custData = await createCust.json();
+    if (!createCust.ok) {
+      throw new Error(custData.message || 'Falha ao cadastrar pagador no Mercado Pago.');
+    }
+    customerId = String(custData.id);
+  }
+
+  const cardRes = await fetch(`${MP_API_URL}/v1/customers/${encodeURIComponent(customerId)}/cards`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ token }),
+  });
+  const cardData = await cardRes.json();
+  if (!cardRes.ok) {
+    throw new Error(cardData.message || 'Não foi possível validar o cartão no Mercado Pago.');
+  }
+
+  return {
+    customerId: String(customerId),
+    cardId: String(cardData.id),
+    brand: cardData.payment_method?.id || null,
+    last4: cardData.last_four_digits || null,
+    expMonth: cardData.expiration_month || null,
+    expYear: cardData.expiration_year || null,
+    holderName: cardData.cardholder?.name || nome,
+  };
+}
+
+/** Remove um cartão salvo do Customer no Mercado Pago (best-effort). */
+export async function removerCartaoClienteMercadoPago({ customerId, cardId }) {
+  const accessToken = config.mercadopago.accessToken;
+  if (!accessToken || !customerId || !cardId) return;
+  try {
+    await fetch(`${MP_API_URL}/v1/customers/${encodeURIComponent(customerId)}/cards/${encodeURIComponent(cardId)}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+  } catch { /* remoção remota é best-effort; registro local já foi removido */ }
+}
