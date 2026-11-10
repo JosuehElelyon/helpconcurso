@@ -5,7 +5,9 @@
 //   → QUEUED → PROCESSING ou BATCH_PENDING (treino) → READY
 //   Saídas: DUPLICATE, REJECTED, FAILED (pode reprocessar)
 // =====================================================================
-import { one, many, query } from '../db.js';
+import * as provasRepo from '../repositories/provas.js';
+import * as editaisRepo from '../repositories/editais.js';
+import * as usuariosRepo from '../repositories/usuarios.js';
 import { materiaId, topicoId, normNome } from './taxonomia.js';
 import { config } from '../config.js';
 import { BANCA, validarUrlOficial } from '../lib/bancas.js';
@@ -32,11 +34,7 @@ export const publicStatus = {
   BATCH_PENDING: 'Treinando a IA (lote)', READY: 'Na base', DUPLICATE: 'Já estava na base', REJECTED: 'Recusada', FAILED: 'Erro técnico',
 };
 
-async function setStatus(id, status, extra = {}) {
-  const cols = Object.keys(extra), vals = Object.values(extra);
-  const sets = cols.map((c, i) => `${c}=$${i + 3}`).join(', ');
-  return one(`UPDATE provas SET status=$2${sets ? ', ' + sets : ''}, updated_at=now() WHERE id=$1 RETURNING *`, [id, status, ...vals]);
-}
+const setStatus = (id, status, extra = {}) => provasRepo.definirStatus(id, status, extra);
 const isTrusted = (u) => u && (u.role === 'ADMIN' || (u.approved_contribs >= config.security.trustAutoApproveMin && u.rejected_contribs === 0));
 
 // ---------------------------------------------------------------------
@@ -45,8 +43,7 @@ const isTrusted = (u) => u && (u.role === 'ADMIN' || (u.approved_contribs >= con
 export async function submitProva({ user, banca, orgao, cargo, ano, editalId, file, gabarito, ip, officialUrl = null, oficialConfirmado = false, officialUrlTipo = null }) {
   if (!BANCA[banca]) throw new HttpError(400, 'Escolha a banca.');
   if (user.role !== 'ADMIN') {
-    const n = await one("SELECT count(*)::int AS n FROM provas WHERE uploaded_by=$1 AND created_at > now() - interval '24 hours'", [user.id]);
-    if (n.n >= config.quota.provasPerDay) throw new HttpError(429, `Limite de ${config.quota.provasPerDay} provas por dia atingido. Tente amanhã.`);
+    if ((await provasRepo.enviadasNas24h(user.id)) >= config.quota.provasPerDay) throw new HttpError(429, `Limite de ${config.quota.provasPerDay} provas por dia atingido. Tente amanhã.`);
   }
   // Barreiras de segurança (OCR fica para a checagem em segundo plano)
   const sec = await secureUpload(file.buffer, file.name, 'prova', { ocr: 'none', userId: user.id, ip });
@@ -54,7 +51,7 @@ export async function submitProva({ user, banca, orgao, cargo, ano, editalId, fi
   if (gabarito) gab = await secureUpload(gabarito.buffer, gabarito.name, 'gabarito', { ocr: 'none', userId: user.id, ip });
 
   // Duplicata exata (mesmo arquivo)
-  const same = await one('SELECT id, status, review_note, banca FROM provas WHERE sha256=$1 ORDER BY created_at DESC LIMIT 1', [sec.sha256]);
+  const same = await provasRepo.porSha256(sec.sha256);
   if (same && ACTIVE.includes(same.status)) return { duplicate: true, message: `Essa prova já está na nossa base (${publicStatus[same.status].toLowerCase()}). Obrigado!`, provaId: same.id };
   if (same && same.status === 'REJECTED') throw new HttpError(422, `Este arquivo já foi analisado e recusado${same.review_note ? `: ${same.review_note}` : '.'}`);
 
@@ -62,17 +59,15 @@ export async function submitProva({ user, banca, orgao, cargo, ano, editalId, fi
   const gabKey = gabarito ? await putFile(makeKey(`provas/${banca}`, gabarito.name), gabarito.buffer, gabarito.mime) : null;
   const security = { findings: [...sec.findings, ...(gab ? gab.findings.map((f) => ({ ...f, where: 'gabarito:' + f.where })) : [])], decision: sec.decision, gabaritoDecision: gab?.decision || null, antivirus: sec.antivirus };
   // Só vincula a um edital do próprio aluno
-  const validEditalId = /^[0-9a-f-]{36}$/i.test(String(editalId || ''))
-    ? (await one('SELECT id FROM editais WHERE id=$1 AND user_id=$2', [editalId, user.id]))?.id || null
-    : null;
+  const validEditalId = /^[0-9a-f-]{36}$/i.test(String(editalId || '')) && (await editaisRepo.existe(editalId, user.id)) ? editalId : null;
   let p;
   try {
-    p = await one(`INSERT INTO provas(banca, banca_informada, orgao, cargo, ano, titulo, file_name, file_key, gabarito_name, gabarito_key, sha256, gabarito_sha256,
-                     text, gabarito_text, needs_ocr, page_count, security, source, uploaded_by, edital_id, status, official_url, oficial_confirmado, official_url_tipo)
-                   VALUES ($1,$1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'CHECKING',$20,$21,$22) RETURNING *`,
-      [banca, orgao, cargo, ano, [orgao, cargo, ano].filter(Boolean).join(' · ') || file.name, file.name, fileKey, gabarito?.name || null, gabKey, sec.sha256, gab?.sha256 || null,
-       sec.needsOcr ? null : sec.text, gab?.text || null, sec.needsOcr, sec.pages, JSON.stringify(security), user.role === 'ADMIN' ? 'admin' : 'user', user.id, validEditalId,
-       officialUrl, oficialConfirmado, officialUrlTipo]);
+    p = await provasRepo.inserir({
+      banca, orgao, cargo, ano, titulo: [orgao, cargo, ano].filter(Boolean).join(' · ') || file.name, fileName: file.name, fileKey,
+      gabaritoName: gabarito?.name || null, gabaritoKey: gabKey, sha256: sec.sha256, gabaritoSha256: gab?.sha256 || null,
+      text: sec.needsOcr ? null : sec.text, gabaritoText: gab?.text || null, needsOcr: sec.needsOcr, pages: sec.pages, security,
+      source: user.role === 'ADMIN' ? 'admin' : 'user', uploadedBy: user.id, editalId: validEditalId, officialUrl, oficialConfirmado, officialUrlTipo,
+    });
   } catch (e) {
     await deleteFile(fileKey); await deleteFile(gabKey);
     if (e.code === '23505') return { duplicate: true, message: 'Essa prova acabou de ser enviada por outra pessoa e já está na nossa base.' };
@@ -86,7 +81,7 @@ export async function submitProva({ user, banca, orgao, cargo, ano, editalId, fi
 // 2) Checagem automática
 // ---------------------------------------------------------------------
 async function checkProva({ provaId }) {
-  let p = await one('SELECT * FROM provas WHERE id=$1', [provaId]);
+  let p = await provasRepo.buscar(provaId);
   if (!p || p.status !== 'CHECKING') return;
   const findings = [...(p.security?.findings || [])];
 
@@ -153,7 +148,7 @@ async function checkProva({ provaId }) {
   const fp = fingerprint(sample);
   if (fp) {
     extra.fingerprint = JSON.stringify(fp);
-    const others = await many(`SELECT id, status, fingerprint, orgao, ano, cargo FROM provas WHERE banca=$1 AND id<>$2 AND fingerprint IS NOT NULL AND status = ANY($3)`, [banca, p.id, ACTIVE]);
+    const others = await provasRepo.comImpressaoDigital(banca, p.id, ACTIVE);
     let best = { sim: 0 };
     for (const o of others) { const sim = similarity(fp, o.fingerprint); if (sim > best.sim) best = { sim, o }; }
     const meta = (x) => [norm(x.orgao), norm(x.ano), norm(x.cargo)].join('|');
@@ -169,7 +164,7 @@ async function checkProva({ provaId }) {
   const decision = decide('prova', findings);
   extra.security = JSON.stringify({ ...p.security, findings, decision });
   if (notes.length) extra.review_note = notes.join(' ');
-  const uploader = p.uploaded_by ? await one('SELECT * FROM users WHERE id=$1', [p.uploaded_by]) : null;
+  const uploader = p.uploaded_by ? await usuariosRepo.buscar(p.uploaded_by) : null;
   const legacy = findings.some((f) => f.code === 'doc_legado');
   if (decision.verdict === 'ok' && !legacy && isTrusted(uploader)) {
     await setStatus(p.id, 'QUEUED', { ...extra, auto_approved: true, reviewed_at: new Date() });
@@ -185,12 +180,12 @@ async function checkProva({ provaId }) {
 // ---------------------------------------------------------------------
 async function creditUploader(p) {
   if (p.source !== 'user' || !p.uploaded_by) return;
-  await query('UPDATE users SET approved_contribs=approved_contribs+1, bonus_credits=bonus_credits+$2 WHERE id=$1', [p.uploaded_by, config.quota.bonusPerApprovedProva]);
+  await usuariosRepo.creditarContribuicao(p.uploaded_by, config.quota.bonusPerApprovedProva);
   await award(p.uploaded_by, 'prova_aprovada', config.stars.provaAprovada, p.id, `Prova aprovada: ${String(p.titulo || p.file_name).slice(0, 80)}`);
 }
 
 export async function approveProva(id, reviewer, { banca } = {}) {
-  const p = await one('SELECT * FROM provas WHERE id=$1', [id]);
+  const p = await provasRepo.buscar(id);
   if (!p) throw new HttpError(404, 'Prova não encontrada.');
   if (!['IN_REVIEW', 'REJECTED', 'FAILED', 'DUPLICATE'].includes(p.status)) throw new HttpError(409, `Não é possível aprovar uma prova com status "${publicStatus[p.status]}".`);
   if (banca && !BANCA[banca]) throw new HttpError(400, 'Banca inválida.');
@@ -200,19 +195,19 @@ export async function approveProva(id, reviewer, { banca } = {}) {
   if (wasPending) await creditUploader(p);
   await enqueue('prova.train', { provaId: id });
   await notify(id, 'approved');
-  return one('SELECT * FROM provas WHERE id=$1', [id]);
+  return provasRepo.buscar(id);
 }
 
 export async function rejectProva(id, reviewer, motivo) {
-  const p = await one('SELECT * FROM provas WHERE id=$1', [id]);
+  const p = await provasRepo.buscar(id);
   if (!p) throw new HttpError(404, 'Prova não encontrada.');
   if (['REJECTED'].includes(p.status)) return p;
   if (['PROCESSING', 'BATCH_PENDING'].includes(p.status)) throw new HttpError(409, 'A prova está em treino; aguarde terminar ou remova-a.');
   await setStatus(id, 'REJECTED', { review_note: String(motivo || 'Recusada na revisão.').slice(0, 500), reviewed_by: reviewer.id, reviewed_at: new Date() });
-  if (p.status === 'IN_REVIEW' && p.source === 'user') await query('UPDATE users SET rejected_contribs=rejected_contribs+1 WHERE id=$1', [p.uploaded_by]);
-  if (p.status === 'READY') await query('DELETE FROM prova_questoes WHERE prova_id=$1', [id]);
+  if (p.status === 'IN_REVIEW' && p.source === 'user') await usuariosRepo.registrarRecusa(p.uploaded_by);
+  if (p.status === 'READY') await provasRepo.excluirQuestoes(id);
   await notify(id);
-  return one('SELECT * FROM provas WHERE id=$1', [id]);
+  return provasRepo.buscar(id);
 }
 
 // ---------------------------------------------------------------------
@@ -231,7 +226,7 @@ function chunks(text) {
 const chaveQuestao = (enun) => normNome(enun).slice(0, 80);
 
 async function trainProva({ provaId }) {
-  let p = await one('SELECT * FROM provas WHERE id=$1', [provaId]);
+  let p = await provasRepo.buscar(provaId);
   if (!p || !['QUEUED', 'PROCESSING'].includes(p.status)) return;
   p = await setStatus(p.id, 'PROCESSING', { attempts: p.attempts + 1, error: null });
 
@@ -319,7 +314,7 @@ async function trainProva({ provaId }) {
 }
 
 async function pollProvaBatch({ provaId }) {
-  const p = await one('SELECT * FROM provas WHERE id=$1', [provaId]);
+  const p = await provasRepo.buscar(provaId);
   if (!p || p.status !== 'BATCH_PENDING') return;
   const refs = JSON.parse(p.ai_batch_id || '{}');
   // Lotes podem levar até 24h; depois de 26h desistimos e treinamos direto
@@ -342,7 +337,7 @@ async function pollProvaBatch({ provaId }) {
 async function finalize(p, analysis, questions) {
   const clean = (arr) => arr.filter((s) => SEV[scanText(s).severity] < SEV.medium);
   const safeAnalysis = { caracteristicas: clean(analysis.caracteristicas), padroes_enunciado: clean(analysis.padroes_enunciado), pegadinhas: clean(analysis.pegadinhas), dificuldade: analysis.dificuldade, alertas: analysis.alertas };
-  await query('DELETE FROM prova_questoes WHERE prova_id=$1', [p.id]);
+  await provasRepo.excluirQuestoes(p.id);
   let saved = 0, flagged = 0;
   const seen = new Set();
   let teveDivergencia = false;
@@ -357,11 +352,11 @@ async function finalize(p, analysis, questions) {
     const topico = clean([q.topico || ''])[0] || null;
     const matId = await materiaId(q.materia);
     const topId = topico && !isBad ? await topicoId(matId, topico) : null;
-    await query(`INSERT INTO prova_questoes(prova_id,banca,materia,numero,enunciado,alternativas,gabarito,flagged,topico,materia_id,topico_id,comando,pegadinha_tipo,habilidade,dispositivos,consenso_gabarito,divergencia_gabarito)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-      [p.id, p.banca, q.materia || null, q.numero, enun, JSON.stringify(q.alternativas), q.gabarito || null, isBad,
-        topico, matId, topId, q.comando || null, q.pegadinha || null, q.habilidade || null, JSON.stringify(clean(q.dispositivos || [])),
-        q.consenso_gabarito === undefined ? null : q.consenso_gabarito, q.divergencia_gabarito ? JSON.stringify(q.divergencia_gabarito) : null]);
+    await provasRepo.inserirQuestao({
+      provaId: p.id, banca: p.banca, materia: q.materia, numero: q.numero, enunciado: enun, alternativas: q.alternativas, gabarito: q.gabarito,
+      flagged: isBad, topico, materiaId: matId, topicoId: topId, comando: q.comando, pegadinha: q.pegadinha, habilidade: q.habilidade,
+      dispositivos: clean(q.dispositivos || []), consenso: q.consenso_gabarito, divergencia: q.divergencia_gabarito,
+    });
     saved++;
   }
   if (saved - flagged === 0) throw Object.assign(new Error('Nenhuma questão válida foi extraída da prova.'), { permanent: true });
@@ -381,7 +376,7 @@ async function finalize(p, analysis, questions) {
 // ---------------------------------------------------------------------
 async function notify(id, event) {
   try {
-    const p = await one('SELECT p.*, u.email, u.name FROM provas p JOIN users u ON u.id=p.uploaded_by WHERE p.id=$1', [id]);
+    const p = await provasRepo.comAutor(id);
     if (!p || p.source !== 'user') return;
     const st = event === 'approved' ? 'APPROVED' : p.status;
     if (!['APPROVED', 'READY', 'REJECTED', 'DUPLICATE'].includes(st)) return;
@@ -394,7 +389,7 @@ async function notify(id, event) {
 // ---------------------------------------------------------------------
 const failTo = (status) => async ({ provaId }, err) => {
   const msg = err?.name === 'AiError' || err?.code ? (await import('../ai/errors.js')).userMessage(err) : String(err?.message || err);
-  await query('UPDATE provas SET status=$2, error=$3, updated_at=now() WHERE id=$1', [provaId, status, msg.slice(0, 500)]);
+  await provasRepo.definirErro(provaId, status, msg);
 };
 registerJob('prova.check', { run: checkProva, onDead: failTo('FAILED'), maxAttempts: 4 });
 registerJob('prova.train', { run: trainProva, onDead: failTo('FAILED'), maxAttempts: 4 });
@@ -406,9 +401,9 @@ registerJob('prova.batch_poll', { run: pollProvaBatch, onDead: failTo('FAILED'),
 // Prova é documento público → roda na cascata grátis (dados='publico'); o Claude só entra como reserva.
 // ---------------------------------------------------------------------
 async function relabelProva({ provaId }) {
-  const p = await one("SELECT * FROM provas WHERE id=$1 AND status='READY'", [provaId]);
+  const p = await provasRepo.buscarPronta(provaId);
   if (!p?.text) return;
-  const pendentes = await many('SELECT id, numero, enunciado FROM prova_questoes WHERE prova_id=$1 AND comando IS NULL AND NOT flagged', [p.id]);
+  const pendentes = await provasRepo.questoesSemRotulo(p.id);
   if (!pendentes.length) return;
   const porChave = new Map(pendentes.map((r) => [chaveQuestao(r.enunciado), r]));
   const porNumero = new Map(pendentes.filter((r) => r.numero != null).map((r) => [r.numero, r]));
@@ -425,9 +420,7 @@ async function relabelProva({ provaId }) {
       const topico = clean([q.topico || ''])[0] || null;
       const matId = await materiaId(q.materia);
       const topId = topico ? await topicoId(matId, topico) : null;
-      await query(`UPDATE prova_questoes SET topico=$2, materia_id=$3, topico_id=$4, comando=$5, pegadinha_tipo=$6, habilidade=$7, dispositivos=$8
-                   WHERE id=$1 AND comando IS NULL`,
-        [alvo.id, topico, matId, topId, q.comando || null, q.pegadinha || null, q.habilidade || null, JSON.stringify(clean(q.dispositivos || []))]);
+      await provasRepo.rotularQuestao(alvo.id, { topico, materiaId: matId, topicoId: topId, comando: q.comando, pegadinha: q.pegadinha, habilidade: q.habilidade, dispositivos: clean(q.dispositivos || []) });
       alvo.feito = true; rotuladas++;
     }
   }
@@ -438,17 +431,13 @@ registerJob('prova.relabel', { run: relabelProva, maxAttempts: 3, prioridade: -1
 /** Enfileira a rotulagem de todas as provas prontas que ainda têm questões sem rótulo. Devolve quantas provas entraram na fila. */
 export async function enqueueRelabel({ provaId = null } = {}) {
   // Só provas com texto suficiente (mesma regra do treino) e sem rotulagem já pendente (clique duplo não duplica)
-  const rows = await many(`SELECT DISTINCT q.prova_id AS id FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
-                           WHERE p.status='READY' AND q.comando IS NULL AND NOT q.flagged AND length(coalesce(p.text, '')) >= 200
-                             AND ($1::uuid IS NULL OR p.id = $1)
-                             AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.type='prova.relabel' AND j.status IN ('queued','running')
-                                             AND j.payload->>'provaId' = p.id::text)`, [provaId]);
-  for (const r of rows) await enqueue('prova.relabel', { provaId: r.id });
-  return rows.length;
+  const ids = await provasRepo.idsParaRotular(provaId);
+  for (const id of ids) await enqueue('prova.relabel', { provaId: id });
+  return ids.length;
 }
 
 export async function reprocessProva(id) {
-  const p = await one('SELECT * FROM provas WHERE id=$1', [id]);
+  const p = await provasRepo.buscar(id);
   if (!p) throw new HttpError(404, 'Prova não encontrada.');
   if (['CHECKING', 'PROCESSING', 'BATCH_PENDING'].includes(p.status)) throw new HttpError(409, 'A prova já está sendo processada.');
   if (p.status === 'READY' || p.status === 'QUEUED' || (p.status === 'FAILED' && p.reviewed_at)) {
@@ -456,7 +445,7 @@ export async function reprocessProva(id) {
   } else {
     await setStatus(id, 'CHECKING', { error: null }); await enqueue('prova.check', { provaId: id });
   }
-  return one('SELECT * FROM provas WHERE id=$1', [id]);
+  return provasRepo.buscar(id);
 }
 
 // ---------------------------------------------------------------------
@@ -541,7 +530,7 @@ const letraValida = (q, letra) => (formatoDaQuestaoProva(q) === 'ce' ? /^[CE]$/.
  * Recusa (422): conflito entre blocos/cargos, letra que não serve ao formato da questão, cobertura < 60%.
  */
 export async function aplicarGabaritoDefinitivo({ provaId, user, url, file, text, confirmar = false }) {
-  const p = await one('SELECT * FROM provas WHERE id=$1', [provaId]);
+  const p = await provasRepo.buscar(provaId);
   if (!p) throw new HttpError(404, 'Prova não encontrada.');
 
   let rawText = text || '';
@@ -567,7 +556,7 @@ export async function aplicarGabaritoDefinitivo({ provaId, user, url, file, text
       : `As questões ${conflitos.slice(0, 10).join(', ')} aparecem com respostas diferentes. Cole só o bloco do cargo/tipo desta prova.`);
   }
 
-  const questoes = await many('SELECT id, numero, gabarito, alternativas, anulada FROM prova_questoes WHERE prova_id=$1', [provaId]);
+  const questoes = await provasRepo.questoesParaGabarito(provaId);
   const porNumero = new Map(questoes.filter((q) => q.numero != null).map((q) => [q.numero, q]));
   const casados = itens.filter((it) => porNumero.has(it.numero));
   const invalidas = casados.filter((it) => !it.anulada && !letraValida(porNumero.get(it.numero), it.gabarito));
@@ -604,18 +593,15 @@ export async function aplicarGabaritoDefinitivo({ provaId, user, url, file, text
   for (const d of detalhes) {
     const alvo = porNumero.get(d.numero);
     if (d.status === 'anulada') {
-      await query('UPDATE prova_questoes SET anulada=true, motivo_anulacao=$2, gabarito_definitivo=true WHERE id=$1', [alvo.id, d.motivo || 'Anulada no gabarito oficial definitivo.']);
+      await provasRepo.anularQuestao(alvo.id, d.motivo || 'Anulada no gabarito oficial definitivo.');
     } else {
-      const mudou = d.status === 'alterada' || d.status === 'corrigida';
-      await query(`UPDATE prova_questoes SET gabarito=$2, gabarito_alterado=$3, anulada=false,
-                     gabarito_original = CASE WHEN $4 THEN coalesce(gabarito_original, $5) ELSE gabarito_original END,
-                     motivo_anulacao=$6, gabarito_definitivo=true, consenso_gabarito=true
-                   WHERE id=$1`, [alvo.id, d.gabarito, d.status === 'alterada', mudou, d.antes, d.motivo || null]);
+      await provasRepo.definirGabaritoDefinitivo(alvo.id, {
+        gabarito: d.gabarito, alteradaPelaBanca: d.status === 'alterada', mudou: d.status === 'alterada' || d.status === 'corrigida', antes: d.antes, motivo: d.motivo,
+      });
     }
   }
-  await query(`UPDATE provas SET gabarito_definitivo=true, gabarito_definitivo_url=$2, gabarito_definitivo_confirmado=$3,
-                 gabarito_text=coalesce($4, gabarito_text), updated_at=now() WHERE id=$1`, [provaId, officialUrl, oficialConfirmado, rawText]);
-  return { prova: await one('SELECT * FROM provas WHERE id=$1', [provaId]), resumo };
+  await provasRepo.marcarGabaritoDefinitivo(provaId, { url: officialUrl, confirmado: oficialConfirmado, texto: rawText });
+  return { prova: await provasRepo.buscar(provaId), resumo };
 }
 
 // ---------------------------------------------------------------------
@@ -675,7 +661,7 @@ export async function importarProvasEmLote({ user, defaultBanca, itens = [], tex
 }
 
 async function importarItemDoLote({ userId, banca, provaUrl, gabaritoUrl, orgao, cargo, ano }) {
-  const user = await one('SELECT * FROM users WHERE id=$1', [userId]);
+  const user = await usuariosRepo.buscar(userId);
   if (!user || user.role !== 'ADMIN') return;
   const dProva = await baixarDaFonteOficial(banca, provaUrl);
   const dGab = gabaritoUrl ? await baixarDaFonteOficial(banca, gabaritoUrl) : null;
