@@ -20,7 +20,7 @@ function viewShell(body) {
   const ativo = (v) => S.view === v || (v === 'questoes' && ['simulado', 'caderno'].includes(S.view));
   const item = ([v, l, i]) => `<button class="nav-item ${ativo(v) ? 'on' : ''}" data-go="${v}" ${ativo(v) ? 'aria-current="page"' : ''}>${ic(i)} <span>${l}</span>${v === 'questoes' && (S.cadernos.length || S.sets.length) ? `<span class="badge">${S.cadernos.length || S.sets.length}</span>` : ''}${v === 'edital' && S.activeEdital ? `<span class="badge brand">${S.activeEdital.resumo?.coberturaPct ?? 0}%</span>` : ''}</button>`;
   const navHtml = `${nav.map(item).join('')}
-    <div class="nav-sep">Sua conta</div>${item(['conta', 'Minha conta', 'user'])}${item(['planos', 'Planos', 'crown'])}
+    <div class="nav-sep">Sua conta</div>${item(['metas', 'Minhas metas', 'target'])}${item(['conta', 'Minha conta', 'user'])}${item(['planos', 'Planos', 'crown'])}
     ${isAdmin() ? `<div class="nav-sep">Administração</div>${item(['provas', 'Base de provas (Treinar IA)', 'brain'])}` : ''}`;
   const plano = u.plano && !isAdmin() ? `<button class="plan-chip p-${esc(u.plano.id)}" data-go="planos" title="Seu plano: ${esc(u.plano.nome)}">${ic('crown', 'sm')}<span>${esc(u.plano.nome)}</span></button>` : '';
   const tabs = [['home', 'Início', 'home'], ['gerar', 'Gerar', 'spark'], ['questoes', 'Cadernos', 'book'], ['edital', 'Edital', 'target'], ['conta', 'Conta', 'user']];

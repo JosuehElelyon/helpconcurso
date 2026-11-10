@@ -6,6 +6,7 @@ import { viewBancas } from './bancas.js';
 import { viewBanco, viewCaderno } from './cadernos.js';
 import { viewConta } from './conta.js';
 import { viewDesempenho } from './desempenho.js';
+import { viewMetas } from './metas.js';
 import { viewEdital } from './edital.js';
 import { viewContribuir } from './enviar-provas.js';
 import { S, isAdmin } from './estado.js';
@@ -40,6 +41,7 @@ function viewBody() {
     case 'estrelas': return viewEstrelas();
     case 'edital': return viewEdital();
     case 'desempenho': return viewDesempenho();
+    case 'metas': return viewMetas();
     case 'conta': return viewConta();
     case 'planos': return viewPlanos();
     default: return viewHome();

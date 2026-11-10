@@ -1090,4 +1090,16 @@ img.avatar{object-fit:cover;display:block;border-radius:50%}
   font-size: 12.5px;
 }
 
+/* =========================================================
+   Minhas Metas & Planejamento de Estudos
+   ========================================================= */
+.metas-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
 

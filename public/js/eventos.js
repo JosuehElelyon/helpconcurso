@@ -4,6 +4,7 @@ import { ligarAdmin, loadAdmin } from './admin.js';
 import { ligarCaderno, ligarCadernos, openCaderno, refreshCadernos } from './cadernos.js';
 import { ligarConta, ligarContaEPlanos, loadConta, loadPlanos, showAvatarModal } from './conta.js';
 import { ligarDesempenho, loadDesempenho } from './desempenho.js';
+import { ligarMetas, loadMetas } from './metas.js';
 import { ligarEdital, refreshEditais } from './edital.js';
 import { ligarEnviarProvas } from './enviar-provas.js';
 import { S, isAdmin, newWiz } from './estado.js';
@@ -18,11 +19,12 @@ import { ligarSimulado } from './simulado.js';
 import { $, api, on, toast } from './util.js';
 
 // ---------- Navegação e eventos ----------
-const ROUTES = ['home', 'desempenho', 'gerar', 'edital', 'questoes', 'bancas', 'contribuir', 'estrelas', 'provas', 'conta', 'planos'];
+const ROUTES = ['home', 'metas', 'desempenho', 'gerar', 'edital', 'questoes', 'bancas', 'contribuir', 'estrelas', 'provas', 'conta', 'planos'];
 function go(v) {
   S.view = v; S.drawer = false;
   if (ROUTES.includes(v)) { try { if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v); } catch {} }
   if (v === 'desempenho') loadDesempenho(S.desempEditalId);
+  if (v === 'metas') loadMetas();
   if (v === 'provas' && isAdmin()) loadAdmin(S.adminTab === 'monitor').then(() => { if (S.view === 'provas') render(); }).catch((e) => toast(e.message));
   if (v === 'estrelas') refreshStars({ silent: true });
   if (v === 'conta') loadConta();
@@ -183,6 +185,7 @@ function bindApp() {
   }
   const w = S.wiz;
   if (S.view === 'gerar' && w) ligarGerar();
+  if (S.view === 'metas') ligarMetas();
   if (S.view === 'simulado') ligarSimulado();
   if (S.view === 'edital') ligarEdital();
   if (S.view === 'estrelas') ligarEstrelas();

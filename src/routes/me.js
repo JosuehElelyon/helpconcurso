@@ -31,6 +31,18 @@ r.get('/hoje', ah(async (req, res) => res.json(await resumoHoje(req.user))));
 // Painel Visual de Desempenho, Produtividade, Horas e Radar da Banca
 r.get('/desempenho', ah(async (req, res) => res.json(await obterDesempenhoCompleto(req.user, req.query.editalId))));
 
+// ---------- Metas & Planejamento de Estudos ----------
+r.get('/metas', ah(async (req, res) => res.json(await Contas.obterMetas(req.user))));
+r.patch('/metas', ah(async (req, res) => {
+  const b = parseBody(z.object({
+    metaDiaria: z.coerce.number().int().min(0, 'Meta diária deve ser zero ou positiva.').max(500, 'Meta máxima de 500 questões/dia.').optional().nullable(),
+    concursoAlvo: textoLivre(120),
+    bancaPreferida: z.string().trim().optional().default('').refine((v) => !v || BANCA[v], 'Banca inválida.'),
+    dataProva: z.string().trim().optional().default('').refine((v) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v), 'Data inválida.'),
+  }), req.body);
+  res.json(await Contas.atualizarMetas(req.user, b));
+}));
+
 // ---------- Minha conta ----------
 const contaView = (u) => Contas.visaoConta(u);
 

@@ -23,6 +23,7 @@ import './js/admin.js';
 import './js/estrelas.js';
 import './js/edital.js';
 import './js/desempenho.js';
+import './js/metas.js';
 import './js/modal.js';
 import './js/eventos.js';
 import './js/sessao.js';

@@ -54,7 +54,9 @@ function viewHoje() {
           <div class="eyebrow" style="color:var(--brand)">Hoje</div>
           <div class="hoje-title">${titulo}</div>
           <div class="hint">${meta ? `${feitas} de ${meta} respondidas hoje${h.hoje.respondidas ? ` · ${h.hoje.acertos} acerto(s)` : ''}` : 'Com uma meta, você acompanha seu ritmo e mantém a sequência.'}</div>
-          ${!meta ? '<button class="btn btn-primary btn-sm" data-go="conta" style="margin-top:8px">Definir minha meta</button>' : ''}
+          ${!meta
+            ? '<button class="btn btn-primary btn-sm" data-go="metas" style="margin-top:8px">Definir minha meta</button>'
+            : '<button class="link-btn" data-go="metas" style="margin-top:6px;font-size:12px">Ajustar metas</button>'}
         </div>
       </div>
       <div class="hoje-streak">

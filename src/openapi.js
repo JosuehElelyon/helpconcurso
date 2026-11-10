@@ -101,6 +101,8 @@ const ROTAS = [
   ['get', '/me/estrelas', 'Minha conta', 'Estrelas e nível', ALUNO],
   ['post', '/me/estrelas/trocar', 'Minha conta', 'Troca estrelas por gerações ({ geracoes })', ALUNO, JSON_],
   ['get', '/me/hoje', 'Minha conta', 'Tela "Hoje": meta, sequência, revisões e tópicos fracos', ALUNO],
+  ['get', '/me/metas', 'Minha conta', 'Consulta as metas e planejamento de estudos do aluno', ALUNO],
+  ['patch', '/me/metas', 'Minha conta', 'Atualiza as metas de estudo ({ metaDiaria, concursoAlvo, bancaPreferida, dataProva })', ALUNO, JSON_],
   ['get', '/me/desempenho', 'Minha conta', 'Radar de desempenho (?editalId=)', ALUNO],
   ['get', '/me/conta', 'Minha conta', 'Perfil, plano e uso', ALUNO],
   ['patch', '/me/conta', 'Minha conta', 'Atualiza o perfil', ALUNO, JSON_],

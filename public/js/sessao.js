@@ -19,7 +19,7 @@ async function enterApp(user) {
     const [b, s] = await Promise.all([api('/bancas'), api('/sets')]);
     Object.assign(S, { bancas: b.bancas, materias: b.materias, niveis: b.niveis, sets: s.sets, loaded: true });
     await Promise.all([refreshStars({ silent: true }), refreshEditais({ silent: true }), refreshCadernos({ silent: true }), loadHoje()]);
-    if (['provas', 'contribuir', 'gerar', 'edital', 'conta', 'planos', 'estrelas'].includes(S.view)) { go(S.view); return conferirTermos(); }
+    if (['provas', 'contribuir', 'gerar', 'edital', 'metas', 'conta', 'planos', 'estrelas'].includes(S.view)) { go(S.view); return conferirTermos(); }
   } catch (e) { toast(e.message); }
   render();
   conferirTermos();
