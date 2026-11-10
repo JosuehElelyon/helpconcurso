@@ -18,7 +18,10 @@ test('custo usa os preços por modelo, com desconto de cache e de lote', () => {
   assert.equal(costUsd('claude-sonnet-5-5', 1_000_000, 0), 2);
   assert.equal(costUsd('claude-sonnet-5-5', 0, 1_000_000), 10);
   assert.equal(costUsd('claude-haiku-5-5', 1_000_000, 1_000_000), 0.6);
-  assert.equal(costUsd('claude-sonnet-5-5', 1_000_000, 0, 1_000_000), 0.2); // tudo lido do cache
+  // Anthropic: input_tokens já exclui o cache; leitura (0,1×) e escrita (1,25×) são parcelas à parte
+  assert.equal(costUsd('claude-sonnet-5-5', 0, 0, 1_000_000), 0.2);                       // tudo lido do cache
+  assert.equal(costUsd('claude-sonnet-5-5', 1_000_000, 0, 1_000_000), 2.2);               // não desconta a leitura da entrada
+  assert.equal(costUsd('claude-sonnet-5-5', 0, 0, 0, false, 'anthropic', 1_000_000), 2.5); // escrita no cache = 1,25×
   assert.equal(costUsd('claude-sonnet-5-5', 0, 1_000_000, 0, true), 5);     // lote = metade
 });
 

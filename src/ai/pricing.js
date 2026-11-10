@@ -1,6 +1,7 @@
 // Preços da IA e cálculo de custo — usado pelo painel Admin e pelo limite diário de gasto (AI_LIMITE_USD_DIA).
 // Preços por 1 milhão de tokens (US$), tabela da Anthropic de out/2026 — confira em https://claude.com/pricing ao trocar de modelo.
-// cache = leitura de cache (~10% da entrada). Haiku 5.5: preço vale para prompts de até 100 mil tokens (acima disso, 0,50/2,50);
+// cache = leitura de cache (~10% da entrada); escrita no cache (5 min) = 1,25× a entrada. Na Anthropic, input_tokens já vem
+// SEM os tokens lidos e escritos no cache: as três parcelas somam o prompt inteiro e são cobradas separadamente. Haiku 5.5: preço vale para prompts de até 100 mil tokens (acima disso, 0,50/2,50);
 // nossos prompts são cortados bem abaixo disso. Chamadas em lote (AI_TRAINING_MODE=batch) custam 50%.
 // Gratuidade é declarada, não adivinhada: só custa 0 o que roda local (mock, ollama), o proxy de desenvolvimento (fcc),
 // os provedores listados em AI_PROVEDORES_GRATIS e modelos com ":free" no nome (OpenRouter). Modelo desconhecido de
@@ -17,6 +18,7 @@ export const PRICE_PER_M = {
 const ALWAYS_FREE = new Set(['mock', 'fcc', 'ollama']);
 export const USD_TO_BRL = 5.80;
 const BATCH_DISCOUNT = 0.5;
+const CACHE_WRITE_MULT = 1.25;
 
 export function isFreeModel(model, provider = '') {
   const p = String(provider || '').toLowerCase();
@@ -25,21 +27,25 @@ export function isFreeModel(model, provider = '') {
   return m.endsWith(':free') || m === 'openrouter/free';
 }
 
-export function costUsd(model, inputTokens, outputTokens, cacheTokens = 0, batch = false, provider = '') {
+/**
+ * @param inputTokens  entrada fora do cache (Anthropic: usage.input_tokens)
+ * @param cacheTokens  lidos do cache (usage.cache_read_input_tokens)
+ * @param cacheWriteTokens escritos no cache (usage.cache_creation_input_tokens)
+ */
+export function costUsd(model, inputTokens, outputTokens, cacheTokens = 0, batch = false, provider = '', cacheWriteTokens = 0) {
   if (isFreeModel(model, provider)) return 0;
   const mKey = Object.keys(PRICE_PER_M).find((k) => k !== 'default' && String(model || '').includes(k)) || 'default';
   const p = PRICE_PER_M[mKey];
-  const cache = Number(cacheTokens || 0);
-  const uncachedIn = Math.max(0, Number(inputTokens || 0) - cache);
-  const usd = (uncachedIn * p.in + cache * p.cache + Number(outputTokens || 0) * p.out) / 1_000_000;
+  const usd = (Number(inputTokens || 0) * p.in + Number(cacheTokens || 0) * p.cache
+    + Number(cacheWriteTokens || 0) * p.in * CACHE_WRITE_MULT + Number(outputTokens || 0) * p.out) / 1_000_000;
   return batch ? usd * BATCH_DISCOUNT : usd;
 }
 
 /** Gasto real (sem o provedor simulado e sem provedores gratuitos) desde a meia-noite de Brasília. */
 export async function spentTodayUsd() {
-  const rows = await many(`SELECT provider, model, batch, coalesce(sum(input_tokens),0)::bigint AS ent, coalesce(sum(output_tokens),0)::bigint AS sai, coalesce(sum(cache_read_tokens),0)::bigint AS cache
+  const rows = await many(`SELECT provider, model, batch, coalesce(sum(input_tokens),0)::bigint AS ent, coalesce(sum(output_tokens),0)::bigint AS sai, coalesce(sum(cache_read_tokens),0)::bigint AS cache, coalesce(sum(cache_write_tokens),0)::bigint AS escrita
                            FROM ai_usage
                            WHERE provider <> 'mock' AND created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')
                            GROUP BY provider, model, batch`);
-  return rows.reduce((acc, r) => acc + costUsd(r.model, r.ent, r.sai, r.cache, r.batch, r.provider), 0);
+  return rows.reduce((acc, r) => acc + costUsd(r.model, r.ent, r.sai, r.cache, r.batch, r.provider, r.escrita), 0);
 }

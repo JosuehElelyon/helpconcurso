@@ -8,7 +8,8 @@ export const usoDeIA = (dias) => many(
   `SELECT task, provider, model, batch, count(*)::int AS chamadas, sum(CASE WHEN ok THEN 0 ELSE 1 END)::int AS falhas,
           sum(CASE WHEN fallback THEN 1 ELSE 0 END)::int AS reservas,
           coalesce(sum(input_tokens),0)::bigint AS entrada, coalesce(sum(output_tokens),0)::bigint AS saida,
-          coalesce(sum(cache_read_tokens),0)::bigint AS cache, round(avg(duration_ms))::int AS ms_medio
+          coalesce(sum(cache_read_tokens),0)::bigint AS cache, coalesce(sum(cache_write_tokens),0)::bigint AS cache_escrita,
+          round(avg(duration_ms))::int AS ms_medio
    FROM ai_usage WHERE created_at > now() - ($1 || ' days')::interval AND provider <> 'mock'
    GROUP BY task, provider, model, batch ORDER BY task, batch`, [periodo(dias)]);
 

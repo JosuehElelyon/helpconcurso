@@ -26,12 +26,13 @@ export async function painelIA({ dias = 30 } = {}) {
 
   let totalUsd = 0;
   const usage = bruto.map((u) => {
-    const usd = costUsd(u.model, Number(u.entrada), Number(u.saida), Number(u.cache), u.batch, u.provider);
+    const usd = costUsd(u.model, Number(u.entrada), Number(u.saida), Number(u.cache), u.batch, u.provider, Number(u.cache_escrita));
     totalUsd += usd;
     return {
       ...u, custoUsd: arred(usd), custoBrl: arred(usd * USD_TO_BRL, 2),
       // Quanto da entrada veio do cache de prompt (meta: system estável por banca/dia — C6)
-      cachePct: pct(Number(u.cache), Number(u.entrada) + Number(u.cache)),
+      // (entrada + lido + escrito = prompt inteiro). Escrita sem leitura = sobrecusto de 25% sem retorno.
+      cachePct: pct(Number(u.cache), Number(u.entrada) + Number(u.cache) + Number(u.cache_escrita)),
     };
   });
 

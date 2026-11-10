@@ -50,7 +50,7 @@ export function createAnthropic({ apiKey, baseUrl, timeoutMs, name = 'anthropic'
 
   // Proxies (ex.: fcc) traduzem para outros modelos: não recebem parâmetros de raciocínio da Anthropic
   const toParams = (req) => paramsClaude(req, { raciocinio: name === 'anthropic' });
-  const usageOf = (u = {}) => ({ input: u.input_tokens || 0, output: u.output_tokens || 0, cacheRead: u.cache_read_input_tokens || 0 });
+  const usageOf = (u = {}) => ({ input: u.input_tokens || 0, output: u.output_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0 });
   const textOf = (msg) => (msg.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
   const mapErr = (e) => {
     if (e?.name === 'APIUserAbortError' || e?.name === 'AbortError') return new AiAbortError();
