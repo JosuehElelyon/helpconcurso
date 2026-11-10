@@ -1,5 +1,6 @@
 // Front do HelpConcurso — Radar de Desempenho & Produtividade Visual.
 // Módulo gerado a partir do antigo public/app.js (item 10); entrada: public/app.js.
+import { MatrizPareto } from './components/MatrizPareto.js';
 import { S } from './estado.js';
 import { ic } from './icones.js';
 import { render } from './render.js';
@@ -352,102 +353,11 @@ function viewDesempenho() {
       </div>
     </div>
 
-    <div class="quadrantes-grid">
-      <!-- Quadrante 1: Zona de Perigo -->
-      <div class="quadrante-box danger">
-        <div>
-          <div class="quadrante-head">
-            <span class="quadrante-title" style="color:#B91C1C">🚨 Zona de Perigo (Urgente)</span>
-            <span class="badge bad" style="font-weight:800">${(quad.perigo || []).length}</span>
-          </div>
-          <div class="quadrante-sub">Alta incidência na prova onde seu rendimento está baixo (< 60%). Máxima prioridade de estudo.</div>
-          <div class="quadrante-items">
-            ${(quad.perigo || []).slice(0, 5).map((t) => `
-              <div class="quadrante-item">
-                <div style="min-width:0">
-                  <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.nome)}</div>
-                  <div class="hint" style="font-size:11.5px">${esc(t.materia)} · ${t.questoesNaBanca ? `🔥 <b>${t.questoesNaBanca} q. na banca</b>` : 'Relevante'}</div>
-                </div>
-                <div class="row" style="gap:4px">
-                  ${t.questoesNaBanca ? `<button type="button" class="btn btn-ghost btn-sm" data-treinar-reais="${t.id}" title="Resolver reais a custo US$ 0">${ic('book', 'sm')} Reais</button>` : ''}
-                  <button type="button" class="btn btn-primary btn-sm" data-treinar-topico="${t.id}">${ic('spark', 'sm')}</button>
-                </div>
-              </div>
-            `).join('')}
-            ${!(quad.perigo || []).length ? '<div class="hint" style="padding:14px;text-align:center">Parabéns! Nenhum ponto cego crítico detectado.</div>' : ''}
-          </div>
-        </div>
-      </div>
-
-      <!-- Quadrante 2: Fortaleza -->
-      <div class="quadrante-box fortaleza">
-        <div>
-          <div class="quadrante-head">
-            <span class="quadrante-title" style="color:#15803D">🏆 Fortaleza (Zona de Aprovação)</span>
-            <span class="badge ok" style="font-weight:800">${(quad.fortaleza || []).length}</span>
-          </div>
-          <div class="quadrante-sub">Tópicos quentes da banca onde você tem domínio comprovado (≥ 75%). Aqui você garante seus pontos.</div>
-          <div class="quadrante-items">
-            ${(quad.fortaleza || []).slice(0, 5).map((t) => `
-              <div class="quadrante-item">
-                <div style="min-width:0">
-                  <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.nome)}</div>
-                  <div class="hint" style="font-size:11.5px">${esc(t.materia)} · <b style="color:var(--ok)">${t.taxaAcerto}% acerto</b></div>
-                </div>
-                <span class="badge ok" style="font-size:11px">Dominado</span>
-              </div>
-            `).join('')}
-            ${!(quad.fortaleza || []).length ? '<div class="hint" style="padding:14px;text-align:center">Resolva mais simulados para consolidar sua fortaleza.</div>' : ''}
-          </div>
-        </div>
-      </div>
-
-      <!-- Quadrante 3: Atenção Moderada -->
-      <div class="quadrante-box reforco">
-        <div>
-          <div class="quadrante-head">
-            <span class="quadrante-title" style="color:#B45309">⚠️ Atenção Moderada (Reforço)</span>
-            <span class="badge accent" style="font-weight:800">${(quad.reforco || []).length}</span>
-          </div>
-          <div class="quadrante-sub">Tópicos com rendimento intermediário (60% a 74%). Suba para a zona de corte com revisões.</div>
-          <div class="quadrante-items">
-            ${(quad.reforco || []).slice(0, 5).map((t) => `
-              <div class="quadrante-item">
-                <div style="min-width:0">
-                  <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.nome)}</div>
-                  <div class="hint" style="font-size:11.5px">${esc(t.materia)} · <b>${t.taxaAcerto != null ? t.taxaAcerto + '%' : 'Pendente'}</b></div>
-                </div>
-                <button type="button" class="btn btn-ghost btn-sm" data-treinar-topico="${t.id}">${ic('spark', 'sm')} Praticar</button>
-              </div>
-            `).join('')}
-            ${!(quad.reforco || []).length ? '<div class="hint" style="padding:14px;text-align:center">Nenhum tópico em reforço no momento.</div>' : ''}
-          </div>
-        </div>
-      </div>
-
-      <!-- Quadrante 4: Zona de Conforto -->
-      <div class="quadrante-box conforto">
-        <div>
-          <div class="quadrante-head">
-            <span class="quadrante-title" style="color:var(--ink-2)">☕ Zona Secundária</span>
-            <span class="badge" style="font-weight:800">${(quad.conforto || []).length}</span>
-          </div>
-          <div class="quadrante-sub">Tópicos com baixa incidência histórica nas provas anteriores da banca. Não gaste tempo excessivo aqui.</div>
-          <div class="quadrante-items">
-            ${(quad.conforto || []).slice(0, 5).map((t) => `
-              <div class="quadrante-item">
-                <div style="min-width:0">
-                  <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.nome)}</div>
-                  <div class="hint" style="font-size:11.5px">${esc(t.materia)}</div>
-                </div>
-                <span class="badge" style="font-size:11px">Baixa Cobrança</span>
-              </div>
-            `).join('')}
-            ${!(quad.conforto || []).length ? '<div class="hint" style="padding:14px;text-align:center">Sem tópicos secundários listados.</div>' : ''}
-          </div>
-        </div>
-      </div>
-    </div>
+    ${MatrizPareto({
+      quadrantes: quad,
+      editalId: S.desempEditalId || d.editalAtivo?.id || '',
+      expanded: S.paretoExpanded || {},
+    })}
   `;
 }
 
@@ -456,7 +366,16 @@ function ligarDesempenho() {
   on('#btnRefreshDesemp', 'click', () => loadDesempenho(S.desempEditalId));
   on('#selDesempEdital', 'change', (e) => {
     S.desempEditalId = e.target.value;
+    S.paretoExpanded = {};
     loadDesempenho(S.desempEditalId);
+  });
+  on('[data-pareto-expand]', 'click', (e) => {
+    const key = e.currentTarget.dataset.paretoExpand;
+    const prev = S.paretoExpanded || {};
+    S.paretoExpanded = { ...prev, [key]: !prev[key] };
+    const y = window.scrollY;
+    render();
+    window.scrollTo({ top: y });
   });
 }
 

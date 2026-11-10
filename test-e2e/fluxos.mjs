@@ -15,7 +15,7 @@ const CAPTURAS = path.join(DIR, 'capturas');
 const BASE = (process.env.E2E_URL || 'http://localhost:3000').replace(/\/$/, '');
 const RUN = Date.now().toString(36);
 const EMAIL = `e2e-${RUN}@exemplo.invalid`, SENHA = 'senha-e2e-123', EMAIL_NOVO = `e2e-novo-${RUN}@exemplo.invalid`, EMAIL_ADMIN = `e2e-admin-${RUN}@exemplo.invalid`;
-const TELAS = ['home', 'desempenho', 'gerar', 'edital', 'questoes', 'bancas', 'contribuir', 'estrelas', 'conta', 'planos'];
+const TELAS = ['home', 'desempenho', 'gerar', 'edital', 'questoes', 'bancas', 'contribuir', 'estrelas', 'metas', 'conta', 'planos'];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const NAVEGADORES = [
@@ -99,6 +99,54 @@ try {
   ok('aceite registrado e modal fechado', !(await page.$('#btnAceitarTermos')) && respondeu(/POST \/api\/v1\/me\/termos\/aceite 200/));
   ok(`aluno: as ${TELAS.length} telas abrem sem erro`, await percorrerTelas(TELAS, 'aluno'));
 
+  async function mesmaAltura(sel) {
+    return page.evaluate((s) => {
+      const els = [...document.querySelectorAll(s)];
+      if (els.length < 2) return false;
+      const hs = els.map((e) => Math.round(e.getBoundingClientRect().height));
+      return Math.max(...hs) - Math.min(...hs) <= 2;
+    }, sel);
+  }
+
+  // 1a) Captura da tela de Metas (topo gamificado e estratégia robusta embaixo)
+  await page.evaluate(() => { location.hash = 'metas'; }); await sleep(1200);
+  await foto('9a-metas-topo');
+  const kpiIgualMetas = await mesmaAltura('.metas-kpi-grid > .meta-card-g');
+  const modoIgualMetas = await mesmaAltura('.meta-mode-grid > .meta-mode-card');
+  await page.evaluate(() => window.scrollTo(0, 620)); await sleep(400);
+  await foto('9b-metas-estrategia');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  ok('tela de Metas exibe gamificação e estratégia robusta com cards uniformes', /Patente:/i.test(await texto()) && /Estratégia de Treino da Meta/i.test(await texto()) && kpiIgualMetas && modoIgualMetas);
+
+  await page.evaluate(() => { location.hash = 'gerar'; }); await sleep(1000);
+  await foto('9c-gerar-novo');
+  const gerarIgual = await mesmaAltura('.wiz-step1-grid > *');
+  ok('tela de Gerar Questões exibe layout espaçoso em duas colunas de mesma altura', (await page.$('.wiz-step1-grid')) && (await page.$('.wiz-edital-aside')) && gerarIgual);
+
+  await page.evaluate(() => { location.hash = 'planos'; }); await sleep(1000);
+  await foto('9d-planos');
+  ok('tela de Planos alinha os cards do mesmo tamanho', await mesmaAltura('.plan-grid > .plan'));
+
+  await page.evaluate(() => { location.hash = 'home'; }); await sleep(1000);
+  await foto('9e-home');
+  ok('tela Inicial alinha hero/stats e cards das bancas', (await mesmaAltura('.hero > *')) && (await mesmaAltura('.banca-strip > .banca-tile')));
+
+  await page.evaluate(() => { location.hash = 'desempenho'; }); await sleep(1400);
+  await foto('9f-desempenho-topo');
+  await page.evaluate(() => document.querySelector('.quadrantes-grid')?.scrollIntoView({ behavior: 'instant', block: 'start' }));
+  await sleep(400);
+  await foto('9g-desempenho-pareto');
+  const paretoOk = await page.evaluate(() => {
+    const groups = [...document.querySelectorAll('.pareto-card-actions')];
+    return groups.every((g) => {
+      const btns = [...g.querySelectorAll('button')];
+      if (btns.length < 2) return true;
+      const tops = btns.map((b) => Math.round(b.getBoundingClientRect().top));
+      return Math.max(...tops) - Math.min(...tops) <= 2;
+    });
+  });
+  ok('tela Desempenho alinha KPIs, quadrantes de Pareto e botões lado a lado', (await mesmaAltura('.desemp-kpi-grid > .desemp-kpi-card')) && (await mesmaAltura('.quadrantes-grid > .quadrante-box')) && paretoOk);
+
   // 1b) Meu edital com tópicos: painel, filtros de tópicos e Simulado Prova Real
   const errosAntesEdital = erros.length;
   await page.evaluate(() => { location.hash = 'edital'; }); await sleep(1500);
@@ -130,6 +178,7 @@ try {
   // 3) Minha conta: exportar e excluir
   await page.goto(`${BASE}/#conta`, { waitUntil: 'networkidle0' }); await sleep(800);
   await foto('3-minha-conta');
+  ok('colunas da tela Minha conta alinhadas na mesma altura', await mesmaAltura('.account-grid > .stack'));
   ok('botões de LGPD em Minha conta', (await page.$('#btnExportarDados')) && (await page.$('#btnExcluirConta')));
   await page.click('#btnExportarDados'); await sleep(1500);
   ok('exportar dados responde 200', respondeu(/GET \/api\/v1\/me\/exportar 200/));

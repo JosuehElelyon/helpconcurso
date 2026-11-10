@@ -50,9 +50,9 @@ juntas) ficam no repositório, com `transacao(fn)` de `src/db.js` — ex.: conce
 ## Front (public/)
 
 SPA sem framework em módulos ES: `public/app.js` é só a entrada (carrega os módulos e roda o `boot` por último);
-o código fica em `public/js/`, um módulo por área — `estado` (S), `util` (api, toast, esc), `render`, `eventos` (`bindApp`: eventos
+o código fica em `public/js/`, um módulo controlador por área — `estado` (S), `util` (api, toast, esc), `render`, `eventos` (`bindApp`: eventos
 comuns e a chamada de `ligar<Tela>()`, que fica no módulo de cada tela), `modal`, `sessao` e as telas (`auth`, `conta`, `gerar`, `simulado`, `cadernos`, `edital`,
-`desempenho`, `admin`…). Regras: nenhum código roda ao carregar um módulo (só declarações), exceto ouvintes globais e o boot;
+`desempenho`, `metas`, `admin`…) — compondo **componentes UI puros e reutilizáveis em `public/js/components/`** (props → HTML, sem acoplamento de regra de back). Regras: nenhum código roda ao carregar um módulo (só declarações), exceto ouvintes globais e o boot;
 variável de módulo só é reatribuída no próprio módulo; JS/CSS sempre revalidam o cache (`no-cache`).
 `npm run lint` (ESLint, no CI) pega nome usado sem estar definido; `npm run e2e` abre todas as telas no navegador.
 

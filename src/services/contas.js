@@ -7,11 +7,11 @@ import { PLANOS, planoDoUsuario } from '../lib/planos.js';
 import { sendUpgradePedidoEmail } from '../lib/mailer.js';
 import { config } from '../config.js';
 import { generationQuota } from './quota.js';
-import { resumoHoje } from './atividade.js';
 import { criarPedidoUpgrade, obterPedidoPendente } from './pagamentos.js';
 import * as contas from '../repositories/contas.js';
 import * as usuarios from '../repositories/usuarios.js';
 import * as planos from '../repositories/planos.js';
+export { obterMetas, atualizarMetas } from './metas.js';
 
 export const aceitarTermos = (user) => contas.registrarAceiteTermos(user.id, versaoDosTermos());
 
@@ -84,38 +84,6 @@ export async function cancelarUpgrade(user) {
 }
 
 export const obterPedidoUpgrade = (userId) => obterPedidoPendente(userId);
-
-/** Metas e planejamento de estudos do aluno */
-export async function obterMetas(user) {
-  const [u, hoje] = await Promise.all([
-    usuarios.buscar(user.id),
-    resumoHoje(user),
-  ]);
-  const metaDiaria = u.meta_diaria || null;
-  const dataProva = u.data_prova ? new Date(u.data_prova).toISOString().slice(0, 10) : '';
-
-  return {
-    metaDiaria,
-    concursoAlvo: u.concurso_alvo || '',
-    bancaPreferida: u.banca_preferida || '',
-    dataProva,
-    diasParaProva: hoje.diasParaProva,
-    progressoHoje: {
-      respondidas: hoje.hoje.respondidas,
-      acertos: hoje.hoje.acertos,
-      metaBatida: hoje.hoje.metaBatida,
-      restantes: metaDiaria ? Math.max(0, metaDiaria - hoje.hoje.respondidas) : 0,
-      percentual: metaDiaria ? Math.min(100, Math.round((hoje.hoje.respondidas / metaDiaria) * 100)) : 0,
-    },
-    sequencia: hoje.sequencia,
-    semana: hoje.semana,
-  };
-}
-
-export async function atualizarMetas(user, dados) {
-  const atualizado = await usuarios.atualizarMetas(user.id, dados);
-  return obterMetas(atualizado);
-}
 
 /** Foto de perfil pública (rota sem login, usada em <img>). */
 export const avatarPublico = (userId) => usuarios.avatar(userId);

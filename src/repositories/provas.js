@@ -230,3 +230,36 @@ export const situacaoOficial = (ids) => (ids.length
 /** Provas prontas e questões reais por banca (vitrine de bancas). */
 export const contagemProntasPorBanca = () =>
   many("SELECT banca, count(*)::int AS n, sum(num_questoes)::int AS q FROM provas WHERE status='READY' GROUP BY banca");
+
+/** Questões reais de provas prontas filtradas por banca e lista de matérias (estratégia da meta). */
+export function questoesReaisPorFiltro({ materias = [], banca = null, limite = 30, jaUsadas = [] }) {
+  const likes = (materias || []).map((m) => `%${escaparLike(m)}%`).filter(Boolean);
+  return many(
+    `SELECT q.id, q.numero, q.materia, q.materia_id, q.topico, q.topico_id, q.comando, q.pegadinha_tipo,
+            q.dispositivos, q.habilidade, q.enunciado, q.alternativas, q.gabarito,
+            p.id AS prova_id, p.titulo AS prova_titulo, p.file_name, p.ano AS prova_ano, p.banca
+     FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
+     WHERE p.status = 'READY' AND ${questaoValida('q')}
+       AND q.gabarito IS NOT NULL AND length(trim(q.gabarito)) > 0
+       AND ($1::text IS NULL OR q.banca = $1)
+       AND (COALESCE(array_length($2::text[], 1), 0) = 0 OR q.materia ILIKE ANY($2::text[]) OR q.topico ILIKE ANY($2::text[]))
+     ORDER BY (q.id = ANY($3::uuid[])) ASC, random()
+     LIMIT $4`,
+    [banca || null, likes, jaUsadas || [], limite]
+  );
+}
+
+/** Conta questões reais disponíveis para a combinação de banca e matérias escolhida pelo aluno. */
+export async function contarReaisPorFiltro({ materias = [], banca = null }) {
+  const likes = (materias || []).map((m) => `%${escaparLike(m)}%`).filter(Boolean);
+  const row = await one(
+    `SELECT count(*)::int AS total
+     FROM prova_questoes q JOIN provas p ON p.id = q.prova_id
+     WHERE p.status = 'READY' AND ${questaoValida('q')}
+       AND q.gabarito IS NOT NULL AND length(trim(q.gabarito)) > 0
+       AND ($1::text IS NULL OR q.banca = $1)
+       AND (COALESCE(array_length($2::text[], 1), 0) = 0 OR q.materia ILIKE ANY($2::text[]) OR q.topico ILIKE ANY($2::text[]))`,
+    [banca || null, likes]
+  );
+  return row?.total || 0;
+}

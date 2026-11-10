@@ -22,6 +22,7 @@ const S = {
   cadNoteOpen: null, materiaisDisponiveis: [], provasDisponiveis: [], bancoTab: 'cadernos',
   conta: null, contaBusy: false, planosData: null, planoPeriodo: 'mensal',
   desempenho: null, desempBusy: false, desempEditalId: '',
+  metas: null, metasBusy: false, metasDraft: null, metasSimulacao: null, metasSimBusy: false,
 };
 const BANCA = () => Object.fromEntries(S.bancas.map((b) => [b.id, b]));
 const isAdmin = () => S.user?.role === 'ADMIN';

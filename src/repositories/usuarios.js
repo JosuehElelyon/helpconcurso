@@ -50,10 +50,10 @@ export const atualizarPerfil = (id, p) => one(
 
 export const avatar = (id) => one('SELECT avatar_url, avatar_key FROM users WHERE id=$1', [id]);
 
-export const atualizarMetas = (id, { metaDiaria, concursoAlvo, bancaPreferida, dataProva }) => one(
+export const atualizarMetas = (id, { metaDiaria, concursoAlvo, bancaPreferida, dataProva, metaConfig }) => one(
   `UPDATE users SET meta_diaria=$2, concurso_alvo=NULLIF($3,''), banca_preferida=NULLIF($4,''),
-     data_prova=NULLIF($5,'')::date, updated_at=now() WHERE id=$1 RETURNING *`,
-  [id, metaDiaria || null, concursoAlvo, bancaPreferida, dataProva]);
+     data_prova=NULLIF($5,'')::date, meta_config=COALESCE($6::jsonb, meta_config), updated_at=now() WHERE id=$1 RETURNING *`,
+  [id, metaDiaria || null, concursoAlvo, bancaPreferida, dataProva, metaConfig ? JSON.stringify(metaConfig) : null]);
 
 export const definirAvatar = (id, url, chave) =>
   one('UPDATE users SET avatar_url=$2, avatar_key=$3, updated_at=now() WHERE id=$1 RETURNING *', [id, url, chave]);

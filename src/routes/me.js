@@ -5,11 +5,13 @@ import { z } from 'zod';
 import { ah, parseBody, HttpError } from '../lib/http.js';
 import { requireAuth, publicUser, setSession, clearSession } from '../lib/auth.js';
 import * as Contas from '../services/contas.js';
+import * as Metas from '../services/metas.js';
 import { summary, redeem } from '../services/stars.js';
 import { resumoHoje } from '../services/atividade.js';
 import { obterDesempenhoCompleto } from '../services/desempenho.js';
 import { catalogoPlanos, planoDoUsuario } from '../lib/planos.js';
 import { BANCA } from '../lib/bancas.js';
+import { zodEstrategia } from '../lib/estrategia.js';
 import { scanText, SEV } from '../security/index.js';
 import { scanWithClamAV } from '../security/antivirus.js';
 import { uploader, fileOf } from '../lib/upload.js';
@@ -31,26 +33,29 @@ r.get('/hoje', ah(async (req, res) => res.json(await resumoHoje(req.user))));
 // Painel Visual de Desempenho, Produtividade, Horas e Radar da Banca
 r.get('/desempenho', ah(async (req, res) => res.json(await obterDesempenhoCompleto(req.user, req.query.editalId))));
 
+// Texto livre do aluno: tamanho limitado e varrido (pode vir a entrar em prompt — ex.: concurso alvo)
+const textoLivre = (max) => z.string().trim().max(max).optional().default('')
+  .refine((v) => SEV[scanText(v).severity] < SEV.medium, 'Conteúdo não permitido.');
+
+const schemaEstrategia = zodEstrategia(z);
+
 // ---------- Metas & Planejamento de Estudos ----------
-r.get('/metas', ah(async (req, res) => res.json(await Contas.obterMetas(req.user))));
+r.get('/metas', ah(async (req, res) => res.json(await Metas.obterMetas(req.user))));
 r.patch('/metas', ah(async (req, res) => {
   const b = parseBody(z.object({
     metaDiaria: z.coerce.number().int().min(0, 'Meta diária deve ser zero ou positiva.').max(500, 'Meta máxima de 500 questões/dia.').optional().nullable(),
     concursoAlvo: textoLivre(120),
     bancaPreferida: z.string().trim().optional().default('').refine((v) => !v || BANCA[v], 'Banca inválida.'),
     dataProva: z.string().trim().optional().default('').refine((v) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v), 'Data inválida.'),
+    estrategia: schemaEstrategia.optional().nullable(),
   }), req.body);
-  res.json(await Contas.atualizarMetas(req.user, b));
+  res.json(await Metas.atualizarMetas(req.user, b));
 }));
 
 // ---------- Minha conta ----------
 const contaView = (u) => Contas.visaoConta(u);
 
 r.get('/conta', ah(async (req, res) => res.json(await contaView(req.user))));
-
-// Texto livre do aluno: tamanho limitado e varrido (pode vir a entrar em prompt — ex.: concurso alvo)
-const textoLivre = (max) => z.string().trim().max(max).optional().default('')
-  .refine((v) => SEV[scanText(v).severity] < SEV.medium, 'Conteúdo não permitido.');
 
 r.patch('/conta', ah(async (req, res) => {
   const b = parseBody(z.object({

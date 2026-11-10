@@ -40,7 +40,7 @@ function viewPlanos() {
         ${p.destaque ? '<div class="ribbon">Mais escolhido</div>' : ''}
         <h3>${esc(p.nome)}</h3>
         <p class="plan-sub">${esc(p.resumo)}</p>
-        ${preco(p)}
+        <div class="plan-price-wrap">${preco(p)}</div>
         ${cta(p)}
         <ul class="benefits">${p.beneficios.map((b) => `<li>${ic('check', 'sm')}<span>${esc(b)}</span></li>`).join('')}</ul>
       </article>`).join('')}</div>

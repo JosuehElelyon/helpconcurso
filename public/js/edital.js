@@ -186,9 +186,9 @@ function viewEdital() {
                 </span>
               </div>
             </div>
-            <div class="row" style="gap:6px;margin-top:6px">
-              ${t.questoesNaBanca ? `<button type="button" class="btn btn-primary" style="padding:5px 10px;font-size:12px;flex:1" data-treinar-reais="${t.id}">${ic('book', 'sm')} Resolver Reais</button>` : ''}
-              <button type="button" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;flex:1" data-train-topic="${esc(t.materia)}||${esc(t.nome)}">${ic('spark', 'sm')} Gerar Questões</button>
+            <div class="radar-urgente-actions">
+              ${t.questoesNaBanca ? `<button type="button" class="btn btn-primary btn-xs" data-treinar-reais="${t.id}" data-edital-id="${esc(ed.id)}">${ic('book', 'sm')} Reais (${t.questoesNaBanca})</button>` : ''}
+              <button type="button" class="btn btn-ghost btn-xs" data-train-topic="${esc(t.materia)}||${esc(t.nome)}" data-edital-id="${esc(ed.id)}">${ic('spark', 'sm')} Gerar IA</button>
             </div>
           </div>
         `).join('')}

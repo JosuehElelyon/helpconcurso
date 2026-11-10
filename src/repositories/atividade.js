@@ -1,5 +1,5 @@
 // Repositório da atividade diária (tabela atividade_diaria, dia de Brasília). Só SQL.
-import { many, query } from '../db.js';
+import { one, many, query } from '../db.js';
 
 const DIA_BR = "(now() AT TIME ZONE 'America/Sao_Paulo')::date";
 
@@ -13,3 +13,10 @@ export const somarAoDia = (userId, respondidas, acertos) => query(
 export const diasRecentes = (userId, dias = 400) => many(
   `SELECT to_char(dia, 'YYYY-MM-DD') AS dia, respondidas, acertos FROM atividade_diaria
    WHERE user_id=$1 AND dia > ${DIA_BR} - $2::int ORDER BY dia DESC`, [userId, dias]);
+
+/** Totais acumulados do histórico do aluno (para gamificação e patentes). */
+export const totaisHistorico = (userId) => one(
+  `SELECT COALESCE(SUM(respondidas), 0)::int AS respondidas,
+          COALESCE(SUM(acertos), 0)::int AS acertos,
+          COUNT(*) FILTER (WHERE respondidas > 0)::int AS dias_ativos
+   FROM atividade_diaria WHERE user_id=$1`, [userId]);

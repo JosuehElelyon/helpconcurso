@@ -123,3 +123,92 @@ test('Metas: validação de limites (meta inválida e banca desconhecida)', asyn
   });
   assert.equal(rBanca.status, 400);
 });
+
+test('Metas: estratégia robusta (caderno, matérias x banca x origem conteúdo), simulação e treino real', async () => {
+  const a = await criarAluno('alunometas3');
+  const c = await a.entrar();
+
+  // Cria caderno do aluno
+  const cad = await one(
+    `INSERT INTO cadernos (user_id, titulo, banca) VALUES ($1, 'Caderno BB Teste', 'cesgranrio') RETURNING id`,
+    [a.u.id]
+  );
+
+  // Cria simulado do aluno (meu_conteudo) em Língua Portuguesa / cesgranrio
+  const questaoMeu = [{
+    numero: 1,
+    materia: 'Língua Portuguesa',
+    tema: 'Crase',
+    enunciado: 'Questão gerada do resumo próprio sobre crase facultativa.',
+    alternativas: ['Alt A', 'Alt B', 'Alt C', 'Alt D', 'Alt E'],
+    gabarito: 'A',
+    comentario: 'Comentário teste.',
+  }];
+  await one(
+    `INSERT INTO question_sets (user_id, banca, materia, assunto, nivel, formato, arquivo, questoes, respostas, finalizado)
+     VALUES ($1, 'cesgranrio', 'Língua Portuguesa', 'Crase', 'Médio', 'me', 'Resumo.pdf', $2, '{}', false) RETURNING id`,
+    [a.u.id, JSON.stringify(questaoMeu)]
+  );
+
+  // Cria prova READY com questão oficial em Direito Administrativo / fgv
+  const prova = await one(
+    `INSERT INTO provas (banca, titulo, file_name, file_key, text, sha256, status, uploaded_by, security, num_questoes)
+     VALUES ('fgv', 'Prova Oficial FGV Teste', 'fgv.pdf', $1, 'texto', $2, 'READY', $3, '{}', 1) RETURNING id`,
+    [`key-${RUN}`, `sha-${RUN}`, a.u.id]
+  );
+  await one(
+    `INSERT INTO prova_questoes (prova_id, banca, numero, materia, topico, enunciado, alternativas, gabarito)
+     VALUES ($1, 'fgv', 1, 'Direito Administrativo', 'Atos Administrativos', 'Questão real da FGV sobre revogação e anulação de atos.', $2, 'B') RETURNING id`,
+    [prova.id, JSON.stringify(['Alt A', 'Alt B', 'Alt C', 'Alt D', 'Alt E'])]
+  );
+
+  // 1) Atualiza estratégia para modo materias + meu_conteudo
+  const rPatchEst = await c('/api/v1/me/metas', {
+    method: 'PATCH',
+    body: {
+      metaDiaria: 15,
+      estrategia: {
+        modoFoco: 'materias',
+        materias: ['Língua Portuguesa'],
+        bancaFoco: 'cesgranrio',
+        fonteConteudo: 'meu_conteudo',
+        qtdTreino: 5,
+      },
+    },
+  });
+  assert.equal(rPatchEst.status, 200);
+  assert.equal(rPatchEst.data.estrategia.modoFoco, 'materias');
+  assert.deepEqual(rPatchEst.data.estrategia.materias, ['Língua Portuguesa']);
+  assert.equal(rPatchEst.data.estrategia.bancaFoco, 'cesgranrio');
+  assert.equal(rPatchEst.data.estrategia.fonteConteudo, 'meu_conteudo');
+  assert.ok(rPatchEst.data.gamificacao?.nivelId);
+  assert.equal(rPatchEst.data.opcoesDisponiveis, undefined); // metas não acopla listas de outros domínios
+
+  // 2) Simula disponibilidade para meu_conteudo via serviço /sets/treino-personalizado
+  const rSim = await c('/api/v1/sets/treino-personalizado/disponibilidade', {
+    method: 'POST',
+    body: { modoFoco: 'materias', materias: ['Língua Portuguesa'], bancaFoco: 'cesgranrio', fonteConteudo: 'meu_conteudo' },
+  });
+  assert.equal(rSim.status, 200);
+  assert.equal(rSim.data.meuConteudo, 1);
+
+  // 3) Inicia treino para banco_provas FGV Direito Administrativo (deve gerar set real)
+  const rTreinar = await c('/api/v1/sets/treino-personalizado', {
+    method: 'POST',
+    body: { modoFoco: 'materias', materias: ['Direito Administrativo'], bancaFoco: 'fgv', fonteConteudo: 'banco_provas', qtdTreino: 5 },
+  });
+  assert.equal(rTreinar.status, 200);
+  assert.equal(rTreinar.data.action, 'open_set');
+  assert.ok(rTreinar.data.totalQuestoes >= 1 && rTreinar.data.totalQuestoes <= 5);
+  assert.equal(rTreinar.data.set.banca, 'fgv');
+  assert.ok(rTreinar.data.set.questoes.every((q) => q.banca === 'fgv'));
+
+  // 4) Inicia treino no modo caderno (deve retornar open_caderno)
+  const rTreinarCad = await c('/api/v1/sets/treino-personalizado', {
+    method: 'POST',
+    body: { modoFoco: 'caderno', cadernoId: cad.id },
+  });
+  assert.equal(rTreinarCad.status, 200);
+  assert.equal(rTreinarCad.data.action, 'open_caderno');
+  assert.equal(rTreinarCad.data.cadernoId, cad.id);
+});

@@ -7,10 +7,12 @@ import { requireAuth } from '../lib/auth.js';
 import { abrirFluxo } from '../lib/ndjson.js';
 import { visaoSimulado } from '../lib/visao-simulado.js';
 import { BANCA, NIVEIS } from '../lib/bancas.js';
+import { zodEstrategia } from '../lib/estrategia.js';
 import { generationQuota } from '../services/quota.js';
 import { rate, report, listFeedback } from '../services/feedback.js';
 import { MAX_BASE } from '../services/revanche.js';
 import * as Simulados from '../services/simulados.js';
+import * as Treino from '../services/treino-personalizado.js';
 import { explainLimit, geracaoLimit, feedbackLimit } from '../middleware/limites.js';
 
 const r = Router();
@@ -78,6 +80,15 @@ r.post('/revanche', geracaoLimit, ah(async (req, res) => {
   await emFluxo(res, 'revanche', 'Não foi possível gerar a bateria de revanche.', async ({ emitir, signal }) => ({
     set: view(await Simulados.executarRevanche(ctx, { emitir, signal })),
   }));
+}));
+
+// Treino Personalizado por filtro (caderno, matérias × banca × origem de conteúdo)
+const schemaEstrategia = zodEstrategia(z);
+r.post('/treino-personalizado/disponibilidade', ah(async (req, res) => {
+  res.json(await Treino.simularDisponibilidade(req.user, parseBody(schemaEstrategia, req.body || {})));
+}));
+r.post('/treino-personalizado', ah(async (req, res) => {
+  res.json(await Treino.iniciarTreinoPersonalizado(req.user, parseBody(schemaEstrategia, req.body || {})));
 }));
 
 r.get('/', ah(async (req, res) => res.json({ sets: (await Simulados.listar(req.user)).map(view) })));

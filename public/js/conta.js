@@ -92,21 +92,34 @@ function viewConta() {
       </div>
     </div>
     <div class="account-grid">
-      <form class="card card-pad" id="contaForm" novalidate>
-        <h3 class="card-title">${ic('user', 'sm')} Dados pessoais</h3>
-        <div class="field"><label for="cNome">Nome</label><input class="input" id="cNome" maxlength="80" autocomplete="name" value="${esc(p.name)}" required></div>
-        <div class="field"><label for="cEmail">E-mail</label><input class="input" id="cEmail" value="${esc(p.email)}" disabled><span class="hint">Para trocar o e-mail, fale com o suporte.</span></div>
-        <div class="form-2">
-          <div class="field"><label for="cTel">Telefone <span class="hint">(opcional)</span></label><input class="input" id="cTel" inputmode="tel" maxlength="20" autocomplete="tel" placeholder="(61) 99999-0000" value="${esc(p.telefone)}"></div>
-          <div class="field"><label for="cMeta">Meta diária de questões</label><input class="input" id="cMeta" type="number" min="0" max="500" inputmode="numeric" placeholder="Ex.: 30" value="${p.metaDiaria ?? ''}"></div>
+      <div class="stack">
+        <form class="card card-pad" id="contaForm" novalidate>
+          <h3 class="card-title">${ic('user', 'sm')} Dados pessoais</h3>
+          <div class="field"><label for="cNome">Nome</label><input class="input" id="cNome" maxlength="80" autocomplete="name" value="${esc(p.name)}" required></div>
+          <div class="field"><label for="cEmail">E-mail</label><input class="input" id="cEmail" value="${esc(p.email)}" disabled><span class="hint">Para trocar o e-mail, fale com o suporte.</span></div>
+          <div class="form-2">
+            <div class="field"><label for="cTel">Telefone <span class="hint">(opcional)</span></label><input class="input" id="cTel" inputmode="tel" maxlength="20" autocomplete="tel" placeholder="(61) 99999-0000" value="${esc(p.telefone)}"></div>
+            <div class="field"><label for="cMeta">Meta diária de questões</label><input class="input" id="cMeta" type="number" min="0" max="500" inputmode="numeric" placeholder="Ex.: 30" value="${p.metaDiaria ?? ''}"></div>
+          </div>
+          <div class="field"><label for="cAlvo">Concurso que você está mirando</label><input class="input" id="cAlvo" maxlength="120" placeholder="Ex.: TRF-1 · Técnico Judiciário" value="${esc(p.concursoAlvo)}"></div>
+          <div class="form-2">
+            <div class="field"><label for="cBanca">Banca preferida</label><select class="select" id="cBanca"><option value="">Nenhuma</option>${bancas.map((b) => `<option value="${b.id}" ${p.bancaPreferida === b.id ? 'selected' : ''}>${esc(b.nome)}</option>`).join('')}</select></div>
+            <div class="field"><label for="cData">Data da prova</label><input class="input" id="cData" type="date" value="${esc(p.dataProva)}"></div>
+          </div>
+          <button class="btn btn-primary" type="submit" ${S.contaBusy ? 'disabled' : ''}>${S.contaBusy ? '<span class="spinner sm"></span>' : ic('check', 'sm')} Salvar alterações</button>
+        </form>
+        <div class="card card-pad account-card-grow">
+          <div>
+            <h3 class="card-title">${ic('shield', 'sm')} Seus dados (LGPD)</h3>
+            <p class="hint" style="margin-top:0">Baixe uma cópia de tudo o que guardamos sobre você ou exclua sua conta de vez.</p>
+          </div>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost" id="btnExportarDados">${ic('download', 'sm')} Baixar meus dados</button>
+            <button type="button" class="btn btn-ghost" data-open-termos>${ic('shield', 'sm')} Termos e privacidade</button>
+            ${S.user?.role === 'ADMIN' ? '' : `<button type="button" class="btn btn-ghost danger-soft" id="btnExcluirConta">Excluir minha conta</button>`}
+          </div>
         </div>
-        <div class="field"><label for="cAlvo">Concurso que você está mirando</label><input class="input" id="cAlvo" maxlength="120" placeholder="Ex.: TRF-1 · Técnico Judiciário" value="${esc(p.concursoAlvo)}"></div>
-        <div class="form-2">
-          <div class="field"><label for="cBanca">Banca preferida</label><select class="select" id="cBanca"><option value="">Nenhuma</option>${bancas.map((b) => `<option value="${b.id}" ${p.bancaPreferida === b.id ? 'selected' : ''}>${esc(b.nome)}</option>`).join('')}</select></div>
-          <div class="field"><label for="cData">Data da prova</label><input class="input" id="cData" type="date" value="${esc(p.dataProva)}"></div>
-        </div>
-        <button class="btn btn-primary" type="submit" ${S.contaBusy ? 'disabled' : ''}>${S.contaBusy ? '<span class="spinner sm"></span>' : ic('check', 'sm')} Salvar alterações</button>
-      </form>
+      </div>
       <div class="stack">
         <div class="card card-pad plan-card-mini p-${esc(pl.id)}">
           <h3 class="card-title">${ic('crown', 'sm')} Seu plano: ${esc(pl.nome)}</h3>
@@ -119,21 +132,14 @@ function viewConta() {
           ${c.pedidoPendente ? `<div class="banner warn" style="margin:14px 0 0">${ic('info', 'sm')}<div>Pedido do plano <b>${esc(c.pedidoPendente.planoNome)}</b> (${esc(c.pedidoPendente.periodicidade)}, ${brl(c.pedidoPendente.valor)}) aguardando confirmação. ${c.pedidoPendente.pixCopiaCola ? `<button type="button" class="btn btn-sm btn-primary" id="btnVerPixPendente" style="margin-left:8px">Pagar com Pix</button>` : ''} <button type="button" class="link-btn" id="cancelPedido">Cancelar pedido</button></div></div>`
             : pl.id !== 'aprovacao' && pl.id !== 'admin' ? `<button class="btn btn-accent btn-block" data-go="planos" style="margin-top:14px">${ic('crown', 'sm')} Ver planos e ampliar</button>` : ''}
         </div>
-        <form class="card card-pad" id="senhaForm" novalidate>
-          <h3 class="card-title">${ic('lock', 'sm')} Segurança</h3>
-          <div class="field"><label for="sAtual">Senha atual</label><input class="input" id="sAtual" type="password" autocomplete="current-password" required></div>
-          <div class="field"><label for="sNova">Nova senha</label><input class="input" id="sNova" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo 8 caracteres" required></div>
-          <button class="btn btn-ghost" type="submit">${ic('lock', 'sm')} Trocar senha</button>
-        </form>
-        <div class="card card-pad">
-          <h3 class="card-title">${ic('shield', 'sm')} Seus dados (LGPD)</h3>
-          <p class="hint" style="margin-top:0">Baixe uma cópia de tudo o que guardamos sobre você ou exclua sua conta de vez.</p>
-          <div class="row" style="gap:8px;flex-wrap:wrap">
-            <button type="button" class="btn btn-ghost" id="btnExportarDados">${ic('download', 'sm')} Baixar meus dados</button>
-            <button type="button" class="btn btn-ghost" data-open-termos>${ic('shield', 'sm')} Termos e privacidade</button>
-            ${S.user?.role === 'ADMIN' ? '' : `<button type="button" class="btn btn-ghost danger-soft" id="btnExcluirConta">Excluir minha conta</button>`}
+        <form class="card card-pad account-card-grow" id="senhaForm" novalidate>
+          <div>
+            <h3 class="card-title">${ic('lock', 'sm')} Segurança</h3>
+            <div class="field"><label for="sAtual">Senha atual</label><input class="input" id="sAtual" type="password" autocomplete="current-password" required></div>
+            <div class="field"><label for="sNova">Nova senha</label><input class="input" id="sNova" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo 8 caracteres" required></div>
           </div>
-        </div>
+          <button class="btn btn-ghost" type="submit" style="align-self:flex-start">${ic('lock', 'sm')} Trocar senha</button>
+        </form>
         <button class="btn btn-ghost btn-block danger-soft" data-logout>${ic('logout', 'sm')} Sair da conta</button>
       </div>
     </div>`;

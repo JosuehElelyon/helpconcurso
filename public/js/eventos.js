@@ -88,7 +88,9 @@ function bindApp() {
   on('#openAvatarModal2', 'click', () => showAvatarModal());
   on('[data-train-topic]', 'click', (e) => {
     const [mat, top] = e.currentTarget.dataset.trainTopic.split('||');
+    const edId = e.currentTarget.dataset.editalId;
     S.wiz = newWiz();
+    if (edId) S.wiz.editalId = edId;
     if (S.materias.includes(mat)) S.wiz.materia = mat;
     S.wiz.assunto = top.slice(0, 100);
     go('gerar');
@@ -96,13 +98,14 @@ function bindApp() {
   });
   on('[data-treinar-reais]', 'click', async (e) => {
     const topicoId = e.currentTarget.dataset.treinarReais;
-    const ed = S.activeEdital;
-    if (!ed) return;
+    const edId = e.currentTarget.dataset.editalId || (S.view === 'desempenho' ? S.desempEditalId : null) || S.activeEdital?.id;
+    if (!edId) return;
     const btn = e.currentTarget;
+    const prevHtml = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner sm"></span>';
     try {
-      const r = await api(`/editais/${ed.id}/topicos/${topicoId}/praticar-reais`, { method: 'POST', body: { limite: 10 } });
+      const r = await api(`/editais/${edId}/topicos/${topicoId}/praticar-reais`, { method: 'POST', body: { limite: 10 } });
       if (r.set) {
         S.sets.unshift(r.set);
         S.active = r.set.id;
@@ -112,7 +115,7 @@ function bindApp() {
     } catch (err) {
       toast(err.message);
       btn.disabled = false;
-      btn.innerHTML = `${ic('book', 'sm')} Reais`;
+      btn.innerHTML = prevHtml || `${ic('book', 'sm')} Reais`;
     }
   });
   on('[data-hoje-revisar]', 'click', (e) => { S.cadFilter = { ...(S.cadFilter || {}), status: 'revisao_hoje' }; S.cadernoFeedTab = ''; openCaderno(e.currentTarget.dataset.hojeRevisar); });
