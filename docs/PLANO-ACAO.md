@@ -721,10 +721,10 @@ Observação: `claude-sonnet-4-5` aparece só como padrão do proxy de desenvolv
 aposentado pela Anthropic em 30/11/2026 — trocar o padrão para `claude-sonnet-5-5` se o FCC voltar a ser usado.
 
 ### A4 — editais, provas e admin concluídos (09/11/2026)
- (21 consultas),  (34, inclusive fila de treino e gabarito definitivo), ,
- e  sem SQL: tudo em  (novos: , , ); serviços novos
- e . Rotas: admin 209 → 128 linhas, provas 121 → 89, editais 148 → 127.
-**Bug achado:** "Praticar questões reais" de edital sem banca gravava  (o R10 só corrigira o Simulado Prova Real).
- das questões reais com % e _ escapados. 159 testes; e2e 14/14.
+`services/edital.js` (21 consultas), `services/provas.js` (34, inclusive fila de treino e gabarito definitivo), `routes/editais.js`,
+`routes/provas.js` e `routes/admin.js` sem SQL: tudo em `repositories/` (novos: `usuarios`, `planos`, `seguranca`); serviços novos
+`services/admin.js` e `services/provas-editais.js`. Rotas: admin 209 → 128 linhas, provas 121 → 89, editais 148 → 127.
+**Bug achado:** "Praticar questões reais" de edital sem banca gravava `banca='cebraspe'` (o R10 só corrigira o Simulado Prova Real).
+`ILIKE` das questões reais com % e _ escapados. 159 testes; e2e 14/14.
 Resta (~85 consultas, módulos menores): estrelas, feedback, cota, revanche, conhecimento, taxonomia, explicação, atividade, revisão,
 e as rotas me, materials, auth — migrar quando forem alterados.
