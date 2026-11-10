@@ -103,7 +103,8 @@ export const versaoDosTermos = () => versaoAtual(operadoresDeIA(), operadoresDeI
 export function obterTermosEPrivacidade() {
   const ia = operadoresDeIA();
   const infra = operadoresDeInfraestrutura();
-  const contato = env('LGPD_CONTATO', (String(config.smtp.from).match(/<([^>]+)>/) || [])[1] || config.adminEmails[0] || '');
+  // Contato público de privacidade: LGPD_CONTATO; na falta, o remetente dos e-mails (já visível ao aluno). Nunca o e-mail do admin.
+  const contato = env('LGPD_CONTATO', (String(config.smtp.from).match(/<([^>]+)>/) || [])[1] || '');
   const exterior = [...new Set([...ia, ...infra].map((o) => o.pais).filter((p) => p && p !== 'Brasil' && p !== 'a confirmar'))];
 
   return {

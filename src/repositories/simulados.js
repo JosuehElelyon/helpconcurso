@@ -2,7 +2,7 @@
 import { one, many, query } from '../db.js';
 
 const COLUNAS_INSERIR = ['user_id', 'material_id', 'edital_id', 'caderno_id', 'banca', 'materia', 'assunto', 'nivel', 'formato',
-  'arquivo', 'questoes', 'model', 'review_stats', 'origem', 'estatisticas'];
+  'arquivo', 'questoes', 'model', 'review_stats', 'origem', 'estatisticas', 'prompt_versao'];
 const JSONB = new Set(['questoes', 'review_stats', 'estatisticas']);
 
 export const buscar = (id, userId) => one('SELECT * FROM question_sets WHERE id=$1 AND user_id=$2', [id, userId]);

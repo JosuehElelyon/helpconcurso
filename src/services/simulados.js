@@ -3,7 +3,7 @@
 import { runJSON } from '../ai/index.js';
 import { userMessage } from '../ai/errors.js';
 import { generateSchema } from '../ai/schemas.js';
-import { promptGenerate, promptRevanche } from '../lib/prompts.js';
+import { promptGenerate, promptRevanche, PROMPT_VERSAO } from '../lib/prompts.js';
 import { BANCA } from '../lib/bancas.js';
 import { HttpError } from '../lib/http.js';
 import { config } from '../config.js';
@@ -132,6 +132,7 @@ export async function executarGeracao({ user, dados: b, material: m, caderno, co
       emitir({ type: 'stage', stage: 'revisando' });
       const r = await reviewQuestions({ questoes: lista, formato, text: m.text, userId: user.id, signal, geradoPor: ultimaMeta && { provider: ultimaMeta.provider, model: ultimaMeta.model } });
       if (!r.available) { stats.revisor = 'indisponivel'; return lista.map((q) => ({ ...q, verificada: null })); }
+      if (r.modelo) stats.revisorModelo = r.modelo;
       const mantidas = [];
       lista.forEach((q, i) => { if (r.verdicts[i].ok) mantidas.push({ ...q, verificada: true }); else { stats.descartadas++; stats.motivos.push(r.verdicts[i].motivo); } });
       return mantidas;
@@ -161,7 +162,7 @@ export async function executarGeracao({ user, dados: b, material: m, caderno, co
     const set = await simulados.inserir({
       user_id: user.id, material_id: m.id, edital_id: editalId, caderno_id: caderno?.id || null, banca: b.banca, materia: b.materia,
       assunto: b.assunto || null, nivel: b.nivel, formato, arquivo: m.file_name, questoes: qs,
-      model: `${ultimaMeta.provider}:${ultimaMeta.model}`, review_stats: stats,
+      model: `${ultimaMeta.provider}:${ultimaMeta.model}`, review_stats: stats, prompt_versao: `${tarefa}:${PROMPT_VERSAO[tarefa]}`,
     });
     if (caderno) {
       const ids = Array.isArray(caderno.materiais_ids) ? [...caderno.materiais_ids] : [];
@@ -215,18 +216,22 @@ export async function executarRevanche(ctx, { emitir = () => {}, signal } = {}) 
 
     // Revisor: gabarito errado na revanche ensinaria o erro → só passam as aprovadas
     let qs = out.map((q) => ({ ...q, verificada: null }));
+    const stats = { geradas: out.length, aprovadas: out.length, descartadas: 0, refeitas: 0, revisor: config.review.enabled ? 'ok' : 'desativado' };
     if (config.review.enabled) {
       emitir({ type: 'stage', stage: 'revisando' });
       const mat = originalSet?.material_id ? await materiais.buscar(originalSet.material_id, user.id) : null;
       const rev = await reviewQuestions({ questoes: out, formato, text: mat?.text || '', userId: user.id, signal, geradoPor: meta && { provider: meta.provider, model: meta.model } });
-      if (rev.available) qs = out.filter((_, i) => rev.verdicts[i]?.ok).map((q) => ({ ...q, verificada: true }));
+      if (rev.available) {
+        qs = out.filter((_, i) => rev.verdicts[i]?.ok).map((q) => ({ ...q, verificada: true }));
+        Object.assign(stats, { aprovadas: qs.length, descartadas: out.length - qs.length, ...(rev.modelo ? { revisorModelo: rev.modelo } : {}) });
+      } else stats.revisor = 'indisponivel';
     }
     if (!qs.length) throw erroSaida('Nenhuma questão da revanche passou na revisão automática. Tente novamente.');
 
     return simulados.inserir({
       user_id: user.id, material_id: originalSet?.material_id || null, edital_id: editalId, caderno_id: cadernoId,
       banca, materia, assunto, nivel: 'Médio', formato, arquivo: 'Bateria de Revanche', questoes: qs,
-      model: `${meta.provider}:${meta.model}`, origem: 'revanche',
+      model: `${meta.provider}:${meta.model}`, origem: 'revanche', review_stats: stats, prompt_versao: `revanche:${PROMPT_VERSAO.revanche}`,
       estatisticas: { revancheDe: { setId: originalSet?.id || null, cadernoId, keys: base.map((q) => q.key), totalOriginaisErradas: base.length } },
     });
   } catch (e) {

@@ -10,9 +10,7 @@ import { BANCA } from '../lib/bancas.js';
 import { getFile, deleteFile } from '../lib/storage.js';
 import { uploader, fileOf } from '../lib/upload.js';
 import { approveProva, rejectProva, reprocessProva, enqueueRelabel, aplicarGabaritoDefinitivo, importarProvasEmLote, publicStatus } from '../services/provas.js';
-import { describeRouting } from '../ai/index.js';
-import { costUsd, USD_TO_BRL, spentTodayUsd } from '../ai/pricing.js';
-import { config } from '../config.js';
+import { painelIA } from '../services/metricas.js';
 
 const r = Router();
 r.use(requireAdmin);
@@ -173,37 +171,10 @@ r.get('/seguranca', ah(async (_req, res) => {
   res.json({ events: rows, blockedUsers: blocked });
 }));
 
-r.get('/ia', ah(async (_req, res) => {
-  // O provedor simulado (testes / AI_MOCK) não custa nada e fica fora do painel
-  const rawUsage = await many(`SELECT task, provider, model, batch, count(*)::int AS chamadas, sum(CASE WHEN ok THEN 0 ELSE 1 END)::int AS falhas, sum(CASE WHEN fallback THEN 1 ELSE 0 END)::int AS reservas,
-                               coalesce(sum(input_tokens),0)::bigint AS entrada, coalesce(sum(output_tokens),0)::bigint AS saida, coalesce(sum(cache_read_tokens),0)::bigint AS cache,
-                               round(avg(duration_ms))::int AS ms_medio
-                             FROM ai_usage WHERE created_at > now() - interval '30 days' AND provider <> 'mock' GROUP BY task, provider, model, batch ORDER BY task, batch`);
-  let totalUsd = 0;
-  const usage = rawUsage.map((u) => {
-    const usd = costUsd(u.model, u.entrada, u.saida, u.cache, u.batch);
-    totalUsd += usd;
-    return { ...u, custoUsd: Number(usd.toFixed(4)), custoBrl: Number((usd * USD_TO_BRL).toFixed(2)) };
-  });
-  const hojeUsd = await spentTodayUsd();
-  const jobs = await many("SELECT status, count(*)::int AS n FROM jobs GROUP BY status");
-  // Qualidade percebida pelos alunos (dados próprios do produto)
-  const qualidade = await many(`SELECT banca, count(*) FILTER (WHERE rating=1)::int AS gostei, count(*) FILTER (WHERE rating=-1)::int AS nao_gostei,
-                                  count(*) FILTER (WHERE report_status='confirmed')::int AS erros_confirmados, count(*) FILTER (WHERE report_status='rejected')::int AS erros_nao_confirmados
-                                FROM question_feedback GROUP BY banca ORDER BY banca`);
-  const revisor = await one(`SELECT coalesce(sum((review_stats->>'geradas')::int),0)::int AS geradas, coalesce(sum((review_stats->>'descartadas')::int),0)::int AS descartadas,
-                               coalesce(sum((review_stats->>'refeitas')::int),0)::int AS refeitas FROM question_sets WHERE created_at > now() - interval '30 days' AND review_stats IS NOT NULL`);
-  res.json({
-    routing: describeRouting(),
-    trainingMode: config.ai.trainingMode,
-    mock: config.ai.mock,
-    usage,
-    custoTotal: { usd: Number(totalUsd.toFixed(4)), brl: Number((totalUsd * USD_TO_BRL).toFixed(2)), cotacao: USD_TO_BRL },
-    limiteDia: { usd: config.ai.limiteUsdDia || null, gastoHojeUsd: Number(hojeUsd.toFixed(4)), atingido: !!config.ai.limiteUsdDia && hojeUsd >= config.ai.limiteUsdDia },
-    jobs: Object.fromEntries(jobs.map((j) => [j.status, j.n])),
-    qualidade,
-    revisor,
-  });
+// Painel de IA (Sprint 6 — medir): custo por tarefa e por funcionalidade, cache e qualidade por modelo/prompt
+r.get('/ia', ah(async (req, res) => {
+  const { dias } = parseBody(z.object({ dias: z.coerce.number().int().min(1).max(365).optional().default(30) }), req.query);
+  res.json(await painelIA({ dias }));
 }));
 
 export default r;
