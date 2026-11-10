@@ -8,7 +8,7 @@ import { one, pool } from '../src/db.js';
 import { hashPassword } from '../src/lib/auth.js';
 
 const PORT = 3900 + Math.floor(Math.random() * 900), URL = `http://localhost:${PORT}`;
-const SAUDE = PORT + 1000;
+const SAUDE = PORT + 1500;
 const RUN = Date.now().toString(36);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ENV = { ...process.env, APP_URL: URL, AI_MOCK: 'true', AI_TRAINING_MODE: 'direct', S3_DISABLED: 'true', SMTP_HOST: '' };

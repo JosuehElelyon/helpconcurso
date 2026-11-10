@@ -12,7 +12,7 @@ await prepararInfra();
 if (PAPEL === 'all') await startWorker();
 
 const app = createApp();
-const server = app.listen(config.port, () => console.log(`HelpConcurso v2.0 — API em ${config.appUrl} (porta ${config.port}, papel ${PAPEL})${config.ai.mock ? ' — IA SIMULADA' : ''}`));
+const server = app.listen(config.port, '0.0.0.0', () => console.log(`HelpConcurso v2.0 — API em ${config.appUrl} (porta ${config.port}, papel ${PAPEL})${config.ai.mock ? ' — IA SIMULADA' : ''}`));
 server.requestTimeout = 10 * 60 * 1000; // gerações longas
 server.headersTimeout = 65 * 1000;
 

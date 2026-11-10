@@ -14,6 +14,7 @@ import admin from './admin.js';
 import me from './me.js';
 import editais from './editais.js';
 import cadernos from './cadernos.js';
+import webhooks from './webhooks.js';
 
 export const VERSAO_API = 'v1';
 
@@ -30,6 +31,7 @@ export const MODULOS = [
   ['/me', me],
   ['/editais', editais],
   ['/cadernos', cadernos],
+  ['/webhooks', webhooks],
 ];
 
 export function criarRotasApi() {

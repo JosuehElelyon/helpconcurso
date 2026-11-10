@@ -20,7 +20,7 @@ const saude = http.createServer(async (req, res) => {
   const st = statusWorker();
   const ok = banco && st.ativo;
   res.writeHead(ok ? 200 : 503, { 'content-type': 'application/json' }).end(JSON.stringify({ ok, banco, ...st }));
-}).listen(porta, () => console.log(`[worker] saúde em http://localhost:${porta}/health`));
+}).listen(porta, '0.0.0.0', () => console.log(`[worker] saúde em http://localhost:${porta}/health`));
 
 async function shutdown(sig) {
   console.log(`[worker] ${sig} recebido, terminando as tarefas em andamento...`);

@@ -109,7 +109,10 @@ r.delete('/avatar', ah(async (req, res) => res.json(await Contas.trocarAvatar(re
 // ---------- Planos ----------
 r.get('/planos', ah(async (req, res) => res.json({ planos: catalogoPlanos(), atual: planoDoUsuario(req.user).id })));
 
-// Pedido de upgrade: sem gateway de pagamento por enquanto — o admin confirma o pagamento e ativa
+// Pedido de upgrade: com gateway Pix (Mercado Pago) ou confirmação manual pelo admin
+r.get('/conta/upgrade', ah(async (req, res) => {
+  res.json({ pedido: await Contas.obterPedidoUpgrade(req.user.id) });
+}));
 r.post('/conta/upgrade', ah(async (req, res) => {
   const b = parseBody(z.object({ plano: z.enum(['essencial', 'aprovacao']), periodicidade: z.enum(['mensal', 'anual']) }), req.body);
   res.status(201).json(await Contas.pedirUpgrade(req.user, b.plano, b.periodicidade));

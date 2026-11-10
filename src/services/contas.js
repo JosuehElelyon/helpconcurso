@@ -7,6 +7,7 @@ import { PLANOS, planoDoUsuario } from '../lib/planos.js';
 import { sendUpgradePedidoEmail } from '../lib/mailer.js';
 import { config } from '../config.js';
 import { generationQuota } from './quota.js';
+import { criarPedidoUpgrade, obterPedidoPendente } from './pagamentos.js';
 import * as contas from '../repositories/contas.js';
 import * as usuarios from '../repositories/usuarios.js';
 import * as planos from '../repositories/planos.js';
@@ -70,13 +71,9 @@ export async function trocarAvatar(userId, avatarUrl, avatarKey) {
   return visaoConta(u);
 }
 
-/** Pedido de upgrade: sem gateway de pagamento por enquanto — o admin confirma o pagamento e ativa. */
+/** Pedido de upgrade: gera Pix via Mercado Pago se configurado, ou cria pedido manual para o admin confirmar. */
 export async function pedirUpgrade(user, plano, periodicidade) {
-  if (user.role === 'ADMIN') throw new HttpError(400, 'Administradores já têm acesso completo.');
-  const p = PLANOS[plano];
-  const valor = periodicidade === 'anual' ? p.precoAnual : p.precoMensal;
-  const pedido = await planos.pedirUpgrade(user.id, plano, periodicidade, valor);
-  for (const to of config.adminEmails || []) sendUpgradePedidoEmail(to, { aluno: user, plano: p.nome, periodicidade, valor });
+  const pedido = await criarPedidoUpgrade(user, plano, periodicidade);
   return { pedido, conta: await visaoConta(user) };
 }
 
@@ -84,6 +81,8 @@ export async function cancelarUpgrade(user) {
   await planos.cancelarPendenteDoAluno(user.id);
   return visaoConta(user);
 }
+
+export const obterPedidoUpgrade = (userId) => obterPedidoPendente(userId);
 
 /** Foto de perfil pública (rota sem login, usada em <img>). */
 export const avatarPublico = (userId) => usuarios.avatar(userId);

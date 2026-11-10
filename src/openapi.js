@@ -110,6 +110,7 @@ const ROTAS = [
   ['post', '/me/avatar', 'Minha conta', 'Envia foto (metadados removidos)', ALUNO, ARQUIVO],
   ['delete', '/me/avatar', 'Minha conta', 'Remove a foto', ALUNO],
   ['get', '/me/planos', 'Minha conta', 'Catálogo de planos', ALUNO],
+  ['get', '/me/conta/upgrade', 'Minha conta', 'Consulta o status do pedido de upgrade e dados Pix', ALUNO],
   ['post', '/me/conta/upgrade', 'Minha conta', 'Pede upgrade de plano', ALUNO, JSON_],
   ['delete', '/me/conta/upgrade', 'Minha conta', 'Cancela o pedido de upgrade', ALUNO],
   ['post', '/me/termos/aceite', 'Minha conta', 'Registra o aceite da versão vigente dos termos (LGPD)', ALUNO],
@@ -134,6 +135,9 @@ const ROTAS = [
   ['patch', '/cadernos/{id}/interagir', 'Cadernos', 'Responde, favorita, anota ou refaz questões', ALUNO, JSON_],
   ['post', '/cadernos/{id}/questoes/por-que-errei', 'Cadernos', '"Por que errei?" de uma questão do caderno', ALUNO, JSON_, 'porQueErreiCaderno'],
   ['delete', '/cadernos/{id}', 'Cadernos', 'Exclui caderno', ALUNO],
+
+  ['get', '/webhooks/mercadopago', 'Pagamentos', 'Webhook GET de verificação do Mercado Pago', PUBLICO],
+  ['post', '/webhooks/mercadopago', 'Pagamentos', 'Webhook de notificações de pagamento do Mercado Pago', PUBLICO, JSON_],
 ];
 
 export const rotasDoContrato = () => ROTAS.map(([m, p]) => `${m.toUpperCase()} ${p}`);

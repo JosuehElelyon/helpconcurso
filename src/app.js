@@ -56,10 +56,20 @@ export function createApp() {
     const pub = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
     app.use(express.static(pub, {
       maxAge: config.env === 'production' ? '1h' : 0,
-      // JS/CSS sempre revalidam (304 se nada mudou): o front é dividido em módulos e não pode misturar versões
-      setHeaders: (res, arquivo) => { if (/\.(js|css)$/.test(arquivo)) res.setHeader('Cache-Control', 'no-cache'); },
+      // JS/CSS/HTML sempre revalidam: o front é dividido em módulos e não pode misturar versões
+      setHeaders: (res, arquivo) => {
+        if (/\.(js|css|html)$/.test(arquivo)) {
+          res.setHeader('Cache-Control', config.env === 'production' ? 'no-cache' : 'no-store, no-cache, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+        }
+      },
     }));
-    app.get('*', (_req, res) => res.sendFile(path.join(pub, 'index.html')));
+    app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.sendFile(path.join(pub, 'index.html'));
+    });
   } else {
     app.use((_req, _res, next) => next(new HttpError(404, 'Rota não encontrada. A API está em /api/' + VERSAO_API + '.')));
   }

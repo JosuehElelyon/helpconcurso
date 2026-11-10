@@ -994,6 +994,11 @@ img.avatar{object-fit:cover;display:block;border-radius:50%}
   z-index: 2;
   box-shadow: 0 0 5px rgba(217, 119, 6, 0.45);
 }
+.desemp-cut-line::before,
+.desemp-cut-line::after {
+  content: none !important;
+  display: none !important;
+}
 .desemp-bar-scale {
   display: flex;
   justify-content: space-between;

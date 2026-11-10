@@ -24,7 +24,10 @@ function viewPlanos() {
     if (atual === 'admin') return '<button class="btn btn-ghost btn-block" disabled>Acesso de administrador</button>';
     if (p.id === atual) return '<button class="btn btn-ghost btn-block" disabled>' + ic('check', 'sm') + ' Seu plano atual</button>';
     if (ordem.indexOf(p.id) < ordem.indexOf(atual)) return '<button class="btn btn-ghost btn-block" disabled>Incluído no seu plano</button>';
-    if (pend && pend.plano === p.id) return `<button class="btn btn-ghost btn-block" disabled>Pedido enviado · aguardando pagamento</button><button type="button" class="link-btn" id="cancelPedido" style="margin-top:8px">Cancelar pedido</button>`;
+    if (pend && pend.plano === p.id) {
+      if (pend.pixCopiaCola) return `<button class="btn btn-accent btn-block" id="btnVerPixPendente">${ic('spark', 'sm')} Pagar com Pix</button><button type="button" class="link-btn" id="cancelPedido" style="margin-top:8px">Cancelar pedido</button>`;
+      return `<button class="btn btn-ghost btn-block" disabled>Pedido enviado · aguardando pagamento</button><button type="button" class="link-btn" id="cancelPedido" style="margin-top:8px">Cancelar pedido</button>`;
+    }
     return `<button class="btn ${p.destaque ? 'btn-accent' : 'btn-primary'} btn-block" data-upgrade="${p.id}">Quero o ${esc(p.nome)}</button>`;
   };
   return `<div class="planos-head">
@@ -52,7 +55,7 @@ function viewPlanos() {
       </tbody></table>
     </div>
     <div class="faq">
-      <details class="card card-pad"><summary>Como funciona o pagamento?</summary><p>Ao pedir o plano, nossa equipe recebe o pedido e envia as instruções de pagamento para o seu e-mail. O plano é ativado assim que o pagamento é confirmado, e você recebe um aviso. O pagamento direto no app (Pix e cartão) chega em breve.</p></details>
+      <details class="card card-pad"><summary>Como funciona o pagamento?</summary><p>O pagamento é feito via Pix instantâneo através do Mercado Pago. Assim que o pagamento é confirmado pelo banco (em poucos segundos), seu plano é ativado automaticamente. Caso prefira, nossa equipe também pode auxiliar via e-mail.</p></details>
       <details class="card card-pad"><summary>A assinatura renova sozinha?</summary><p>Não. O plano vale até o fim do período pago (1 mês ou 1 ano). Depois, se você não renovar, a conta volta para o plano Grátis sem perder nada do que já criou.</p></details>
       <details class="card card-pad"><summary>Ganho gerações extras sem pagar?</summary><p>Sim. Cada prova que você envia e é aprovada na base, e as estrelas que você acumula, viram simulados extras em qualquer plano.</p></details>
     </div>`;

@@ -186,6 +186,12 @@ export const config = {
     avaliacoesPorDia: num('ESTRELAS_AVALIACOES_DIA', 20), // teto diário de estrelas por avaliar questões
     porGeracao: num('ESTRELAS_POR_GERACAO', 10),          // custo para trocar estrelas por 1 geração extra
   },
+  // Pagamentos (Mercado Pago: Pix e Cartão com liberação automática)
+  mercadopago: {
+    accessToken: env('MERCADOPAGO_ACCESS_TOKEN'),
+    publicKey: env('MERCADOPAGO_PUBLIC_KEY'),
+    webhookSecret: env('MERCADOPAGO_WEBHOOK_SECRET'),
+  },
 };
 
 export function assertConfig() {

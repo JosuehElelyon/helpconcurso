@@ -116,7 +116,7 @@ function viewConta() {
           ${uso1('Editais', uso.editais, pl.limites.editais)}
           ${uso1('Cadernos', uso.cadernos, pl.limites.cadernos)}
           ${uso.creditosExtras ? `<div class="hint" style="margin-top:8px">+ ${uso.creditosExtras} geração(ões) extra(s) por estrelas e provas aprovadas</div>` : ''}
-          ${c.pedidoPendente ? `<div class="banner warn" style="margin:14px 0 0">${ic('info', 'sm')}<div>Pedido do plano <b>${esc(c.pedidoPendente.planoNome)}</b> (${esc(c.pedidoPendente.periodicidade)}, ${brl(c.pedidoPendente.valor)}) aguardando confirmação do pagamento. <button type="button" class="link-btn" id="cancelPedido">Cancelar pedido</button></div></div>`
+          ${c.pedidoPendente ? `<div class="banner warn" style="margin:14px 0 0">${ic('info', 'sm')}<div>Pedido do plano <b>${esc(c.pedidoPendente.planoNome)}</b> (${esc(c.pedidoPendente.periodicidade)}, ${brl(c.pedidoPendente.valor)}) aguardando confirmação. ${c.pedidoPendente.pixCopiaCola ? `<button type="button" class="btn btn-sm btn-primary" id="btnVerPixPendente" style="margin-left:8px">Pagar com Pix</button>` : ''} <button type="button" class="link-btn" id="cancelPedido">Cancelar pedido</button></div></div>`
             : pl.id !== 'aprovacao' && pl.id !== 'admin' ? `<button class="btn btn-accent btn-block" data-go="planos" style="margin-top:14px">${ic('crown', 'sm')} Ver planos e ampliar</button>` : ''}
         </div>
         <form class="card card-pad" id="senhaForm" novalidate>
@@ -181,21 +181,126 @@ function ligarConta() {
   });
 }
 
+let timerPix = null;
+
+function pararPollingPix() {
+  if (timerPix) { clearInterval(timerPix); timerPix = null; }
+}
+
+function exibirModalPix(ped) {
+  pararPollingPix();
+  const nomePlano = ped.planoNome || ped.plano;
+  S.modal = {
+    title: `Pagamento Pix · Plano ${esc(nomePlano)}`,
+    html: `
+      <div style="text-align:center;padding:4px 0">
+        <p style="margin:0 0 10px;font-size:14px;color:var(--ink-2)">
+          Pague <b>${brl(ped.valor)}</b> com a chave ou QR Code Pix abaixo.<br>
+          <span style="font-size:12px;color:var(--muted)">Liberação imediata assim que o banco confirmar.</span>
+        </p>
+
+        ${ped.pixQrCodeBase64 ? `
+          <div style="margin:14px auto;max-width:210px;padding:12px;background:#fff;border-radius:12px;border:1px solid var(--line-2);box-shadow:0 4px 12px rgba(0,0,0,.06)">
+            <img src="data:image/png;base64,${ped.pixQrCodeBase64}" alt="QR Code Pix" style="width:100%;height:auto;display:block">
+          </div>
+        ` : ''}
+
+        ${ped.pixCopiaCola ? `
+          <div style="margin:14px 0;text-align:left">
+            <label style="font-size:11.5px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">PIX COPIA E COLA</label>
+            <div style="display:flex;gap:8px">
+              <input class="input" id="pixCodeInput" type="text" readonly value="${esc(ped.pixCopiaCola)}" style="font-size:11.5px;font-family:monospace;background:var(--surface-2)">
+              <button class="btn btn-secondary" id="btnCopiarPix" type="button" style="white-space:nowrap">${ic('copy', 'sm')} Copiar</button>
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="banner info" style="margin-top:14px;text-align:left;display:flex;align-items:center;gap:10px">
+          <div class="spinner" style="width:18px;height:18px;border-width:2px;flex:none"></div>
+          <div style="font-size:12px">Aguardando confirmação do Pix em tempo real... O seu plano é liberado automaticamente!</div>
+        </div>
+
+        <div class="row" style="justify-content:space-between;align-items:center;margin-top:16px">
+          <button type="button" class="btn btn-ghost" id="btnFecharModalPix">Fechar</button>
+          <button type="button" class="link-btn danger" id="cancelPedidoPix" style="font-size:12px">Cancelar pedido</button>
+        </div>
+      </div>
+    `,
+  };
+  render();
+
+  // Polling a cada 3.5 segundos para detectar confirmação do webhook
+  timerPix = setInterval(async () => {
+    try {
+      const res = await api('/me/conta/upgrade');
+      if (!res.pedido || res.pedido.status === 'aprovado') {
+        pararPollingPix();
+        toast('🎉 Pagamento aprovado! Seu plano já está ativo.');
+        try {
+          const { user } = await api('/auth/me');
+          if (user) S.user = user;
+          await loadConta();
+        } catch {}
+        S.modal = null;
+        render();
+      } else if (res.pedido.status === 'cancelado') {
+        pararPollingPix();
+        S.modal = null;
+        toast('Pedido cancelado.');
+        render();
+      }
+    } catch {}
+  }, 3500);
+}
+
 /** Eventos da tela (planos+conta); chamada pela bindApp em eventos.js a cada desenho. */
 function ligarContaEPlanos() {
   on('#confirmUpgrade', 'click', async (e) => {
     const plano = e.currentTarget.dataset.plano;
     try {
       const r = await api('/me/conta/upgrade', { method: 'POST', body: { plano, periodicidade: S.planoPeriodo } });
-      S.conta = r.conta; S.modal = null;
+      S.conta = r.conta;
+      if (r.pedido && (r.pedido.pixCopiaCola || r.pedido.pixQrCodeBase64)) {
+        exibirModalPix(r.pedido);
+        return;
+      }
+      S.modal = null;
       toast('Pedido enviado! Você vai receber as instruções de pagamento por e-mail.');
+      render();
     } catch (err) { toast(err.message); }
+  });
+  on('#btnVerPixPendente', 'click', () => {
+    if (S.conta?.pedidoPendente) exibirModalPix(S.conta.pedidoPendente);
+  });
+  on('#btnCopiarPix', 'click', () => {
+    const input = document.getElementById('pixCodeInput');
+    if (input) {
+      input.select();
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(input.value);
+      const btn = document.getElementById('btnCopiarPix');
+      if (btn) btn.innerHTML = `${ic('check', 'sm')} Copiado!`;
+      toast('Código Pix copiado!');
+    }
+  });
+  on('#btnFecharModalPix', 'click', () => {
+    pararPollingPix();
+    S.modal = null;
+    render();
+  });
+  on('#cancelPedidoPix', 'click', async () => {
+    pararPollingPix();
+    try {
+      S.conta = await api('/me/conta/upgrade', { method: 'DELETE' });
+      toast('Pedido cancelado.');
+    } catch (err) { toast(err.message); }
+    S.modal = null;
     render();
   });
   on('#cancelPedido', 'click', async () => {
+    pararPollingPix();
     try { S.conta = await api('/me/conta/upgrade', { method: 'DELETE' }); toast('Pedido cancelado.'); } catch (err) { toast(err.message); }
     render();
   });
 }
 
-export { loadConta, loadPlanos, brl, diasAte, showAvatarModal, viewConta, ligarConta, ligarContaEPlanos };
+export { loadConta, loadPlanos, brl, diasAte, showAvatarModal, viewConta, ligarConta, ligarContaEPlanos, exibirModalPix };
