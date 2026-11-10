@@ -103,7 +103,8 @@ Avatar (migração 013): foto enviada perde EXIF/GPS (`stripImageMetadata`), gal
   `src/openapi.js` (servido em `/api/v1/openapi.json`; `npm run openapi` exporta para `docs/openapi.json`). **Rota nova ou removida →
   atualize a tabela `ROTAS` em `src/openapi.js`**; `test/contrato.test.js` falha se esquecer.
 - **Camadas (A4):** `routes/` só HTTP (zod + chamar serviço) → `services/` regra (sem req/res) → `repositories/` só SQL filtrando
-  pelo dono. Simulados e cadernos já seguem; edital/provas/desempenho ainda têm SQL no serviço (migrar quando mexer). SQL novo só em
+  pelo dono. Simulados, cadernos, editais, provas, admin e desempenho já seguem; estrelas/feedback/cota/conta/materiais/auth ainda têm SQL
+  fora de repositories/ (lista em docs/ARQUITETURA.md; migrar quando mexer). SQL novo só em
   `repositories/`.
 - **Front separado (A5):** no compose, `web` (Nginx) é a entrada em http://localhost:3000 e repassa `/api` para `app`
   (`SERVIR_FRONT=false`, API direta em 127.0.0.1:3100). Front lê a API de `public/config.js` (`window.HC_CONFIG.apiUrl`).

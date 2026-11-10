@@ -34,9 +34,11 @@ routes/        HTTP: valida a entrada (zod), chama o serviço, monta a resposta.
 Apoio: `middleware/` (limites de requisição, CORS/CSRF), `lib/` (utilitários sem banco: http, ndjson, bancas, prompts...),
 `ai/` (provedores de IA, roteamento, schemas), `security/` (varredura de uploads e de texto), `jobs/` (fila).
 
-Já seguem as camadas: **simulados** (`routes/sets.js` → `services/simulados.js`) e **cadernos** (`routes/cadernos.js` →
-`services/cadernos.js`). Ainda com SQL dentro do serviço: `services/edital.js`, `services/provas.js`, `services/desempenho.js`
-— migrar para `repositories/` quando forem alterados.
+Já seguem as camadas (sem SQL na rota nem no serviço): **simulados**, **cadernos**, **editais**, **provas** (inclusive a fila de
+treino), **admin** (`services/admin.js`), **ligação prova ↔ edital** (`services/provas-editais.js`), **desempenho** e **métricas**.
+Ainda com SQL fora de `repositories/` (módulos menores, migrar quando forem alterados): `services/stars.js`, `feedback.js`, `quota.js`,
+`revanche.js`, `knowledge.js`, `taxonomia.js`, `explicacao.js`, `atividade.js`, `revisao.js`, `situacao-oficial.js` e as rotas `me`,
+`materials`, `auth`, `users`, `sistema`, `bancas`.
 
 ## Uma requisição, do começo ao fim (gerar simulado)
 
