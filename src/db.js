@@ -42,3 +42,19 @@ export async function migrate() {
     client.release();
   }
 }
+
+/** Roda fn(cliente) numa transação: COMMIT se terminar, ROLLBACK se lançar erro. */
+export async function transacao(fn) {
+  const c = await pool.connect();
+  try {
+    await c.query('BEGIN');
+    const r = await fn(c);
+    await c.query('COMMIT');
+    return r;
+  } catch (e) {
+    await c.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    c.release();
+  }
+}

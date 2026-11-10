@@ -1,17 +1,15 @@
 // Atividade diária: quantas questões o aluno respondeu por dia (dia de Brasília).
 // Alimenta a tela "Hoje": meta diária, sequência de dias de estudo e os últimos 7 dias.
-import { one, many, query } from '../db.js';
+import * as atividadeRepo from '../repositories/atividade.js';
+import * as usuariosRepo from '../repositories/usuarios.js';
 
-const DIA_BR = "(now() AT TIME ZONE 'America/Sao_Paulo')::date";
 const diaBR = (d = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(d);
 const somaDias = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
 /** Soma respostas novas ao dia de hoje. Falha aqui nunca derruba o registro da resposta. */
 export async function registrarAtividade(userId, { respondidas = 0, acertos = 0 } = {}) {
   if (!userId || respondidas <= 0) return;
-  await query(`INSERT INTO atividade_diaria(user_id, dia, respondidas, acertos) VALUES ($1, ${DIA_BR}, $2, $3)
-               ON CONFLICT (user_id, dia) DO UPDATE SET respondidas = atividade_diaria.respondidas + EXCLUDED.respondidas,
-                 acertos = atividade_diaria.acertos + EXCLUDED.acertos, updated_at = now()`, [userId, respondidas, acertos])
+  await atividadeRepo.somarAoDia(userId, respondidas, acertos)
     .catch((e) => console.error('[ERRO-BANCO] atividade diária:', e.message));
 }
 
@@ -44,9 +42,8 @@ export function calcularSequencia(diasEstudados, hoje = diaBR()) {
 export async function resumoHoje(user) {
   const hoje = diaBR();
   const [rows, u] = await Promise.all([
-    many(`SELECT to_char(dia, 'YYYY-MM-DD') AS dia, respondidas, acertos FROM atividade_diaria
-          WHERE user_id=$1 AND dia > ${DIA_BR} - 400 ORDER BY dia DESC`, [user.id]),
-    one('SELECT meta_diaria, data_prova FROM users WHERE id=$1', [user.id]),
+    atividadeRepo.diasRecentes(user.id, 400),
+    usuariosRepo.metaEDataDaProva(user.id),
   ]);
   const porDia = new Map(rows.map((r) => [r.dia, r]));
   const meta = u?.meta_diaria || null;

@@ -82,3 +82,9 @@ export async function idsDeQuestoesJaUsadas(userId, editalId, cadernoId = null) 
 export const listarParaPainel = (userId) => many(
   'SELECT id, material_id, edital_id, banca, materia, assunto, questoes, respostas, finalizado, created_at FROM question_sets WHERE user_id=$1 ORDER BY created_at DESC',
   [userId]);
+
+/** Simulado pelo id, sem filtrar dono — só para tarefas de fundo (o dono já foi conferido ao enfileirar). */
+export const buscarParaTarefa = (id) => one('SELECT * FROM question_sets WHERE id=$1', [id]);
+
+export const definirQuestoes = (id, questoes) =>
+  query('UPDATE question_sets SET questoes=$2, updated_at=now() WHERE id=$1', [id, JSON.stringify(questoes)]);

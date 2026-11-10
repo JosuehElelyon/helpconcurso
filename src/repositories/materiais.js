@@ -19,3 +19,6 @@ export const idsDoEdital = async (userId, editalId, limite = 50) =>
 /** Materiais do aluno para o painel do edital (cobertura por tópico). */
 export const listarParaPainel = (userId) =>
   many('SELECT id, file_name, materia, assunto, edital_id, edital_match, created_at FROM materials WHERE user_id=$1 ORDER BY created_at DESC', [userId]);
+
+/** Texto do material pelo id, sem filtrar dono — só para tarefas de fundo (verificação de erro reportado). */
+export const textoParaTarefa = async (id) => (await one('SELECT text FROM materials WHERE id=$1', [id]))?.text ?? null;
