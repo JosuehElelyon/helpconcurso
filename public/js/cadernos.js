@@ -10,6 +10,7 @@ import { confirmBox } from './modal.js';
 import { render } from './render.js';
 import { renderExplicacaoCard } from './simulado.js';
 import { $, LETRAS, api, esc, on, toast } from './util.js';
+import { UPLOAD_MAX_MB, limparInputArquivo, validarArquivoUpload } from './lib/upload.js';
 
 // ---------- Cadernos de Questões + Simulados + Caderno de Erros ----------
 async function refreshCadernos({ silent = false } = {}) {
@@ -284,10 +285,11 @@ function viewCaderno() {
         </div>
       </div>
       <div>
-        <label class="hint" for="cadUpProvaFile" style="display:block;margin-bottom:6px">Ou envie um novo PDF de prova antiga da ${esc(b.nome)}</label>
+        <label class="hint" for="cadUpProvaFile" style="display:block;margin-bottom:6px">Ou envie um novo PDF de prova antiga da ${esc(b.nome)} (Até ${UPLOAD_MAX_MB} MB)</label>
         <input type="file" id="cadUpProvaFile" class="input" accept=".pdf,.doc,.docx,.txt" ${S.cadFeedBusy ? 'disabled' : ''}>
       </div>
     </div>
+    ${S.cadUploadErr ? `<div class="banner bad" role="alert" style="margin:12px 0 0">${ic('alert', 'sm')}<div>${esc(S.cadUploadErr)}</div></div>` : ''}
   </div>` : ''}
 
   ${ft === 'simulado' ? `<div class="cad-feed-panel no-print">
@@ -488,7 +490,7 @@ function ligarCadernos() {
 /** Eventos da tela (caderno); chamada pela bindApp em eventos.js a cada desenho. */
 function ligarCaderno() {
   const c = S.activeCaderno;
-  on('[data-cad-ftab]', 'click', (e) => { S.cadernoFeedTab = e.currentTarget.dataset.cadFtab; render(); });
+  on('[data-cad-ftab]', 'click', (e) => { S.cadernoFeedTab = e.currentTarget.dataset.cadFtab; S.cadUploadErr = ''; render(); });
   on('#printCaderno', 'click', () => window.print());
   on('#delCaderno', 'click', () => confirmBox('Excluir este Caderno de Questões?', `O caderno "${c.titulo}" será removido. Seus materiais, provas e baterias avulsas continuam salvos.`, 'Excluir', true, async () => {
     await api(`/cadernos/${c.id}`, { method: 'DELETE' }).catch(() => {});
@@ -541,7 +543,15 @@ function ligarCaderno() {
   const cup = $('#cadUpProvaFile');
   if (cup) cup.onchange = async () => {
     const file = cup.files[0]; if (!file) return;
-    S.cadFeedBusy = true; render();
+    const chk = validarArquivoUpload(file, { rotulo: 'O arquivo da prova' });
+    if (!chk.ok) {
+      S.cadUploadErr = chk.mensagem;
+      limparInputArquivo(cup);
+      toast(chk.mensagem);
+      render();
+      return;
+    }
+    S.cadFeedBusy = true; S.cadUploadErr = ''; render();
     try {
       const fd = new FormData(); fd.append('prova', file);
       const r = await api(`/cadernos/${c.id}/alimentar-prova`, { method: 'POST', form: fd });
@@ -549,7 +559,7 @@ function ligarCaderno() {
       S.cadernoFeedTab = '';
       await refreshCadernos({ silent: true });
       toast(r.message);
-    } catch (err) { toast(err.message); }
+    } catch (err) { S.cadUploadErr = err.message; toast(err.message); }
     S.cadFeedBusy = false; render();
   };
   on('#cadAttachSetBtn', 'click', async () => {

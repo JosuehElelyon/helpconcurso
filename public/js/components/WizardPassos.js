@@ -1,5 +1,6 @@
 // Componentes UI puros dos 4 passos do Wizard de Geração de Questões.
 import { ic } from '../icones.js';
+import { UPLOAD_MAX_MB } from '../lib/upload.js';
 import { esc } from '../util.js';
 import { ProgressRing } from './ProgressRing.js';
 
@@ -54,7 +55,7 @@ export function PassoMaterial({ w, editalAsideHtml }) {
         <p class="wiz-step-desc">Suba resumos, apostilas ou cole seu texto. A IA elaborará questões inéditas exclusivamente a partir deste conteúdo.</p>
       </div>
 
-      ${w.err ? `<div class="banner bad" style="margin-bottom:20px">${ic('alert', 'sm')}<div>${esc(w.err)}</div></div>` : ''}
+      ${w.err ? `<div class="banner bad" role="alert" style="margin-bottom:20px">${ic('alert', 'sm')}<div>${esc(w.err)}</div></div>` : ''}
 
       <div class="wiz-mode-tabs">
         <button type="button" class="wiz-mode-tab ${w.mode !== 'paste' ? 'on' : ''}" id="modeFile">${ic('upload', 'sm')} Enviar Arquivo</button>
@@ -62,7 +63,7 @@ export function PassoMaterial({ w, editalAsideHtml }) {
       </div>
 
       ${w.mode === 'file' ? `
-        <label class="drop" id="drop">
+        <label class="drop ${w.err ? 'has-err' : ''}" id="drop">
           <input type="file" id="fileIn" class="sr" accept=".pdf,.doc,.docx,.txt,.md">
           <div class="big">${ic('upload', 'lg')}</div>
           <strong>Arraste seu arquivo aqui ou clique para escolher</strong>
@@ -72,7 +73,7 @@ export function PassoMaterial({ w, editalAsideHtml }) {
             <span class="badge">DOCX</span>
             <span class="badge">DOC</span>
             <span class="badge">TXT</span>
-            <span class="badge" style="background:var(--surface);border:1px solid var(--line-2);color:var(--muted)">Até 25 MB</span>
+            <span class="badge" style="background:var(--surface);border:1px solid var(--line-2);color:var(--muted)">Até ${UPLOAD_MAX_MB} MB</span>
           </div>
         </label>
       ` : `

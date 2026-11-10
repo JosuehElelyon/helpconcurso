@@ -1,5 +1,6 @@
 // Componentes UI puros: barra de progresso resumida e painel lateral de Edital & Concurso.
 import { ic } from '../icones.js';
+import { UPLOAD_MAX_MB } from '../lib/upload.js';
 import { esc } from '../util.js';
 
 export function ResumoProgressoWizard({ step, material, materia, assunto, edital }) {
@@ -35,7 +36,7 @@ export function ResumoProgressoWizard({ step, material, materia, assunto, edital
   </div>`;
 }
 
-export function PainelEditalAside({ editais = [], editalId = '', editalBusy = false, showEditalUpload = false, bancas = [], bancaMap = {}, banca = '', minhasProvas = [] }) {
+export function PainelEditalAside({ editais = [], editalId = '', editalBusy = false, editalErr = '', showEditalUpload = false, bancas = [], bancaMap = {}, banca = '', minhasProvas = [] }) {
   const selEd = editais.find((e) => e.id === editalId);
   const selBanca = selEd?.banca && bancaMap[selEd.banca];
 
@@ -87,16 +88,17 @@ export function PainelEditalAside({ editais = [], editalId = '', editalBusy = fa
     </div>
 
     ${showEditalUpload ? `<div style="padding-top:14px;border-top:1px dashed var(--line);display:flex;flex-direction:column;gap:12px">
+      ${editalErr ? `<div class="banner bad" role="alert" style="margin:0;font-size:12.5px">${ic('alert', 'sm')}<div>${esc(editalErr)}</div></div>` : ''}
       <div class="field" style="margin:0"><label for="wizEdBanca">Banca deste edital</label>
         <select class="select" id="wizEdBanca"><option value="">Detectar automaticamente</option>${bancas.map((b) => `<option value="${b.id}" ${banca === b.id ? 'selected' : ''}>${b.nome}</option>`).join('')}</select>
       </div>
       ${minhasProvas.length ? `<div class="field" style="margin:0"><label for="wizEdProva">Vincular a uma prova <span class="hint">(opcional)</span></label>
         <select class="select" id="wizEdProva"><option value="">Nenhuma prova selecionada</option>${minhasProvas.map((p) => `<option value="${p.id}">${esc(p.titulo)}</option>`).join('')}</select>
       </div>` : ''}
-      <label class="drop slim" id="wizEditalDrop" style="padding:18px 14px">
+      <label class="drop slim ${editalErr ? 'has-err' : ''}" id="wizEditalDrop" style="padding:18px 14px">
         <input type="file" id="wizEditalFile" class="sr" accept=".pdf,.doc,.docx,.txt">
         <strong style="font-size:13.5px">${ic('upload', 'sm')} Escolher arquivo do Edital</strong>
-        <span class="hint" style="font-size:12px">PDF, DOCX, DOC ou TXT</span>
+        <span class="hint" style="font-size:12px">PDF, DOCX, DOC ou TXT · Até ${UPLOAD_MAX_MB} MB</span>
       </label>
     </div>` : ''}
   </aside>`;

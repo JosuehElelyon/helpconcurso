@@ -123,6 +123,35 @@ try {
   const gerarIgual = await mesmaAltura('.wiz-step1-grid > *');
   ok('tela de Gerar Questões exibe layout espaçoso em duas colunas de mesma altura', (await page.$('.wiz-step1-grid')) && (await page.$('.wiz-edital-aside')) && gerarIgual);
 
+  // Limite de upload (25 MB): material e prova maiores que 25 MB exibem alerta vermelho
+  const simularArquivoGrande = (sel, nome) => page.evaluate((selector, fileName) => {
+    const el = document.querySelector(selector);
+    if (!el) return false;
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array(26 * 1024 * 1024)], fileName, { type: 'application/pdf' }));
+    el.files = dt.files;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }, sel, nome);
+  await simularArquivoGrande('#fileIn', 'apostila-26mb.pdf');
+  await sleep(300);
+  await foto('9j-gerar-limite-upload');
+  const matLimiteVermelho = await page.evaluate(() => {
+    const b = document.querySelector('.banner.bad[role="alert"]');
+    return !!b && /25 MB/i.test(b.innerText) && /26,0 MB/i.test(b.innerText) && !!document.querySelector('#drop.has-err');
+  });
+  ok('Gerar questões exibe erro em vermelho quando o material excede 25 MB', matLimiteVermelho);
+
+  await page.evaluate(() => { location.hash = 'contribuir'; }); await sleep(1000);
+  await simularArquivoGrande('#cFiles', 'prova-26mb.pdf');
+  await sleep(300);
+  await foto('9k-provas-limite-upload');
+  const provaLimiteVermelho = await page.evaluate(() => {
+    const b = document.querySelector('.banner.bad[role="alert"]');
+    return !!b && /25 MB/i.test(b.innerText) && /26,0 MB/i.test(b.innerText) && !!document.querySelector('#cDrop.has-err');
+  });
+  ok('Enviar provas exibe erro em vermelho quando a prova excede 25 MB', provaLimiteVermelho);
+
   await page.evaluate(() => { location.hash = 'planos'; }); await sleep(1000);
   await foto('9d-planos');
   ok('tela de Planos alinha os cards do mesmo tamanho', await mesmaAltura('.plan-grid > .plan'));
@@ -170,7 +199,15 @@ try {
   ok('Meu edital com tópicos abre (lista tópico a tópico)', /tópico a tópico/i.test(await texto()) && erros.length === errosAntesEdital);
   const filtros = await page.$$eval('[data-radar-filter]', (bs) => bs.map((b) => b.dataset.radarFilter));
   for (const fl of filtros) { await page.click(`[data-radar-filter="${fl}"]`); await sleep(400); }
-  ok('filtros de tópicos do edital aparecem e funcionam', filtros.length >= 2 && erros.length === errosAntesEdital);
+  await page.click('[data-radar-filter="todos"]'); await sleep(400);
+  await page.evaluate(() => document.querySelector('.edvert-controls')?.scrollIntoView({ behavior: 'instant', block: 'start' }));
+  await sleep(300);
+  await foto('9i-edital-verticalizado');
+  await page.type('#edSearchInput', 'Atos'); await sleep(350);
+  const buscaAchou = /Atos administrativos/i.test(await texto());
+  await page.click('#edSearchClear'); await sleep(350);
+  const hasDrop = !!(await page.$('#edMateriaFilter')) && !!(await page.$('[data-ed-acc]')) && !!(await page.$('#edToggleAll'));
+  ok('filtros, dropdown de matérias e busca no edital verticalizado funcionam', filtros.length >= 2 && hasDrop && buscaAchou && erros.length === errosAntesEdital);
   await page.evaluate(() => { location.hash = 'edital'; }); await sleep(800);
   await page.click('#btnSimuladoProvaReal').catch(() => {}); await sleep(800);
   await foto('2a-prova-real-modal');

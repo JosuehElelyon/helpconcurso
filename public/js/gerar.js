@@ -6,6 +6,7 @@ import { go } from './eventos.js';
 import { render } from './render.js';
 import { saveSetSoon } from './simulado.js';
 import { $, API, API_ORIGEM, api, on, toast } from './util.js';
+import { limparInputArquivo, validarArquivoUpload } from './lib/upload.js';
 import { ProgressRing } from './components/ProgressRing.js';
 import { StepperFluido } from './components/StepperFluido.js';
 import { ResumoProgressoWizard, PainelEditalAside } from './components/WizardEditalAside.js';
@@ -37,6 +38,7 @@ const wizEditalBox = (w) => PainelEditalAside({
   editais: S.editais || [],
   editalId: w.editalId,
   editalBusy: w.editalBusy,
+  editalErr: w.editalErr || '',
   showEditalUpload: w.showEditalUpload,
   bancas: S.bancas || [],
   bancaMap: BANCA(),
@@ -231,7 +233,19 @@ function initModoProvaTimer(s) {
 function ligarGerar() {
   const w = S.wiz;
   const fi = $('#fileIn'), drop = $('#drop');
-  const send = (file) => { const fd = new FormData(); fd.append('file', file); uploadMaterial(fd); };
+  const send = (file) => {
+    const chk = validarArquivoUpload(file, { rotulo: 'O material' });
+    if (!chk.ok) {
+      w.err = chk.mensagem;
+      limparInputArquivo(fi);
+      toast(chk.mensagem);
+      render();
+      return;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    uploadMaterial(fd);
+  };
   if (fi) fi.onchange = () => fi.files[0] && send(fi.files[0]);
   if (drop) {
     ['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); }));
@@ -251,13 +265,22 @@ function ligarGerar() {
     }
     render();
   };
-  on('#wizToggleEditalUp', 'click', () => { w.showEditalUpload = !w.showEditalUpload; render(); });
+  on('#wizToggleEditalUp', 'click', () => { w.showEditalUpload = !w.showEditalUpload; w.editalErr = ''; render(); });
   const wef = $('#wizEditalFile');
   if (wef) wef.onchange = async () => {
     const f = wef.files[0]; if (!f) return;
+    const chk = validarArquivoUpload(f, { rotulo: 'O edital' });
+    if (!chk.ok) {
+      w.editalErr = chk.mensagem;
+      w.showEditalUpload = true;
+      limparInputArquivo(wef);
+      toast(chk.mensagem);
+      render();
+      return;
+    }
     const bancaIn = $('#wizEdBanca')?.value || w.banca || '';
     const provaIn = $('#wizEdProva')?.value || '';
-    w.editalBusy = true; w.showEditalUpload = false; render();
+    w.editalBusy = true; w.editalErr = ''; w.showEditalUpload = false; render();
     try {
       const fd = new FormData(); fd.append('file', f);
       if (bancaIn) fd.append('banca', bancaIn);
@@ -271,7 +294,7 @@ function ligarGerar() {
         w.material = rm.material;
       }
       toast(`Edital "${r.edital.titulo}" verticalizado (${r.edital.resumo.totalTopicos} tópicos)!`);
-    } catch (e) { toast(e.message); }
+    } catch (e) { w.editalErr = e.message; w.showEditalUpload = true; toast(e.message); }
     w.editalBusy = false; render();
   };
   on('#modePaste', 'click', () => { w.mode = 'paste'; w.err = ''; render(); });

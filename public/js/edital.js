@@ -1,5 +1,6 @@
 // Front do HelpConcurso — Meu Edital (verticalizado + gráficos de avanço).
 // Módulo gerado a partir do antigo public/app.js (item 10); entrada: public/app.js.
+import { EditalVerticalizado } from './components/EditalVerticalizado.js';
 import { fonteBadge } from './enviar-provas.js';
 import { BANCA, S } from './estado.js';
 import { go } from './eventos.js';
@@ -8,6 +9,7 @@ import { ic } from './icones.js';
 import { confirmBox } from './modal.js';
 import { render } from './render.js';
 import { $, api, esc, on, toast } from './util.js';
+import { UPLOAD_MAX_MB, limparInputArquivo, validarArquivoUpload } from './lib/upload.js';
 
 // ---------- Meu Edital (verticalizado + gráficos de avanço) ----------
 function viewHomeEditalCard(ed) {
@@ -54,7 +56,7 @@ function viewEdital() {
         <div class="hint">Relacione o edital à banca, ao concurso/cargo e à prova para cruzar automaticamente com seus materiais e simulados.</div></div>
       ${ed ? `<button type="button" class="btn btn-quiet" id="edCancelForm">${ic('x', 'sm')} Fechar</button>` : ''}
     </div>
-    ${S.editalErr ? `<div class="banner bad">${ic('alert', 'sm')}<div>${esc(S.editalErr)}</div></div>` : ''}
+    ${S.editalErr ? `<div class="banner bad" role="alert">${ic('alert', 'sm')}<div>${esc(S.editalErr)}</div></div>` : ''}
     ${S.editalUploading ? `<div class="progress-box" style="padding:32px 16px"><div class="spinner"></div><b>Analisando e verticalizando seu edital com a IA…</b><div class="hint">Extraindo disciplinas, pesos e tópicos do conteúdo programático e vinculando à banca e prova.</div></div>`
       : `<div class="form-sec" style="margin-bottom:14px">
         <div class="field" style="margin-bottom:8px"><label>Banca organizadora do edital</label></div>
@@ -80,11 +82,11 @@ function viewEdital() {
         </div>` : ''}
       </div>
       ${S.editalMode === 'file' ? `
-      <label class="drop slim" id="edDrop">
+      <label class="drop slim ${S.editalErr ? 'has-err' : ''}" id="edDrop">
         <input type="file" id="edFileIn" class="sr" accept=".pdf,.doc,.docx,.txt">
         <div class="big">${ic('upload')}</div>
         <strong>Arraste o arquivo do Edital aqui ou clique para escolher</strong>
-        <span class="hint">PDF (inclusive escaneado), DOCX, DOC ou TXT · Edital completo ou anexo de conteúdo programático</span>
+        <span class="hint">PDF (inclusive escaneado), DOCX, DOC ou TXT · Edital completo ou anexo de conteúdo programático · Até ${UPLOAD_MAX_MB} MB por arquivo</span>
       </label>
       <div style="text-align:center;margin-top:12px"><button type="button" class="btn btn-quiet" id="edModePaste">Prefere colar o conteúdo programático?</button></div>`
       : `<div class="field"><label for="edPasteIn">Cole o conteúdo programático do edital</label>
@@ -103,19 +105,7 @@ function viewEdital() {
   const matVinc = ed.materiaisVinculados || [];
   const radar = rs.radar || {};
   const filter = S.editalTopicFilter || 'todos';
-
-  const filterTopic = (t) => {
-    if (filter === 'critica') return t.prioridade === 'critica';
-    if (filter === 'reforco') return t.prioridade === 'reforco';
-    if (filter === 'segura') return t.prioridade === 'segura';
-    if (filter === 'quentes') return (t.questoesNaBanca || 0) > 0;
-    return true;
-  };
-  // Filtros da lista tópico a tópico (o clique é tratado por [data-radar-filter] em eventos.js).
-  // Antes esta barra era referenciada mas nunca existia: a tela quebrava para quem tinha edital com tópicos.
-  const FILTROS_TOPICO = [['todos', 'Todos os tópicos'], ['critica', '🚨 Urgentes'], ['reforco', '⚠️ Reforçar'], ['segura', '✅ Zona segura'], ['quentes', '🔥 Cobrados pela banca']];
-  const filterTabs = `<div class="tabs" role="tablist" aria-label="Filtrar tópicos" style="margin-bottom:14px;flex-wrap:wrap">${FILTROS_TOPICO
-    .map(([k, l]) => `<button type="button" role="tab" aria-selected="${filter === k}" class="${filter === k ? 'on' : ''}" data-radar-filter="${k}">${l}</button>`).join('')}</div>`;
+  const disciplinas = ed.disciplinas || [];
 
   const radarHtml = `
     <div class="radar-card" role="region" aria-label="Radar de Desempenho e Probabilidade da Banca">
@@ -288,43 +278,14 @@ function viewEdital() {
 
   <div class="section-h"><h3>Edital verticalizado tópico a tópico</h3>
     <button class="btn btn-primary" data-go="gerar">${ic('upload', 'sm')} Enviar resumo para avançar no edital</button></div>
-  ${filterTabs}
-  <div class="grid">
-    ${(ed.disciplinas || []).map((d) => {
-      const topicosFiltrados = (d.topicos || []).filter(filterTopic);
-      if (filter !== 'todos' && !topicosFiltrados.length) return '';
-      return `<div class="card card-pad">
-      <div class="row" style="justify-content:space-between;margin-bottom:10px">
-        <div><h3 style="margin:0;font-size:17px">${esc(d.materia)}</h3>
-          <div class="hint">${d.estudados} de ${d.totalTopicos} tópicos estudados · ${d.dominados} dominado(s)${d.questoesNaBanca ? ` · <b style="color:#B45309">🔥 ${d.questoesNaBanca} q. na prova da banca</b>` : ''}</div></div>
-        <span class="badge ${d.coberturaPct >= 70 ? 'brand' : ''}">${d.coberturaPct}% concluído</span>
-      </div>
-      <div class="edital-topic-table">
-        ${topicosFiltrados.map((t) => {
-          const st = TOPIC_STATUS[t.status] || TOPIC_STATUS.pendente;
-          return `<div class="edital-topic-row">
-            <div style="flex:1;min-width:200px">
-              <div class="row" style="gap:6px;align-items:baseline;flex-wrap:wrap">
-                <span style="font-weight:700;font-size:14px"><span class="hint" style="margin-right:6px">${esc(t.codigo)}.</span>${esc(t.nome)}</span>
-                <span class="prio-badge prio-${t.prioridade || 'secundaria'}">${esc(t.prioridadeLabel || 'Secundário')}</span>
-              </div>
-              ${t.resumo ? `<div class="hint" style="margin-top:2px">${esc(t.resumo)}</div>` : ''}
-              ${(t.materiaisNomes || []).length ? `<div class="hint" style="margin-top:3px;color:var(--brand)">📄 Material: ${t.materiaisNomes.map(esc).join(', ')} (${t.cobertura === 'completo' ? 'completo' : 'parcial'})</div>` : ''}
-            </div>
-            <div class="row" style="gap:8px;flex-wrap:nowrap">
-              ${t.questoesNaBanca ? `<span class="badge ${t.incidenciaBanca === 'alta' ? 'accent' : ''}" title="Questões reais das provas da banca neste tópico: ${t.questoesNaBanca} (${t.probBancaPct}% da matéria)">${t.incidenciaBanca === 'alta' ? '🔥 ' : '📌 '}${t.questoesNaBanca} na banca (${t.probBancaPct}%)</span>` : ''}
-              ${t.questoesGeradas ? `<span class="badge" title="Questões resolvidas / geradas neste tópico">${t.questoesRespondidas}/${t.questoesGeradas} q.${t.taxaAcerto != null ? ` · ${t.taxaAcerto}%` : ''}</span>` : ''}
-              <span class="st ${st.cls}">${st.label}</span>
-              ${t.questoesNaBanca ? `<button type="button" class="btn btn-ghost" data-treinar-reais="${t.id}" title="Treinar com questões reais da banca neste tópico (custo US$ 0)">${ic('book', 'sm')} Reais (${t.questoesNaBanca})</button>` : ''}
-              <button class="btn btn-quiet" data-train-topic="${esc(d.materia)}||${esc(t.nome)}" title="Gerar questões com IA focadas neste tópico">${ic('spark', 'sm')} Gerar</button>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
-    </div>`;
-    }).join('')}
-    ${(ed.disciplinas || []).every((d) => !(d.topicos || []).filter(filterTopic).length) ? `<div class="card card-pad" style="text-align:center;padding:32px"><div class="empty">${ic('search')}<div>Nenhum tópico encontrado para o filtro selecionado.</div><div class="hint">Alterne para "Todos os Tópicos" para ver o edital completo.</div></div></div>` : ''}
-  </div>`;
+  ${EditalVerticalizado({
+    disciplinas,
+    filter,
+    selectedMateria: S.editalMateria || '',
+    searchQuery: S.editalSearch || '',
+    expandedMap: S.editalExpanded,
+    topicStatusMap: TOPIC_STATUS,
+  })}`;
 }
 
 async function refreshEditais({ silent = false } = {}) {
@@ -371,11 +332,24 @@ function ligarEdital() {
     S.editalUploading = false; render();
   };
   const ef = $('#edFileIn'), edDrop = $('#edDrop');
-  if (ef) ef.onchange = () => { if (ef.files[0]) { const fd = new FormData(); fd.append('file', ef.files[0]); submitEdital(fd); } };
+  const sendEditalFile = (file) => {
+    const chk = validarArquivoUpload(file, { rotulo: 'O edital' });
+    if (!chk.ok) {
+      S.editalErr = chk.mensagem;
+      limparInputArquivo(ef);
+      toast(chk.mensagem);
+      render();
+      return;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    submitEdital(fd);
+  };
+  if (ef) ef.onchange = () => { if (ef.files[0]) sendEditalFile(ef.files[0]); };
   if (edDrop) {
     ['dragenter', 'dragover'].forEach((t) => edDrop.addEventListener(t, (e) => { e.preventDefault(); edDrop.classList.add('over'); }));
     ['dragleave', 'drop'].forEach((t) => edDrop.addEventListener(t, (e) => { e.preventDefault(); edDrop.classList.remove('over'); }));
-    edDrop.addEventListener('drop', (e) => { const f = e.dataTransfer.files[0]; if (f) { const fd = new FormData(); fd.append('file', f); submitEdital(fd); } });
+    edDrop.addEventListener('drop', (e) => { const f = e.dataTransfer.files[0]; if (f) sendEditalFile(f); });
   }
   on('#edModePaste', 'click', () => { S.editalMode = 'paste'; S.editalErr = ''; render(); });
   on('#edModeFile', 'click', () => { S.editalMode = 'file'; render(); });
@@ -391,9 +365,74 @@ function ligarEdital() {
   });
   const sw = $('#edSwitch');
   if (sw) sw.onchange = async () => {
-    try { const r = await api(`/editais/${sw.value}/ativar`, { method: 'POST' }); S.activeEdital = r.edital; await refreshEditais({ silent: true }); render(); }
-    catch (e) { toast(e.message); }
+    try {
+      const r = await api(`/editais/${sw.value}/ativar`, { method: 'POST' });
+      S.activeEdital = r.edital;
+      S.editalMateria = ''; S.editalSearch = ''; S.editalExpanded = null; S.editalTopicFilter = 'todos';
+      await refreshEditais({ silent: true }); render();
+    } catch (e) { toast(e.message); }
   };
+
+  // Filtros e Dropdown/Acordeão do Edital Verticalizado
+  const redrawVerticalizadoPreservandoScroll = (refocusSearch = false, caret = null) => {
+    const y = window.scrollY;
+    render();
+    window.scrollTo({ top: y });
+    if (refocusSearch) {
+      const inp = $('#edSearchInput');
+      if (inp) {
+        inp.focus({ preventScroll: true });
+        if (caret != null) try { inp.setSelectionRange(caret, caret); } catch {}
+      }
+    }
+  };
+  const edSearch = $('#edSearchInput');
+  if (edSearch) edSearch.oninput = () => {
+    const pos = edSearch.selectionStart;
+    S.editalSearch = edSearch.value;
+    redrawVerticalizadoPreservandoScroll(true, pos);
+  };
+  on('#edSearchClear', 'click', () => {
+    S.editalSearch = '';
+    redrawVerticalizadoPreservandoScroll(true, 0);
+  });
+  const edMatSel = $('#edMateriaFilter');
+  if (edMatSel) edMatSel.onchange = () => {
+    S.editalMateria = edMatSel.value;
+    S.editalExpanded = null;
+    redrawVerticalizadoPreservandoScroll();
+  };
+  on('#edToggleAll', 'click', () => {
+    const discs = S.activeEdital?.disciplinas || [];
+    const cur = S.editalExpanded || {};
+    const todas = discs.length > 0 && discs.every((d) => Boolean(cur[d.materia]));
+    const next = {};
+    discs.forEach((d) => { next[d.materia] = !todas; });
+    S.editalExpanded = next;
+    redrawVerticalizadoPreservandoScroll();
+  });
+  on('[data-ed-acc]', 'click', (e) => {
+    const mat = e.currentTarget.dataset.edAcc;
+    const isOpen = e.currentTarget.getAttribute('aria-expanded') === 'true';
+    const next = { ...(S.editalExpanded || {}) };
+    // Preserva estado padrão da 1ª disciplina se o usuário interagir com outro item antes de fechar a 1ª
+    if (!S.editalExpanded && (S.activeEdital?.disciplinas || []).length) {
+      const firstMat = S.activeEdital.disciplinas[0].materia;
+      if (firstMat && firstMat !== mat && !S.editalSearch && !S.editalMateria && (S.editalTopicFilter || 'todos') === 'todos') {
+        next[firstMat] = true;
+      }
+    }
+    next[mat] = !isOpen;
+    S.editalExpanded = next;
+    redrawVerticalizadoPreservandoScroll();
+  });
+  on('#edResetFilters', 'click', () => {
+    S.editalSearch = '';
+    S.editalMateria = '';
+    S.editalTopicFilter = 'todos';
+    S.editalExpanded = null;
+    redrawVerticalizadoPreservandoScroll();
+  });
   on('#edDelBtn', 'click', () => {
     const ed = S.activeEdital; if (!ed) return;
     confirmBox('Remover este edital?', `O edital "${ed.titulo}" será excluído. Seus materiais e simulados continuam salvos.`, 'Remover', true, async () => {

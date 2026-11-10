@@ -9,6 +9,7 @@ import { ic } from './icones.js';
 import { confirmBox } from './modal.js';
 import { render } from './render.js';
 import { $, API, LETRAS, api, esc, fmtDate, on, renderAvatar, toast } from './util.js';
+import { UPLOAD_MAX_MB, limparInputArquivo, validarArquivoUpload } from './lib/upload.js';
 
 // ---------- Base de provas (admin) ----------
 function viewProvas() {
@@ -287,7 +288,7 @@ function ligarAdmin() {
         <div class="field"><label for="gdTexto">Ou cole o texto do gabarito definitivo</label>
           <textarea class="textarea" id="gdTexto" rows="5" placeholder="1 - A\n2 - ANULADA\n3 - ALTERADA PARA C\n4 - D"></textarea>
         </div>
-        <div class="field"><label for="gdArquivo">Ou anexe o arquivo (PDF/TXT)</label>
+        <div class="field"><label for="gdArquivo">Ou anexe o arquivo (PDF/TXT · Até ${UPLOAD_MAX_MB} MB)</label>
           <input class="input" type="file" id="gdArquivo" accept=".pdf,.txt,.docx,.doc">
         </div>
         <div class="row" style="margin-top:14px;justify-content:flex-end;gap:8px">
@@ -312,6 +313,19 @@ function ligarAdmin() {
     return api(`/admin/provas/${pid}/gabarito-definitivo`, { method: 'POST', body: { url, text, confirmar } });
   };
   const STATUS_GAB = { anulada: ['sev high', 'Anulada'], alterada: ['brand', 'Alterada pela banca'], corrigida: ['accent', 'Extração corrigida'], confirmada: ['', 'Confirmada'] };
+  const gdIn = $('#gdArquivo');
+  if (gdIn) gdIn.onchange = () => {
+    const f = gdIn.files?.[0];
+    const stEl = $('#gdStatus');
+    const chk = validarArquivoUpload(f, { rotulo: 'O gabarito' });
+    if (!chk.ok) {
+      limparInputArquivo(gdIn);
+      if (stEl) stEl.innerHTML = `<div class="banner bad" role="alert" style="margin:0">${ic('alert', 'sm')}<div>${esc(chk.mensagem)}</div></div>`;
+      toast(chk.mensagem);
+    } else if (stEl) {
+      stEl.innerHTML = '';
+    }
+  };
   on('#btnAplicarGab', 'click', async (e) => {
     const pid = e.currentTarget.dataset.pid;
     const url = ($('#gdUrl')?.value || '').trim();
@@ -319,6 +333,12 @@ function ligarAdmin() {
     const file = $('#gdArquivo')?.files?.[0];
     if (!url && !text && !file) return toast('Informe o link oficial, cole o texto ou selecione um arquivo.');
     const stEl = $('#gdStatus');
+    const chk = validarArquivoUpload(file, { rotulo: 'O gabarito' });
+    if (!chk.ok) {
+      limparInputArquivo($('#gdArquivo'));
+      if (stEl) stEl.innerHTML = `<div class="banner bad" role="alert" style="margin:0">${ic('alert', 'sm')}<div>${esc(chk.mensagem)}</div></div>`;
+      return toast(chk.mensagem);
+    }
     if (stEl) stEl.innerHTML = '<div class="row"><span class="spinner sm"></span> <span>Lendo o gabarito e montando a prévia…</span></div>';
     try {
       const r = await enviarGabarito({ pid, url, text, file }, false);

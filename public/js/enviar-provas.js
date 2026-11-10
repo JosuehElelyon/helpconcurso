@@ -7,6 +7,7 @@ import { go } from './eventos.js';
 import { ic } from './icones.js';
 import { render } from './render.js';
 import { $, api, esc, fmtDate, on, toast } from './util.js';
+import { UPLOAD_MAX_MB, limparInputArquivo, validarArquivoUpload } from './lib/upload.js';
 
 // ---------- Enviar provas (todos os usuários) ----------
 const PENDING_ST = ['CHECKING', 'QUEUED', 'PROCESSING', 'BATCH_PENDING'];
@@ -74,10 +75,11 @@ function viewContribuir() {
               </div>
               <button type="button" class="btn btn-primary" data-save-link-edital="${p.id}" ${S.linkBusy ? 'disabled' : ''}>Vincular selecionado</button>` : ''}
               <div class="field" style="margin:0;flex:1;min-width:240px">
-                <label for="lpEdFile">Ou envie o arquivo do Edital desta prova (PDF, DOCX, TXT)</label>
+                <label for="lpEdFile">Ou envie o arquivo do Edital desta prova (PDF, DOCX, TXT · Até ${UPLOAD_MAX_MB} MB)</label>
                 <input type="file" id="lpEdFile" class="input" accept=".pdf,.doc,.docx,.txt" data-upload-link-edital="${p.id}" ${S.linkBusy ? 'disabled' : ''}>
               </div>
             </div>
+            ${S.linkEditalErr ? `<div class="banner bad" role="alert" style="margin:10px 0 0">${ic('alert', 'sm')}<div>${esc(S.linkEditalErr)}</div></div>` : ''}
             ${S.linkBusy ? `<div class="hint" style="margin-top:8px"><span class="spinner sm"></span> Lendo e verticalizando o edital com a IA e vinculando à prova…</div>` : ''}
           </div>` : ''}
         </div>`;
@@ -103,11 +105,12 @@ function viewContribuir() {
 
       <div class="form-sec">
         <div class="form-sec-title"><span class="form-sec-num">2</span> Arquivos da prova e gabarito</div>
-        <div class="hint" style="margin-bottom:10px">Envie o caderno de questões (PDF, inclusive escaneado, DOCX, DOC ou TXT) e, se estiver em arquivo separado, o gabarito oficial.</div>
-        <label class="drop slim" id="cDrop"><input type="file" id="cFiles" class="sr" multiple accept=".pdf,.doc,.docx,.txt">
-          <div class="big" style="width:44px;height:44px">${ic('upload')}</div><strong style="font-size:15px">Arraste os arquivos das provas aqui ou clique para escolher</strong><span class="hint">PDF (inclusive escaneado), DOCX, DOC ou TXT · até 10 arquivos por vez</span></label>
+        <div class="hint" style="margin-bottom:10px">Envie o caderno de questões (PDF, inclusive escaneado, DOCX, DOC ou TXT · Até ${UPLOAD_MAX_MB} MB por arquivo) e, se estiver em arquivo separado, o gabarito oficial.</div>
+        <label class="drop slim ${S.cUploadErr ? 'has-err' : ''}" id="cDrop"><input type="file" id="cFiles" class="sr" multiple accept=".pdf,.doc,.docx,.txt">
+          <div class="big" style="width:44px;height:44px">${ic('upload')}</div><strong style="font-size:15px">Arraste os arquivos das provas aqui ou clique para escolher</strong><span class="hint">PDF (inclusive escaneado), DOCX, DOC ou TXT · até 10 arquivos · Até ${UPLOAD_MAX_MB} MB por arquivo</span></label>
+        ${S.cUploadErr ? `<div class="banner bad" role="alert" style="margin:12px 0 0">${ic('alert', 'sm')}<div>${esc(S.cUploadErr)}</div></div>` : ''}
         ${f.files.length ? `<div class="file-list">${f.files.map((x, i) => `<span class="chip"><span>📄 ${esc(x.name)}</span><button type="button" class="link-btn" data-rmc="${i}">remover</button></span>`).join('')}</div>` : ''}
-        <div class="field" style="margin:14px 0 0"><label for="cGab">Gabarito separado <span class="hint">(opcional, disponível ao enviar 1 prova)</span></label><input type="file" id="cGab" class="input" accept=".pdf,.doc,.docx,.txt" ${f.files.length > 1 ? 'disabled' : ''}>${f.gabarito ? `<span class="hint">Selecionado: ${esc(f.gabarito.name)}</span>` : ''}</div>
+        <div class="field" style="margin:14px 0 0"><label for="cGab">Gabarito separado <span class="hint">(opcional, disponível ao enviar 1 prova · Até ${UPLOAD_MAX_MB} MB)</span></label><input type="file" id="cGab" class="input" accept=".pdf,.doc,.docx,.txt" ${f.files.length > 1 ? 'disabled' : ''}>${f.gabarito ? `<span class="hint">Selecionado: ${esc(f.gabarito.name)}</span>` : ''}</div>
         <div class="field" style="margin:14px 0 0"><label for="cLink">Link oficial da prova <span class="hint">(opcional — site da banca ou Diário Oficial)</span></label>
           <input class="input" id="cLink" maxlength="500" placeholder="https://conhecimento.fgv.br/.../prova.pdf" value="${esc(f.link)}">
           <span class="hint">Sem arquivo? Cole o link direto do PDF da prova: nós baixamos da fonte oficial e ela ganha o selo <b>✔ Fonte oficial</b>. Com arquivo, o link fica registrado como fonte informada.</span></div>
@@ -126,15 +129,16 @@ function viewContribuir() {
               </select>
             </div>
             <div class="field" style="margin-bottom:0">
-              <label for="cEditalFile">Ou enviar arquivo do Edital junto com a prova <span class="hint">(PDF, DOCX, TXT)</span></label>
+              <label for="cEditalFile">Ou enviar arquivo do Edital junto com a prova <span class="hint">(PDF, DOCX, TXT · Até ${UPLOAD_MAX_MB} MB)</span></label>
               <input type="file" id="cEditalFile" class="input" accept=".pdf,.doc,.docx,.txt" ${f.files.length > 1 ? 'disabled' : ''}>
+              ${S.cEditalErr ? `<div class="banner bad" role="alert" style="margin:8px 0 0">${ic('alert', 'sm')}<div>${esc(S.cEditalErr)}</div></div>` : ''}
               ${f.editalFile ? `<div class="row" style="justify-content:space-between;margin-top:4px"><span class="hint" style="color:var(--brand)">📋 Edital anexado: <b>${esc(f.editalFile.name)}</b></span><button type="button" class="link-btn" id="cRmEdital" style="font-size:12px">remover</button></div>` : ''}
             </div>
           </div>
         </div>
       </div>
 
-      ${(S.cResults || []).length ? `<div class="file-list" style="margin:16px 0">${S.cResults.map((r) => `<div class="banner ${r.ok ? 'info' : r.dup ? 'warn' : 'bad'}" style="margin:0">${ic(r.ok ? 'check' : 'alert', 'sm')}<div><b>${esc(r.name)}</b>: ${esc(r.msg)}</div></div>`).join('')}</div>` : ''}
+      ${(S.cResults || []).length ? `<div class="file-list" style="margin:16px 0">${S.cResults.map((r) => `<div class="banner ${r.ok ? 'info' : r.dup ? 'warn' : 'bad'}" ${!r.ok && !r.dup ? 'role="alert"' : ''} style="margin:0">${ic(r.ok ? 'check' : 'alert', 'sm')}<div><b>${esc(r.name)}</b>: ${esc(r.msg)}</div></div>`).join('')}</div>` : ''}
       <div style="margin-top:20px">
         <button class="btn btn-primary btn-block" type="submit" ${S.cBusy || (!f.files.length && !f.link) || !f.banca ? 'disabled' : ''}>${S.cBusy ? `<span class="spinner sm"></span> Enviando ${S.cBusy}${f.editalFile ? ' e verticalizando edital' : ''}…` : !f.files.length && f.link ? `${ic('upload', 'sm')} Importar prova do link oficial` : `${ic('upload', 'sm')} Enviar ${f.files.length > 1 ? f.files.length + ' provas' : 'prova'}${f.editalFile ? ' + Edital' : f.editalId ? ' (vinculada ao Edital)' : ''}`}</button>
         <p class="hint" style="margin:10px 0 0;text-align:center">Arquivos com scripts, macros, anexos ou texto escondido com instruções são recusados automaticamente. Envios maliciosos repetidos pausam a conta.</p>
@@ -148,22 +152,70 @@ function ligarEnviarProvas() {
   const f = S.cform;
   on('[data-cb]', 'click', (e) => { f.banca = e.currentTarget.dataset.cb; render(); });
   ['Orgao', 'Cargo', 'Ano'].forEach((k) => { const el = $('#c' + k); if (el) el.oninput = () => { f[k.toLowerCase()] = el.value; }; });
-  const addFiles = (list) => { f.files = f.files.concat([...list]).slice(0, 10); if (f.files.length > 1) { f.gabarito = null; f.editalFile = null; } S.cResults = []; render(); };
-  const cf = $('#cFiles'), cd = $('#cDrop');
+  const cf = $('#cFiles'), cd = $('#cDrop'), cg = $('#cGab'), cef = $('#cEditalFile');
+  const addFiles = (list) => {
+    const validos = [];
+    const errosTamanho = [];
+    for (const file of [...list]) {
+      const chk = validarArquivoUpload(file, { rotulo: 'O arquivo de prova' });
+      if (chk.ok) validos.push(file);
+      else errosTamanho.push(chk.mensagem);
+    }
+    if (errosTamanho.length) {
+      S.cUploadErr = errosTamanho.join(' ');
+      toast(errosTamanho[0]);
+      limparInputArquivo(cf);
+    } else {
+      S.cUploadErr = '';
+    }
+    if (validos.length) {
+      f.files = f.files.concat(validos).slice(0, 10);
+      if (f.files.length > 1) { f.gabarito = null; f.editalFile = null; }
+    }
+    S.cResults = [];
+    render();
+  };
   if (cf) cf.onchange = () => addFiles(cf.files);
   if (cd) {
     ['dragenter', 'dragover'].forEach((t) => cd.addEventListener(t, (e) => { e.preventDefault(); cd.classList.add('over'); }));
     ['dragleave', 'drop'].forEach((t) => cd.addEventListener(t, (e) => { e.preventDefault(); cd.classList.remove('over'); }));
     cd.addEventListener('drop', (e) => addFiles(e.dataTransfer.files));
   }
-  const cg = $('#cGab'); if (cg) cg.onchange = () => { f.gabarito = cg.files[0] || null; render(); };
+  if (cg) cg.onchange = () => {
+    const file = cg.files[0] || null;
+    const chk = validarArquivoUpload(file, { rotulo: 'O arquivo de gabarito' });
+    if (!chk.ok) {
+      f.gabarito = null;
+      S.cUploadErr = chk.mensagem;
+      limparInputArquivo(cg);
+      toast(chk.mensagem);
+    } else {
+      S.cUploadErr = '';
+      f.gabarito = file;
+    }
+    render();
+  };
   const cl = $('#cLink');
   if (cl) cl.oninput = () => { f.link = cl.value.trim(); const btn = $('#cForm button[type=submit]'); if (btn && !S.cBusy) btn.disabled = (!f.files.length && !f.link) || !f.banca; };
   if (cl) cl.onchange = () => render();
-  const ces = $('#cEditalSel'); if (ces) ces.onchange = () => { f.editalId = ces.value; render(); };
-  const cef = $('#cEditalFile'); if (cef) cef.onchange = () => { f.editalFile = cef.files[0] || null; if (f.editalFile) f.editalId = ''; render(); };
-  on('#cRmEdital', 'click', () => { f.editalFile = null; render(); });
-  on('[data-rmc]', 'click', (e) => { f.files.splice(+e.currentTarget.dataset.rmc, 1); render(); });
+  const ces = $('#cEditalSel'); if (ces) ces.onchange = () => { f.editalId = ces.value; S.cEditalErr = ''; render(); };
+  if (cef) cef.onchange = () => {
+    const file = cef.files[0] || null;
+    const chk = validarArquivoUpload(file, { rotulo: 'O arquivo do edital' });
+    if (!chk.ok) {
+      f.editalFile = null;
+      S.cEditalErr = chk.mensagem;
+      limparInputArquivo(cef);
+      toast(chk.mensagem);
+    } else {
+      S.cEditalErr = '';
+      f.editalFile = file;
+      if (f.editalFile) f.editalId = '';
+    }
+    render();
+  };
+  on('#cRmEdital', 'click', () => { f.editalFile = null; S.cEditalErr = ''; render(); });
+  on('[data-rmc]', 'click', (e) => { f.files.splice(+e.currentTarget.dataset.rmc, 1); S.cUploadErr = ''; render(); });
   on('[data-open-edital]', 'click', async (e) => {
     const id = e.currentTarget.dataset.openEdital;
     try { await api(`/editais/${id}/ativar`, { method: 'POST' }); } catch {}
@@ -172,6 +224,7 @@ function ligarEnviarProvas() {
   on('[data-toggle-link-edital]', 'click', (e) => {
     const id = e.currentTarget.dataset.toggleLinkEdital;
     S.linkProvaId = S.linkProvaId === id ? null : id;
+    S.linkEditalErr = '';
     render();
   });
   on('[data-save-link-edital]', 'click', async (e) => {
@@ -188,9 +241,18 @@ function ligarEnviarProvas() {
     S.linkBusy = false; render();
   });
   on('[data-upload-link-edital]', 'change', async (e) => {
-    const id = e.currentTarget.dataset.uploadLinkEdital;
-    const file = e.currentTarget.files[0]; if (!file) return;
-    S.linkBusy = true; render();
+    const inputEl = e.currentTarget;
+    const id = inputEl.dataset.uploadLinkEdital;
+    const file = inputEl.files[0]; if (!file) return;
+    const chk = validarArquivoUpload(file, { rotulo: 'O arquivo do edital' });
+    if (!chk.ok) {
+      S.linkEditalErr = chk.mensagem;
+      limparInputArquivo(inputEl);
+      toast(chk.mensagem);
+      render();
+      return;
+    }
+    S.linkBusy = true; S.linkEditalErr = ''; render();
     try {
       const fd = new FormData(); fd.append('edital', file);
       const r = await api(`/provas/${id}/edital`, { method: 'POST', form: fd });
@@ -198,7 +260,7 @@ function ligarEnviarProvas() {
       await refreshEditais({ silent: true });
       S.linkProvaId = null;
       toast(`Edital "${r.editalTitulo}" verticalizado e vinculado à prova!`);
-    } catch (err) { toast(err.message); }
+    } catch (err) { S.linkEditalErr = err.message; toast(err.message); }
     S.linkBusy = false; render();
   });
   const form = $('#cForm');

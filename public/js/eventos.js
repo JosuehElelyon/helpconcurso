@@ -16,7 +16,8 @@ import { abrirModalTermos, aceitarTermosAgora, confirmarExclusaoConta } from './
 import { ligarPlanos } from './planos.js';
 import { render } from './render.js';
 import { ligarSimulado } from './simulado.js';
-import { $, api, on, toast } from './util.js';
+import { $, api, esc, on, toast } from './util.js';
+import { limparInputArquivo, validarArquivoUpload } from './lib/upload.js';
 
 // ---------- Navegação e eventos ----------
 const ROUTES = ['home', 'metas', 'desempenho', 'gerar', 'edital', 'questoes', 'bancas', 'contribuir', 'estrelas', 'provas', 'conta', 'planos'];
@@ -149,12 +150,19 @@ function bindApp() {
   });
   const sendAvatarFile = async (file) => {
     if (!file) return;
-    if (file.size > 4 * 1024 * 1024) return toast('A imagem deve ter no máximo 4 MB.');
+    const status = $('#avatarUploadStatus');
+    const chk = validarArquivoUpload(file, { rotulo: 'A imagem', maxMb: 4 });
+    if (!chk.ok) {
+      limparInputArquivo($('#avatarInput'));
+      if (status) status.innerHTML = `<div class="banner bad" role="alert" style="margin:8px 0 0;text-align:left">${ic('alert', 'sm')}<div>${esc(chk.mensagem)}</div></div>`;
+      return toast(chk.mensagem);
+    }
     const allowed = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
     if (!allowed.includes(file.type) && !/\.(png|jpe?g|webp|gif)$/i.test(file.name)) {
-      return toast('Formato inválido. Envie uma imagem PNG, JPEG, WebP ou GIF.');
+      const msg = 'Formato inválido. Envie uma imagem PNG, JPEG, WebP ou GIF.';
+      if (status) status.innerHTML = `<div class="banner bad" role="alert" style="margin:8px 0 0;text-align:left">${ic('alert', 'sm')}<div>${esc(msg)}</div></div>`;
+      return toast(msg);
     }
-    const status = $('#avatarUploadStatus');
     if (status) status.textContent = 'Enviando imagem…';
     try {
       const fd = new FormData();
@@ -164,11 +172,11 @@ function bindApp() {
       if (S.user) S.user.avatarUrl = res.perfil.avatarUrl;
       S.modal = null;
       toast('Foto de perfil atualizada!');
+      render();
     } catch (err) {
       toast(err.message);
-      if (status) status.textContent = 'Falha no envio. Tente novamente.';
+      if (status) status.innerHTML = `<div class="banner bad" role="alert" style="margin:8px 0 0;text-align:left">${ic('alert', 'sm')}<div>${esc(err.message || 'Falha no envio. Tente novamente.')}</div></div>`;
     }
-    render();
   };
   on('#btnSelectAvatarFile', 'click', () => $('#avatarInput')?.click());
   on('#avatarInput', 'change', (e) => {

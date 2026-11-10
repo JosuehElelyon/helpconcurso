@@ -39,7 +39,10 @@ async function api(path, { method = 'GET', body, form } = {}) {
   try { data = await r.json(); } catch { /* sem corpo */ }
   if (!r.ok) {
     if (r.status === 401 && S.screen === 'app') { S.screen = 'auth'; S.auth = 'entrar'; render(); }
-    throw Object.assign(new Error(data.error || `Erro ${r.status}`), { status: r.status, data });
+    const msgPadrao = r.status === 413
+      ? 'O arquivo ultrapassa o limite máximo de 25 MB por arquivo.'
+      : `Erro ${r.status}`;
+    throw Object.assign(new Error(data.error || msgPadrao), { status: r.status, data });
   }
   return data;
 }
